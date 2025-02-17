@@ -1,0 +1,168 @@
+/* Import a clean, modern font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+
+/* Reset defaults */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Base Body Styles */
+body {
+  font-family: 'Inter', sans-serif;
+  background: linear-gradient(120deg, #1c1c3a 0%, #212141 100%);
+  color: #ffffff;
+  min-height: 100vh;
+  
+  /* For auth pages, we center the content */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --------------------- */
+/* Auth Container Styles */
+/* --------------------- */
+.auth-container {
+  background-color: rgba(45, 47, 74, 0.9);
+  width: 360px;
+  padding: 30px 25px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  text-align: center;
+}
+
+/* Auth Container Title */
+.auth-container h1 {
+  font-weight: 600;
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+}
+
+/* Form styles for auth pages */
+.auth-form {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Input Fields */
+.input-field {
+  padding: 12px;
+  font-size: 14px;
+  border: none;
+  border-radius: 8px;
+  outline: none;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  margin-bottom: 16px;
+  transition: background-color 0.3s ease;
+  text-align: left;
+}
+
+.input-field::placeholder {
+  color: #aaa;
+}
+
+.input-field:focus {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ------------------ */
+/* Button Styles      */
+/* ------------------ */
+/* Base button styling */
+.btn {
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 16px;
+  transition: background-color 0.3s ease;
+  text-decoration: none;
+}
+
+/* Primary Button: Dark Green */
+.btn-primary {
+  background-color: #2e7d32;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background-color: #1b5e20;
+}
+
+/* Secondary Button: Light Blue */
+.btn-secondary {
+  background-color: #29b6f6;
+  color: #fff;
+}
+
+.btn-secondary:hover {
+  background-color: #0288d1;
+}
+
+/* ------------------ */
+/* Auth Link & Note   */
+/* ------------------ */
+.auth-note {
+  font-size: 0.9rem;
+  color: #ccccdd;
+}
+
+.auth-link {
+  color: #8fa3ff;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.3s ease;
+}
+
+.auth-link:hover {
+  color: #b3c7ff;
+  text-decoration: underline;
+}
+
+/* Ensure all anchor tags have no underline by default */
+a {
+  text-decoration: none;
+}
+
+/* --------------------- */
+/* Home Page Container   */
+/* --------------------- */
+.home-container {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 60px 20px;
+  background-color: rgba(45, 47, 74, 0.8);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+/* Home Page Title */
+.home-container h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: #ffffff;
+}
+
+/* Home Page Descriptive Text */
+.home-container p {
+  font-size: 1rem;
+  line-height: 1.5;
+  color: #d1d1e0;
+  margin-bottom: 30px;
+}
+
+/* Home Page Call-to-Action Buttons */
+.cta-buttons {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+}
+
+/* Reusing our btn styles for home page buttons */

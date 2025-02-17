@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Login{% endblock %}
+
+{% block body %}
+<div class="auth-container">
+  <h1>Login</h1>
+  <form class="auth-form" method="POST" action="{{ url_for('auth.login') }}">
+    <input 
+      type="text" 
+      name="mobile_number" 
+      placeholder="Mobile Number" 
+      class="input-field"
+      required
+    />
+
+    <input 
+      type="password" 
+      name="password" 
+      placeholder="Password" 
+      class="input-field"
+      required
+    />
+
+    <button type="submit" class="btn btn-primary">Login</button>
+  </form>
+  
+  <div class="auth-note">
+    Don’t have an account? 
+    <a href="{{ url_for('auth.register_form') }}" class="auth-link">Register here</a>
+  </div>
+</div>
+{% endblock %}

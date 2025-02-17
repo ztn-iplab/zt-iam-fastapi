@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block body %}
+<div class="container">
+  <h1>Dashboard</h1>
+  <p>Welcome, {{ user.full_name }}!</p>
+  
+  <div class="profile">
+    <h2>Your Profile</h2>
+    <p><strong>Mobile Number:</strong> {{ user.mobile_number }}</p>
+    <p><strong>Country:</strong> {{ user.country }}</p>
+    <p><strong>Trust Score:</strong> {{ user.trust_score }}</p>
+  </div>
+  
+  <div class="wallet">
+    <h2>Your Wallet</h2>
+    {% if user.wallet %}
+      <p><strong>Balance:</strong> {{ user.wallet.balance }} {{ user.wallet.currency }}</p>
+    {% else %}
+      <p>No wallet found.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

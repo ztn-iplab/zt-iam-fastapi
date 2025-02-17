@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}ZTN Simulation{% endblock %}</title>
+  <!-- Link to your CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+  <!-- Main content area -->
+  {% block body %}{% endblock %}
+</body>
+</html>

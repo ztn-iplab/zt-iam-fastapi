@@ -1,0 +1,14 @@
+# Python
+*.pyc
+__pycache__/
+
+# Virtual Environment
+s_venv/
+
+# Environment Variables
+.env
+*.env
+.flaskenv
+
+# System files
+.DS_Store

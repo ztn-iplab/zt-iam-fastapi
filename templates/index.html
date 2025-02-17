@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Home | ZTN Simulation{% endblock %}
+
+{% block body %}
+<div class="home-container">
+  <h1>Welcome to the Zero Trust Network Simulation</h1>
+  <p>
+    Experience cutting-edge security, seamless transactions, and
+    a powerful demonstration of how mobile money infrastructure
+    can power Zero Trust Networks in Sub-Saharan Africa and beyond.
+  </p>
+  
+  <div class="cta-buttons">
+    <a href="{{ url_for('auth.login_form') }}" class="btn btn-primary">Login</a>
+    <a href="{{ url_for('auth.register_form') }}" class="btn btn-secondary">Register</a>
+  </div>
+</div>
+{% endblock %}

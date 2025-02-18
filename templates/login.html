@@ -1,13 +1,16 @@
 {% extends "base.html" %}
+
 {% block title %}Login{% endblock %}
+
+{% block body_class %}auth-page{% endblock %}
 
 {% block body %}
 <div class="auth-container">
   <h1>Login</h1>
   
-  <!-- If ?registered=1 is in the URL, show a success message -->
+  <!-- Display a success message if registration was successful -->
   {% if request.args.get('registered') == '1' %}
-    <p style="color: #4caf50; text-align: center;">
+    <p class="auth-note" style="color: #4caf50;">
       Registration successful! Your wallet has been created. Please log in.
     </p>
   {% endif %}

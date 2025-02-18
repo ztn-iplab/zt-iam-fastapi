@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Transactions Dashboard{% endblock %}
+
+{% block body %}
+<div class="dashboard-container">
+  <h1>Transactions</h1>
+  <ul id="transaction-history">
+    <!-- Transactions will be loaded here -->
+  </ul>
+  <button id="back-to-dashboard" class="btn btn-secondary">Back to Dashboard</button>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      window.location.href = '/auth/login_form';
+      return;
+    }
+
+    // Fetch transactions with the Authorization header
+    fetch('/api/transactions', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('Failed to load transactions');
+      }
+      return response.json();
+    })
+    .then(data => {
+      const historyList = document.getElementById('transaction-history');
+      historyList.innerHTML = ''; // Clear any existing content
+      data.forEach(tx => {
+        const li = document.createElement('li');
+        li.textContent = `${tx.transaction_type.toUpperCase()} of ${tx.amount} on ${tx.timestamp}`;
+        historyList.appendChild(li);
+      });
+    })
+    .catch(error => {
+      console.error("Error fetching transactions:", error);
+      alert("Error loading transactions. Please try again.");
+    });
+
+    // Back button functionality
+    document.getElementById('back-to-dashboard').addEventListener('click', function() {
+      window.location.href = '/dashboard';
+    });
+  });
+</script>
+{% endblock %}

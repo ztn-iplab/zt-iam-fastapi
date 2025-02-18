@@ -1,4 +1,8 @@
-/* Optional: Import a clean, modern font */
+/* --------------------------------------------------------------------
+   1. GLOBAL & BASE STYLES
+-------------------------------------------------------------------- */
+
+/* Import a clean, modern font */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
 
 /* Reset defaults */
@@ -8,106 +12,88 @@
   box-sizing: border-box;
 }
 
-/* Base Body Styles */
+/* Root variables for repeated values */
+:root {
+  --bg-dark-gradient: linear-gradient(120deg, #1c1c3a 0%, #212141 100%);
+  --card-bg: rgba(45, 47, 74, 0.9);
+  --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  --input-bg: #0d1117;
+  --input-border: #30363d;
+  --input-focus: #0366d6;
+  --text-placeholder: #8b949e;
+  --brand-green: #2e7d32;
+  --brand-green-dark: #1b5e20;
+  --brand-blue: #2962ff;
+  --brand-blue-dark: #1b47cc;
+}
+
+/* Base body styling - 
+   DO NOT center content here, so that the dashboard layout can work properly. */
 body {
   font-family: 'Inter', sans-serif;
-  background: linear-gradient(120deg, #1c1c3a 0%, #212141 100%);
+  background: var(--bg-dark-gradient);
   color: #ffffff;
   min-height: 100vh;
+}
 
-  /* For auth pages, center the content */
+/* By default, remove underline from anchor tags. */
+a {
+  text-decoration: none;
+  color: inherit; /* So links match the parent color unless specified */
+}
+
+/* Utility class for a card style */
+.card {
+  background-color: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  border-radius: 12px;
+}
+
+/* --------------------------------------------------------------------
+   2. AUTH PAGES (Login / Registration)
+-------------------------------------------------------------------- */
+
+/* 
+   Add class="auth-page" to the <body> in your login/registration templates 
+   to center the content vertically & horizontally.
+*/
+.auth-page {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 100vh;
+  background: var(--bg-dark-gradient);
 }
 
-/* --------------------- */
-/* Auth Container Styles */
-/* --------------------- */
+
+/* Auth container card for login/register forms */
 .auth-container {
-  background-color: rgba(45, 47, 74, 0.9);
   width: 360px;
   padding: 30px 25px;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   text-align: center;
+  background-color: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  border-radius: 12px;
 }
 
-/* Auth Container Title */
 .auth-container h1 {
   font-weight: 600;
   font-size: 1.5rem;
   margin-bottom: 20px;
 }
 
-/* The container for the dashboard */
-.dashboard-container {
-  background-color: rgba(45, 47, 74, 0.9);
-  width: 400px;
-  padding: 30px;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-  text-align: center;
-}
-
-
-/* Dashboard Title */
-.dashboard-container h1 {
-  font-size: 1.8rem;
-  margin-bottom: 20px;
-}
-
-/* Section Titles (e.g., "Your Profile", "Your Wallet") */
-.dashboard-container h2 {
-  font-size: 1.2rem;
-  margin-top: 20px;
-  margin-bottom: 10px;
-}
-
-/* Profile and wallet info */
-.dashboard-container p {
-  margin: 4px 0;
-}
-
-/* Logout Button */
-#logout-button {
-  margin-top: 20px;
-  padding: 12px 24px;
-  font-size: 1rem;
-  font-weight: 600;
-  background-color: #2962ff;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
-}
-
-#logout-button:hover {
-  background-color: #1b47cc;
-}
-
-/* Form styles for auth pages */
+/* Auth form fields */
 .auth-form {
   display: flex;
   flex-direction: column;
 }
 
-/* ------------------ */
-/* INPUT FIELDS       */
-/* ------------------ */
-/* 
-   - Dark background (#0d1117)
-   - Subtle border (#30363d)
-   - Blue highlight (#0366d6) on focus
-*/
 .input-field {
   padding: 12px;
   font-size: 14px;
   border-radius: 6px;
-  outline: none;
-  background-color: #0d1117;  /* Dark background for inputs */
-  border: 1px solid #30363d;  /* Subtle gray border */
+  background-color: var(--input-bg);
+  border: 1px solid var(--input-border);
   color: #ffffff;
   margin-bottom: 16px;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -115,18 +101,15 @@ body {
 }
 
 .input-field::placeholder {
-  color: #8b949e; /*placeholder color */
+  color: var(--text-placeholder);
 }
 
-/* Focus state: blue border + subtle box-shadow */
 .input-field:focus {
-  border-color: #0366d6;
-  box-shadow: 0 0 0 1px #0366d6;
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 1px var(--input-focus);
 }
 
-/* ------------------ */
-/* BUTTON STYLES      */
-/* ------------------ */
+/* Buttons (common) */
 .btn {
   padding: 12px;
   font-size: 15px;
@@ -137,31 +120,28 @@ body {
   margin-bottom: 16px;
   transition: background-color 0.3s ease;
   text-decoration: none;
+  color: #fff;
 }
 
-/* Primary Button: Dark Green */
+/* Primary button: Dark Green */
 .btn-primary {
-  background-color: #2e7d32; /* Dark green */
-  color: #fff;
+  background-color: var(--brand-green);
 }
 
 .btn-primary:hover {
-  background-color: #1b5e20; /* Even darker green */
+  background-color: var(--brand-green-dark);
 }
 
-/* Secondary Button: Light Blue */
+/* Secondary button: Light Blue (semi-transparent) */
 .btn-secondary {
   background-color: #74e1f083;
-  color: #fff;
 }
 
 .btn-secondary:hover {
   background-color: #74e1f083;
 }
 
-/* ------------------ */
-/* AUTH LINK & NOTE   */
-/* ------------------ */
+/* Auth note & link (for "Don't have an account?" etc.) */
 .auth-note {
   font-size: 0.9rem;
   color: #ccccdd;
@@ -169,7 +149,6 @@ body {
 
 .auth-link {
   color: #8fa3ff;
-  text-decoration: none;
   font-weight: 500;
   transition: color 0.3s ease;
 }
@@ -179,33 +158,25 @@ body {
   text-decoration: underline;
 }
 
-/* Ensure all anchor tags have no underline by default */
-a {
-  text-decoration: none;
-}
-
-/* --------------------- */
-/* HOME PAGE CONTAINER   */
-/* --------------------- */
+/* --------------------------------------------------------------------
+   3. HOME / LANDING PAGE (Optional)
+-------------------------------------------------------------------- */
 .home-container {
-  text-align: center;
   max-width: 600px;
-  margin: 0 auto;
+  margin: 60px auto;
   padding: 60px 20px;
-  background-color: rgba(45, 47, 74, 0.8);
+  text-align: center;
+  background-color: var(--card-bg);
   border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--card-shadow);
 }
 
-/* Home Page Title */
 .home-container h1 {
   font-size: 2rem;
   font-weight: 600;
   margin-bottom: 20px;
-  color: #ffffff;
 }
 
-/* Home Page Descriptive Text */
 .home-container p {
   font-size: 1rem;
   line-height: 1.5;
@@ -213,9 +184,177 @@ a {
   margin-bottom: 30px;
 }
 
-/* Home Page Call-to-Action Buttons */
 .cta-buttons {
   display: flex;
   gap: 20px;
   justify-content: center;
+}
+
+/* --------------------------------------------------------------------
+   4. DASHBOARD LAYOUT
+-------------------------------------------------------------------- */
+
+/* Outer container for the dashboard pages */
+.dashboard-layout {
+  display: flex;          /* side-by-side: sidebar + main content */
+  min-height: 100vh;
+}
+
+/* Sidebar on the left */
+.sidebar {
+  background-color: #2c3e50;
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+}
+
+.sidebar-header {
+  padding: 20px;
+  background-color: #263445;
+}
+
+.app-brand {
+  margin: 0;
+  font-size: 1.3rem;
+  text-transform: uppercase;
+}
+
+.sidebar-menu {
+  list-style: none;
+  padding: 20px;
+  margin: 0;
+  flex: 1;
+}
+
+.sidebar-menu li {
+  margin-bottom: 15px;
+}
+
+.sidebar-menu li a {
+  color: #8fa3ff;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.3s ease;
+}
+
+.sidebar-menu li a:hover {
+  color: #b3c7ff;
+}
+
+/* Main content on the right */
+.main-content {
+  flex: 1;                /* take remaining space */
+  display: flex;
+  flex-direction: column; /* top bar at top, footer at bottom, widgets in between */
+  background: var(--bg-dark-gradient);
+  color: #fff;
+}
+
+/* Top bar (across the top of main content) */
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+}
+
+.top-bar-left {
+  font-size: 1.5rem;
+}
+
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.top-bar-icon {
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+
+.top-bar-avatar {
+  cursor: pointer;
+  font-size: 1.5rem;
+}
+
+/* The widgets area below the top bar */
+.widgets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 20px;
+}
+
+/* Each widget is a card */
+.widget {
+  flex: 1;
+  min-width: 280px;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  background-color: var(--card-bg);
+}
+
+/* Titles for wallet/transactions widgets */
+.wallet-widget h2,
+.transactions-widget h2 {
+  margin-top: 0;
+}
+
+/* Transaction history list */
+.transactions-widget ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.transactions-widget ul li {
+  margin-bottom: 10px;
+  padding: 8px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+/* --------------------------------------------------------------------
+   5. FOOTER
+-------------------------------------------------------------------- */
+.footer {
+  margin-top: auto; /* push the footer to bottom of .main-content column */
+  text-align: center;
+  padding: 15px;
+  background-color: var(--card-bg);
+  box-shadow: var(--card-shadow);
+}
+.footer p {
+  margin: 0;
+  color: #ccccdd;
+}
+
+/* --------------------------------------------------------------------
+   6. SPECIFIC ELEMENTS
+-------------------------------------------------------------------- */
+
+/* Logout Button / Link */
+#logout-button,
+#logout-link {
+  cursor: pointer;
+  background-color: var(--brand-blue);
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  margin-top: 20px;
+  color: #fff;
+  transition: background-color 0.3s ease;
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
+}
+
+#logout-button:hover,
+#logout-link:hover {
+  background-color: var(--brand-blue-dark);
 }

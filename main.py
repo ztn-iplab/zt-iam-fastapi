@@ -3,7 +3,7 @@ from config import Config
 from sqlalchemy import text
 from flask_migrate import Migrate
 from models.models import db, Wallet, User, Transaction
-from flask_jwt_extended import JWTManager
+from flask_jwt_extended import JWTManager, jwt_required
 from routes.auth import auth_bp
 from routes.user_routes import user_bp
 from routes.wallet_routes import wallet_bp
@@ -62,6 +62,12 @@ def unauthorized_error(error):
 @app.errorhandler(404)
 def not_found_error(error):
     return jsonify({"error": "Resource not found."}), 404
+
+@app.route('/transactions_dashboard')
+@jwt_required()  # Optional: you can also check the token in your JS
+def transactions_dashboard():
+    # This renders an HTML page; the JS on that page will fetch the data from /api/transactions.
+    return render_template('transactions_dashboard.html')
 
 # Application Startup
 

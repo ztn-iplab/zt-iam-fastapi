@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Transactions{% endblock %}
+
+{% block body %}
+<div class="transactions-container">
+  <h1>Transactions</h1>
+  
+  <!-- Transaction Form -->
+  <form id="transaction-form" class="transaction-form" method="POST">
+    <input type="number" name="amount" placeholder="Amount" class="input-field" step="0.01" required />
+    <select name="transaction_type" class="input-field" required>
+      <option value="">Select Transaction Type</option>
+      <option value="deposit">Deposit</option>
+      <option value="withdrawal">Withdrawal</option>
+    </select>
+    <button type="submit" class="btn btn-primary">Submit Transaction</button>
+  </form>
+
+  <!-- Wallet Information -->
+  <div class="wallet-info">
+    <h2>Your Wallet</h2>
+    <p>Balance: <span id="wallet-balance">Loading...</span></p>
+    <p>Currency: <span id="wallet-currency">Loading...</span></p>
+  </div>
+
+  <!-- Transaction History -->
+  <div class="transactions-list">
+    <h2>Transaction History</h2>
+    <ul id="transaction-history">
+      <!-- Transaction items will be appended here -->
+    </ul>
+  </div>
+
+  <!-- Logout Button -->
+  <button id="logout-button" class="btn btn-secondary">Logout</button>
+</div>
+
+<script src="{{ url_for('static', filename='js/transactions.js') }}"></script>
+{% endblock %}

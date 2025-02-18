@@ -4,7 +4,15 @@
 {% block body %}
 <div class="auth-container">
   <h1>Login</h1>
-  <form class="auth-form" method="POST" action="{{ url_for('auth.login') }}">
+  
+  <!-- If ?registered=1 is in the URL, show a success message -->
+  {% if request.args.get('registered') == '1' %}
+    <p style="color: #4caf50; text-align: center;">
+      Registration successful! Your wallet has been created. Please log in.
+    </p>
+  {% endif %}
+  
+  <form id="login-form" class="auth-form" method="POST">
     <input 
       type="text" 
       name="mobile_number" 
@@ -12,7 +20,6 @@
       class="input-field"
       required
     />
-
     <input 
       type="password" 
       name="password" 
@@ -20,7 +27,6 @@
       class="input-field"
       required
     />
-
     <button type="submit" class="btn btn-primary">Login</button>
   </form>
   
@@ -29,4 +35,7 @@
     <a href="{{ url_for('auth.register_form') }}" class="auth-link">Register here</a>
   </div>
 </div>
+
+<!-- Link to the external login.js file -->
+<script src="{{ url_for('static', filename='js/login.js') }}"></script>
 {% endblock %}

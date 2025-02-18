@@ -18,49 +18,62 @@ def login_form():
 # Registration Route (can accept form data as well as JSON)
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    # If the request is coming from an HTML form, data will be in request.form
+    # Get data from form (or JSON)
     data = request.form if request.form else request.get_json()
 
     # Validate input
-    if not data.get('mobile_number') or not data.get('full_name') or not data.get('password'):
-        return jsonify({"error": "Mobile number, full name, and password are required"}), 400
+    if not data.get('mobile_number') or not data.get('first_name') or not data.get('password'):
+        return jsonify({"error": "Mobile number, first name, and password are required"}), 400
 
-    # Check if the user already exists
+    # Check if the user already exists (active user)
     if User.query.filter_by(mobile_number=data['mobile_number'], is_active=True).first():
         return jsonify({"error": "User already exists"}), 400
 
-    # Create a new user using the provided data
+    # Create the new user
     new_user = User(
         mobile_number=data['mobile_number'],
-        full_name=data['full_name'],
+        first_name=data['first_name'],
+        last_name=data.get('last_name'),
         country=data.get('country'),
         identity_verified=data.get('identity_verified', False)
     )
-    
-    # Hash and store the password using the model's setter
-    new_user.password = data['password']
+    new_user.password = data['password']  # Using the model's password setter
 
-    db.session.add(new_user)
-    db.session.commit()
+    try:
+        db.session.add(new_user)
+        db.session.commit()
+        print(f"User created with ID: {new_user.id}")
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error creating user: {e}")
+        return jsonify({"error": f"User creation failed: {e}"}), 500
 
-    # Auto-create a wallet for the new user
-    new_wallet = Wallet(user_id=new_user.id, balance=0.0, currency="RWF")
-    db.session.add(new_wallet)
-    db.session.commit()
+    # Now, automatically create a wallet for the new user
+    try:
+        new_wallet = Wallet(user_id=new_user.id, balance=0.0, currency="RWF")
+        db.session.add(new_wallet)
+        db.session.commit()
+        print(f"Wallet created for user {new_user.id} with balance {new_wallet.balance} {new_wallet.currency}")
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error creating wallet: {e}")
+        return jsonify({"error": f"Wallet creation failed: {e}"}), 500
 
-    # Check if the request is a form submission (HTML) or JSON request
+    # For HTML form submissions, redirect to the login form with a registration success message
     if request.form:
-        # For HTML form submission, redirect to login page after registration
-        return redirect(url_for('auth.login_form'))
+        return redirect(url_for('auth.login_form', registered='1'))
     else:
-        # For JSON API request, return the user data
+        # For JSON API requests, return a confirmation message along with the user data
         return jsonify({
+            "message": "User registered successfully and wallet created.",
             "id": new_user.id,
             "mobile_number": new_user.mobile_number,
-            "full_name": new_user.full_name,
+            "first_name": new_user.first_name,
+            "last_name": new_user.last_name,
             "country": new_user.country,
             "identity_verified": new_user.identity_verified
         }), 201
+
 
 # Login Route (handles both form and JSON)
 @auth_bp.route('/login', methods=['POST'])

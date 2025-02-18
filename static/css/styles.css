@@ -1,4 +1,4 @@
-/* Import a clean, modern font */
+/* Optional: Import a clean, modern font */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
 
 /* Reset defaults */
@@ -14,8 +14,8 @@ body {
   background: linear-gradient(120deg, #1c1c3a 0%, #212141 100%);
   color: #ffffff;
   min-height: 100vh;
-  
-  /* For auth pages, we center the content */
+
+  /* For auth pages, center the content */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -40,38 +40,93 @@ body {
   margin-bottom: 20px;
 }
 
+/* The container for the dashboard */
+.dashboard-container {
+  background-color: rgba(45, 47, 74, 0.9);
+  width: 400px;
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  text-align: center;
+}
+
+
+/* Dashboard Title */
+.dashboard-container h1 {
+  font-size: 1.8rem;
+  margin-bottom: 20px;
+}
+
+/* Section Titles (e.g., "Your Profile", "Your Wallet") */
+.dashboard-container h2 {
+  font-size: 1.2rem;
+  margin-top: 20px;
+  margin-bottom: 10px;
+}
+
+/* Profile and wallet info */
+.dashboard-container p {
+  margin: 4px 0;
+}
+
+/* Logout Button */
+#logout-button {
+  margin-top: 20px;
+  padding: 12px 24px;
+  font-size: 1rem;
+  font-weight: 600;
+  background-color: #2962ff;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+#logout-button:hover {
+  background-color: #1b47cc;
+}
+
 /* Form styles for auth pages */
 .auth-form {
   display: flex;
   flex-direction: column;
 }
 
-/* Input Fields */
+/* ------------------ */
+/* INPUT FIELDS       */
+/* ------------------ */
+/* 
+   - Dark background (#0d1117)
+   - Subtle border (#30363d)
+   - Blue highlight (#0366d6) on focus
+*/
 .input-field {
   padding: 12px;
   font-size: 14px;
-  border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   outline: none;
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: #0d1117;  /* Dark background for inputs */
+  border: 1px solid #30363d;  /* Subtle gray border */
   color: #ffffff;
   margin-bottom: 16px;
-  transition: background-color 0.3s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
   text-align: left;
 }
 
 .input-field::placeholder {
-  color: #aaa;
+  color: #8b949e; /*placeholder color */
 }
 
+/* Focus state: blue border + subtle box-shadow */
 .input-field:focus {
-  background-color: rgba(255, 255, 255, 0.2);
+  border-color: #0366d6;
+  box-shadow: 0 0 0 1px #0366d6;
 }
 
 /* ------------------ */
-/* Button Styles      */
+/* BUTTON STYLES      */
 /* ------------------ */
-/* Base button styling */
 .btn {
   padding: 12px;
   font-size: 15px;
@@ -86,26 +141,26 @@ body {
 
 /* Primary Button: Dark Green */
 .btn-primary {
-  background-color: #2e7d32;
+  background-color: #2e7d32; /* Dark green */
   color: #fff;
 }
 
 .btn-primary:hover {
-  background-color: #1b5e20;
+  background-color: #1b5e20; /* Even darker green */
 }
 
 /* Secondary Button: Light Blue */
 .btn-secondary {
-  background-color: #29b6f6;
+  background-color: #74e1f083;
   color: #fff;
 }
 
 .btn-secondary:hover {
-  background-color: #0288d1;
+  background-color: #74e1f083;
 }
 
 /* ------------------ */
-/* Auth Link & Note   */
+/* AUTH LINK & NOTE   */
 /* ------------------ */
 .auth-note {
   font-size: 0.9rem;
@@ -130,7 +185,7 @@ a {
 }
 
 /* --------------------- */
-/* Home Page Container   */
+/* HOME PAGE CONTAINER   */
 /* --------------------- */
 .home-container {
   text-align: center;
@@ -164,5 +219,3 @@ a {
   gap: 20px;
   justify-content: center;
 }
-
-/* Reusing our btn styles for home page buttons */

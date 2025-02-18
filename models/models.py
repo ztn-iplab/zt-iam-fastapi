@@ -11,7 +11,8 @@ class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
     mobile_number = db.Column(db.String(20), unique=True, nullable=False)
-    full_name = db.Column(db.String(100), nullable=False)
+    first_name = db.Column(db.String(50), nullable=False)
+    last_name = db.Column(db.String(50), nullable=True)#Some people have one name
     identity_verified = db.Column(db.Boolean, default=False)
     country = db.Column(db.String(50))
     trust_score = db.Column(db.Float, default=0.5)  # Score between 0 (low) and 1 (high)

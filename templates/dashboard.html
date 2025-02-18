@@ -1,26 +1,25 @@
 {% extends "base.html" %}
-
 {% block title %}Dashboard{% endblock %}
 
 {% block body %}
-<div class="container">
-  <h1>Dashboard</h1>
-  <p>Welcome, {{ user.full_name }}!</p>
+<div class="dashboard-container">
+  <h1 id="welcome-title">Loading...</h1>
   
-  <div class="profile">
-    <h2>Your Profile</h2>
-    <p><strong>Mobile Number:</strong> {{ user.mobile_number }}</p>
-    <p><strong>Country:</strong> {{ user.country }}</p>
-    <p><strong>Trust Score:</strong> {{ user.trust_score }}</p>
-  </div>
+  <h2>Your Profile</h2>
+  <p>Full Name: <span id="full-name">Loading...</span></p>
+  <p>Mobile Number: <span id="mobile-number">Loading...</span></p>
+  <p>Country: <span id="country">Loading...</span></p>
+  <p>Trust Score: <span id="trust-score">Loading...</span></p>
   
-  <div class="wallet">
-    <h2>Your Wallet</h2>
-    {% if user.wallet %}
-      <p><strong>Balance:</strong> {{ user.wallet.balance }} {{ user.wallet.currency }}</p>
-    {% else %}
-      <p>No wallet found.</p>
-    {% endif %}
-  </div>
+  <h2>Your Wallet</h2>
+  <p>
+    Balance: <span id="wallet-balance">Loading...</span>
+    <span id="wallet-currency"></span>
+  </p>
+  
+  <button id="logout-button" class="btn btn-secondary">Logout</button>
 </div>
+
+<!-- Link to your external dashboard.js file -->
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}

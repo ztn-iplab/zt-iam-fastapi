@@ -9,11 +9,11 @@ user_bp = Blueprint('user', __name__)
 def create_user():
     # User creation logic
     data = request.get_json()
-    if not data.get('mobile_number') or not data.get('full_name'):
-        return jsonify({"error": "Mobile number and full name are required"}), 400
+    if not data.get('mobile_number') or not data.get('first_name'):
+        return jsonify({"error": "Mobile number and first name are required"}), 400
     new_user = User(
         mobile_number=data['mobile_number'],
-        full_name=data['full_name'],
+        full_name=data['first_name'],
         country=data.get('country'),
         identity_verified=data.get('identity_verified', False)
     )
@@ -22,12 +22,13 @@ def create_user():
     return jsonify({
         "id": new_user.id,
         "mobile_number": new_user.mobile_number,
-        "full_name": new_user.full_name,
+        "first_name": new_user.first_name,
         "country": new_user.country,
         "identity_verified": new_user.identity_verified
     }), 201
 
 # Get the current user details
+# Get the current user details (including wallet data)
 @user_bp.route('/user', methods=['GET'])
 @jwt_required()
 def get_user():
@@ -36,16 +37,26 @@ def get_user():
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
-    return jsonify({
+    user_data = {
         "id": user.id,
         "mobile_number": user.mobile_number,
-        "full_name": user.full_name,
+        "first_name": user.first_name,
         "country": user.country,
         "identity_verified": user.identity_verified,
         "trust_score": user.trust_score,
         "last_login": user.last_login.isoformat() if user.last_login else None,
-        "created_at": user.created_at.isoformat() if user.created_at else None
-    }), 200
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "wallet": None
+    }
+    if user.wallet:
+        user_data["wallet"] = {
+            "balance": user.wallet.balance,
+            "currency": user.wallet.currency,
+            "last_transaction_at": user.wallet.last_transaction_at.isoformat() if user.wallet.last_transaction_at else None
+        }
+
+    return jsonify(user_data), 200
+
 
 # Update the current user details
 @user_bp.route('/user', methods=['PUT'])
@@ -57,8 +68,8 @@ def update_user():
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
-    if 'full_name' in data:
-        user.full_name = data['full_name']
+    if 'first_name' in data:
+        user.first_name = data['first_name']
     if 'country' in data:
         user.country = data['country']
     if 'identity_verified' in data:
@@ -96,7 +107,7 @@ def profile():
     return jsonify({
         "id": user.id,
         "mobile_number": user.mobile_number,
-        "full_name": user.full_name,
+        "first_name": user.first_name,
         "country": user.country,
         "identity_verified": user.identity_verified
     }), 200

@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models.models import db, User
 
+
 user_bp = Blueprint('user', __name__)
 #Create User
 @user_bp.route('/users', methods=['POST'])
@@ -111,3 +112,22 @@ def profile():
         "country": user.country,
         "identity_verified": user.identity_verified
     }), 200
+
+@user_bp.route('/user/request_deletion', methods=['POST'])
+@jwt_required()
+def request_deletion():
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Option 1: If you have a deletion_requested column in the User model:
+    # user.deletion_requested = True
+    # db.session.commit()
+
+    # Option 2: Log the request or send an email to admin (for simulation, we'll return a success message)
+    # For now, we simply return a message.
+    return jsonify({"message": "Your account deletion request has been submitted. An administrator will review your request shortly."}), 200
+
+
+    

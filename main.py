@@ -8,6 +8,9 @@ from routes.auth import auth_bp
 from routes.user_routes import user_bp
 from routes.wallet_routes import wallet_bp
 from routes.transaction_routes import transaction_bp
+from routes.settings_routes import settings_bp
+
+
 
 app = Flask(__name__)
 app.config.from_object(Config)  # Load configuration from config.py
@@ -20,6 +23,8 @@ app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(wallet_bp, url_prefix='/api')
 app.register_blueprint(transaction_bp, url_prefix='/api')
+app.register_blueprint(settings_bp, url_prefix='/api')
+
 
 # Initialize the database and migrations
 db.init_app(app)
@@ -33,6 +38,10 @@ def index():
     Landing page displaying the combined login/registration form.
     """
     return render_template('index.html')
+    
+@app.route('/profile')
+def profile():
+    return render_template('profile.html')
 
 @app.route('/dashboard')
 def dashboard():

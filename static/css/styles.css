@@ -297,6 +297,7 @@ a {
   background-color: var(--card-bg);
 }
 
+
 /* Titles for wallet/transactions widgets */
 .wallet-widget h2,
 .transactions-widget h2 {

@@ -3,7 +3,6 @@
 
 {% block body %}
 <div class="dashboard-layout">
-  
   <!-- Sidebar Navigation -->
   <aside class="sidebar">
     <div class="sidebar-header">
@@ -11,10 +10,9 @@
     </div>
     <nav>
       <ul class="sidebar-menu">
-        <!-- We use links that do not navigate away but trigger JS to show/hide sections -->
         <li><a href="#" id="show-overview-link">Overview</a></li>
         <li><a href="#" id="show-transactions-link">Transactions</a></li>
-        <li><a href="/api/user/profile">Profile</a></li>
+        <li><a href="#" id="show-profile-link">Profile</a></li>
         <li><a href="/settings">Settings</a></li>
         <li><a href="#" id="logout-link">Logout</a></li>
       </ul>
@@ -38,40 +36,72 @@
         <div class="top-bar-icon" title="Help">
           <i class="fas fa-question-circle"></i>
         </div>
-        <div class="top-bar-avatar" title="Your Profile">
-          <i class="fas fa-user-circle"></i>
-        </div>
+        <a href="#" id="show-profile-link" title="Your Profile">
+          <div class="top-bar-avatar">
+            <i class="fas fa-user-circle"></i>
+          </div>
+        </a>
       </div>
     </header>
 
-    <!-- SECTION 1: Overview Widgets -->
-    <section class="widgets" id="overview-section">
-      <div class="widget wallet-widget">
-        <h2>Your Wallet</h2>
-        <p>Balance: <span id="wallet-balance">Loading...</span></p>
-        <p>Currency: <span id="wallet-currency">Loading...</span></p>
+    <!-- Content Sections -->
+    <section id="content-overview" class="content-section">
+      <!-- Overview Section: Wallet info + Chart -->
+      <div class="widgets">
+        <div class="widget wallet-widget">
+          <h2>Your Wallet</h2>
+          <p>Balance: <span id="wallet-balance">Loading...</span></p>
+          <p>Currency: <span id="wallet-currency">Loading...</span></p>
+        </div>
+        <div class="widget chart-widget">
+          <h2>Transaction Overview</h2>
+          <label for="aggregation-type">Aggregate by:</label>
+          <select id="aggregation-type">
+            <option value="daily" selected>Daily Totals</option>
+            <option value="monthly">Monthly Summaries</option>
+          </select>
+          <canvas id="transactionChart"></canvas>
+        </div>
       </div>
-      <!-- You could add more overview widgets here if needed -->
     </section>
 
-    <!-- SECTION 2: Transactions -->
-    <section class="widgets" id="transactions-section" style="display: none;">
-      <div class="widget transactions-widget" style="flex: 1 1 100%;">
-        <h2>Transactions</h2>
-        
-        <!-- Transaction Form -->
-        <form id="transaction-form" class="transaction-form" style="margin-bottom: 20px;">
-          <input type="number" name="amount" placeholder="Amount" class="input-field" step="0.01" required />
-          <select name="transaction_type" class="input-field" required>
-            <option value="">Select Transaction Type</option>
-            <option value="deposit">Deposit</option>
-            <option value="withdrawal">Withdrawal</option>
-          </select>
-          <button type="submit" class="btn btn-primary">Submit Transaction</button>
-        </form>
+    <section id="content-transactions" class="content-section" style="display: none;">
+      <!-- Transactions Section: Form + History -->
+      <div class="widgets">
+        <div class="widget transactions-widget" style="flex: 1 1 100%;">
+          <h2>Transactions</h2>
+          <form id="transaction-form" class="transaction-form" method="POST">
+            <input type="number" name="amount" placeholder="Amount" class="input-field" step="0.01" required />
+            
+            <select name="transaction_type" id="transaction-type" class="input-field" required>
+              <option value="">Select Transaction Type</option>
+              <option value="deposit">Deposit</option>
+              <option value="withdrawal">Withdrawal</option>
+              <option value="transfer">Transfer</option>
+            </select>
+            
+            <!-- Recipient Mobile: Initially hidden -->
+            <input type="text" name="recipient_mobile" id="recipient-mobile" placeholder="Recipient Mobile Number" class="input-field" style="display:none;" />
+          <!-- Optional: The device info and location are auto-detected -->
+            <button type="submit" class="btn btn-primary">Submit Transaction</button>
+          </form>
+          <h3>Transaction History</h3>
+          <ul id="transaction-history"></ul>
+        </div>
+      </div>
+    </section>
 
-        <h3>Transaction History</h3>
-        <ul id="transaction-history"></ul>
+    <section id="content-profile" class="content-section" style="display: none;">
+      <!-- Profile Section: User Info and Settings -->
+      <div class="widgets">
+        <div class="widget profile-widget">
+          <h2>Your Profile</h2>
+          <p><strong>Name:</strong> <span id="full-name">Loading...</span></p>
+          <p><strong>Mobile Number:</strong> <span id="mobile-number">Loading...</span></p>
+          <p><strong>Country:</strong> <span id="user-country">Loading...</span></p>
+          <p><strong>Trust Score:</strong> <span id="user-trust-score">Loading...</span></p>
+          <!-- Add more profile-related content or settings as needed -->
+        </div>
       </div>
     </section>
 
@@ -82,5 +112,6 @@
   </main>
 </div>
 
+<!-- Include the unified dashboard.js -->
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}

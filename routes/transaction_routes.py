@@ -1,14 +1,28 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.models import db, Transaction, Wallet
+from models.models import db, Transaction, Wallet, User
+import json
+import threading
+import time
 
 transaction_bp = Blueprint('transaction', __name__)
 
-# Create a Transaction & Update Wallet Balance (Only for the Logged-in User)
+def update_transaction_status(app, transaction_id, new_status):
+    """
+    Background function that updates a transaction's status.
+    This function pushes an application context so that Flask-SQLAlchemy can be used.
+    """
+    time.sleep(10)  # Simulated delay (10 seconds)
+    with app.app_context():
+        transaction = Transaction.query.get(transaction_id)
+        if transaction:
+            transaction.status = new_status
+            db.session.commit()
+
 @transaction_bp.route('/transactions', methods=['POST'])
 @jwt_required()
 def create_transaction():
-    logged_in_user = int(get_jwt_identity())  # Cast back to integer
+    logged_in_user = int(get_jwt_identity())  # Get the logged-in user's ID
     data = request.get_json()
 
     # Validate required fields
@@ -25,53 +39,89 @@ def create_transaction():
 
     transaction_type = data['transaction_type'].lower()  # Normalize transaction type
 
-    # Fetch user's wallet
-    wallet = Wallet.query.filter_by(user_id=logged_in_user).first()
-    if not wallet:
+    # Fetch the sender's wallet
+    sender_wallet = Wallet.query.filter_by(user_id=logged_in_user).first()
+    if not sender_wallet:
         return jsonify({"error": "Wallet not found"}), 404
 
-    # Handle different transaction types
+    # Process based on transaction type
     if transaction_type == "deposit":
-        wallet.balance += amount  # Increase balance on deposit
+        sender_wallet.balance += amount
+        status = "completed"
     elif transaction_type in ["withdrawal", "payment"]:
-        if wallet.balance < amount:
+        if sender_wallet.balance < amount:
             return jsonify({"error": "Insufficient funds"}), 400
-        wallet.balance -= amount  # Deduct balance on withdrawal/payment
+        sender_wallet.balance -= amount
+        status = "completed"
+    elif transaction_type == "transfer":
+        recipient_mobile = data.get('recipient_mobile')
+        if not recipient_mobile:
+            return jsonify({"error": "Recipient mobile number is required for transfer"}), 400
+
+        recipient = User.query.filter_by(mobile_number=recipient_mobile, is_active=True).first()
+        if not recipient:
+            return jsonify({"error": "Recipient not found"}), 404
+
+        recipient_wallet = Wallet.query.filter_by(user_id=recipient.id).first()
+        if not recipient_wallet:
+            return jsonify({"error": "Recipient wallet not found"}), 404
+
+        if sender_wallet.balance < amount:
+            return jsonify({"error": "Insufficient funds"}), 400
+
+        sender_wallet.balance -= amount
+        recipient_wallet.balance += amount
+        status = "pending"
     else:
         return jsonify({"error": "Invalid transaction type"}), 400
 
-    # Create the transaction with all fields
+    # Prepare metadata: include recipient info if it's a transfer
+    transaction_metadata = data.get('transaction_metadata', {})
+    if transaction_type == "transfer":
+        transaction_metadata['recipient_mobile'] = recipient_mobile
+        transaction_metadata['recipient_id'] = recipient.id
+    if isinstance(transaction_metadata, dict):
+        transaction_metadata_str = json.dumps(transaction_metadata)
+    else:
+        transaction_metadata_str = transaction_metadata
+
     transaction = Transaction(
-        user_id=logged_in_user,  # Automatically assign to logged-in user
+        user_id=logged_in_user,
         amount=amount,
         transaction_type=transaction_type,
-        status=data.get('status', 'pending'),  # Default to "pending"
+        status=status,
         location=data.get('location'),
         device_info=data.get('device_info'),
-        transaction_metadata=data.get('transaction_metadata'),
-        fraud_flag=data.get('fraud_flag', False),  # Default to False if not provided
-        risk_score=data.get('risk_score', 0)  # Default to 0 if not provided
+        transaction_metadata=transaction_metadata_str,
+        fraud_flag=data.get('fraud_flag', False),
+        risk_score=data.get('risk_score', 0)
     )
 
-    # Explicitly add both wallet and transaction to the session before commit
-    db.session.add(wallet)
     db.session.add(transaction)
     db.session.commit()
+
+    # For transfers, simulate asynchronous verification:
+    # Update status to "completed" after a delay
+    if transaction_type == "transfer":
+        # Get the current app instance so that we can use it in the thread
+        app = current_app._get_current_object()
+        threading.Thread(target=update_transaction_status, args=(app, transaction.id, "completed")).start()
 
     return jsonify({
         "id": transaction.id,
         "user_id": transaction.user_id,
         "amount": transaction.amount,
         "transaction_type": transaction.transaction_type,
-        "status": transaction.status,
+        "status": transaction.status,  # Initially "pending" for transfers
         "timestamp": transaction.timestamp.isoformat() if transaction.timestamp else None,
         "location": transaction.location,
         "device_info": transaction.device_info,
         "fraud_flag": transaction.fraud_flag,
         "risk_score": transaction.risk_score,
         "transaction_metadata": transaction.transaction_metadata,
-        "updated_balance": wallet.balance  # This is just returned in the JSON response
+        "updated_balance": sender_wallet.balance
     }), 201
+
 
 # Get Transactions (Only User-Specific)
 @transaction_bp.route('/transactions', methods=['GET'])

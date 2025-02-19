@@ -1,37 +1,122 @@
 console.log("Dashboard JS loaded");
 
+// ============================
+// Inactivity Timeout Logic
+// ============================
+const INACTIVITY_LIMIT = 15 * 60 * 1000; // 15 minutes in milliseconds
+let lastActivityTime = Date.now();
+function resetActivityTimer() { lastActivityTime = Date.now(); }
+document.addEventListener('mousemove', resetActivityTimer);
+document.addEventListener('keydown', resetActivityTimer);
+document.addEventListener('click', resetActivityTimer);
+document.addEventListener('scroll', resetActivityTimer);
+setInterval(() => {
+  if (Date.now() - lastActivityTime > INACTIVITY_LIMIT) {
+    alert("You've been inactive. Logging out.");
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user_id');
+    window.location.href = '/api/auth/login_form';
+  }
+}, 60000); // check every minute
+
+// ============================
+// Utility Functions
+// ============================
+function getDeviceInfo() {
+  return navigator.userAgent;
+}
+
+function getLocation() {
+  return new Promise((resolve) => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const lat = pos.coords.latitude.toFixed(4);
+          const lon = pos.coords.longitude.toFixed(4);
+          resolve(`${lat}, ${lon}`);
+        },
+        err => {
+          console.error("Geolocation error:", err);
+          resolve("");
+        },
+        { timeout: 5000 }
+      );
+    } else {
+      resolve("");
+    }
+  });
+}
+
+// ============================
+// Toggle Recipient Input for Transfer
+// ============================
+document.addEventListener('DOMContentLoaded', function() {
+  const transactionTypeSelect = document.getElementById('transaction-type');
+  const recipientMobileInput = document.getElementById('recipient-mobile');
+  if (transactionTypeSelect && recipientMobileInput) {
+    transactionTypeSelect.addEventListener('change', function() {
+      if (transactionTypeSelect.value === 'transfer') {
+        recipientMobileInput.style.display = 'block';
+      } else {
+        recipientMobileInput.style.display = 'none';
+      }
+    });
+  }
+});
+
+// ============================
+// Main Dashboard Functionality
+// ============================
 document.addEventListener('DOMContentLoaded', function() {
   const token = localStorage.getItem('access_token');
   if (!token) {
-    window.location.href = '/auth/login_form';
+    window.location.href = '/api/auth/login_form';
     return;
   }
 
-  // DOM Elements
-  const overviewSection = document.getElementById('overview-section');
-  const transactionsSection = document.getElementById('transactions-section');
+  // DOM Elements for section toggling
+  const overviewSection = document.getElementById('content-overview');
+  const transactionsSection = document.getElementById('content-transactions');
+  const profileSection = document.getElementById('content-profile');
   const showOverviewLink = document.getElementById('show-overview-link');
   const showTransactionsLink = document.getElementById('show-transactions-link');
+  const showProfileLink = document.getElementById('show-profile-link');
+  const aggregationSelect = document.getElementById('aggregation-type');
+  let transactionChart; // Chart.js instance
 
-  // 1) Show/hide sections
+  // Section toggling event listeners
   if (showOverviewLink) {
     showOverviewLink.addEventListener('click', function(e) {
       e.preventDefault();
-      overviewSection.style.display = 'flex';    // or block
+      overviewSection.style.display = 'block';
       transactionsSection.style.display = 'none';
+      profileSection.style.display = 'none';
+      fetchUserData();
+      fetchTransactionsForChart();
     });
   }
-
   if (showTransactionsLink) {
     showTransactionsLink.addEventListener('click', function(e) {
       e.preventDefault();
       overviewSection.style.display = 'none';
-      transactionsSection.style.display = 'flex';
-      fetchTransactions(); // load transactions whenever we switch to that section
+      transactionsSection.style.display = 'block';
+      profileSection.style.display = 'none';
+      fetchTransactions();
+    });
+  }
+  if (showProfileLink) {
+    showProfileLink.addEventListener('click', function(e) {
+      e.preventDefault();
+      overviewSection.style.display = 'none';
+      transactionsSection.style.display = 'none';
+      profileSection.style.display = 'block';
+      fetchProfileData();
     });
   }
 
-  // 2) Fetch user data & wallet info
+  // ============================
+  // Fetch User Data (Overview)
+  // ============================
   function fetchUserData() {
     fetch('/api/user', {
       method: 'GET',
@@ -53,12 +138,137 @@ document.addEventListener('DOMContentLoaded', function() {
     })
     .catch(error => {
       console.error("Error fetching user data:", error);
-      alert("Failed to load user data. Please log in again.");
-      window.location.href = '/auth/login_form';
+      alert("Your session has expired due to inactivity. Please log in again.");
+      window.location.href = '/api/auth/login_form';
     });
   }
 
-  // 3) Fetch Transactions
+  // ============================
+  // Fetch Profile Data (Profile Section)
+  // ============================
+  function fetchProfileData() {
+    fetch('/api/user/profile', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    })
+    .then(res => {
+      if (!res.ok) throw new Error('Failed to load profile data');
+      return res.json();
+    })
+    .then(data => {
+      const fullName = data.first_name + (data.last_name ? " " + data.last_name : "");
+      document.getElementById('full-name').textContent = fullName || 'N/A';
+      document.getElementById('mobile-number').textContent = data.mobile_number || 'N/A';
+      document.getElementById('user-country').textContent = data.country || 'N/A';
+      document.getElementById('user-trust-score').textContent = data.trust_score || 'N/A';
+    })
+    .catch(error => {
+      console.error("Error fetching profile data:", error);
+      alert("Your session has expired due to inactivity,Please log in again.");
+      window.location.href = '/api/auth/login_form';
+    });
+  }
+
+  // ============================
+  // Aggregate Transactions for Chart
+  // ============================
+  function aggregateTransactions(data, aggregationType) {
+    const aggregated = {};
+    if (aggregationType === 'daily') {
+      data.forEach(tx => {
+        const dateStr = tx.timestamp.slice(0, 10); // YYYY-MM-DD
+        const amount = parseFloat(tx.amount) * (tx.transaction_type === 'withdrawal' ? -1 : 1);
+        aggregated[dateStr] = (aggregated[dateStr] || 0) + amount;
+      });
+    } else if (aggregationType === 'monthly') {
+      data.forEach(tx => {
+        const dateStr = tx.timestamp.slice(0, 7); // YYYY-MM
+        const amount = parseFloat(tx.amount) * (tx.transaction_type === 'withdrawal' ? -1 : 1);
+        aggregated[dateStr] = (aggregated[dateStr] || 0) + amount;
+      });
+    }
+    const labels = Object.keys(aggregated).sort();
+    const amounts = labels.map(date => aggregated[date]);
+    return { labels, amounts };
+  }
+
+  // ============================
+  // Fetch Transactions for Chart
+  // ============================
+  function fetchTransactionsForChart() {
+    fetch('/api/transactions', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    })
+    .then(res => {
+      if (!res.ok) throw new Error('Failed to load transactions');
+      return res.json();
+    })
+    .then(data => {
+      const aggregationType = aggregationSelect.value; // "daily" or "monthly"
+      const aggregatedData = aggregateTransactions(data, aggregationType);
+      renderTransactionChart(aggregatedData.labels, aggregatedData.amounts);
+    })
+    .catch(error => {
+      console.error("Error fetching transactions for chart:", error);
+    });
+  }
+
+  // ============================
+  // Render Chart using Chart.js
+  // ============================
+  function renderTransactionChart(labels, data) {
+    const ctx = document.getElementById('transactionChart').getContext('2d');
+    if (transactionChart) {
+      transactionChart.destroy();
+    }
+    transactionChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Net Transaction Amount',
+          data: data,
+          backgroundColor: 'rgba(41, 98, 255, 0.2)',
+          borderColor: '#2962ff',
+          borderWidth: 2,
+          fill: true
+        }]
+      },
+      options: {
+        scales: {
+          x: {
+            title: { display: true, text: 'Date', color: '#ffffff' },
+            ticks: { color: '#ffffff' },
+            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+          },
+          y: {
+            title: { display: true, text: 'Net Amount', color: '#ffffff' },
+            ticks: { color: '#ffffff' },
+            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+          }
+        },
+        plugins: {
+          legend: {
+            labels: {
+              font: { family: 'Inter' },
+              color: '#ffffff'
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // ============================
+  // Fetch Transaction History (Transactions Section)
+  // ============================
   function fetchTransactions() {
     fetch('/api/transactions', {
       method: 'GET',
@@ -85,43 +295,71 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // 4) Transaction Form
-  const transactionForm = document.getElementById('transaction-form');
-  if (transactionForm) {
-    transactionForm.addEventListener('submit', function(e) {
-      e.preventDefault();
-      const amount = parseFloat(e.target.amount.value);
-      const transaction_type = e.target.transaction_type.value;
+  // Transaction Form Submission with Transfer Support and Better Error Handling
+const transactionForm = document.getElementById('transaction-form');
+if (transactionForm) {
+  transactionForm.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const amount = parseFloat(e.target.amount.value);
+    const transaction_type = e.target.transaction_type.value;
 
-      fetch('/api/transactions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ amount, transaction_type })
-      })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('Transaction failed');
-        }
-        return response.json();
-      })
-      .then(data => {
-        alert('Transaction successful!');
-        // Refresh wallet info & transactions
-        fetchUserData();
-        fetchTransactions();
-        transactionForm.reset();
-      })
-      .catch(error => {
-        console.error("Error during transaction:", error);
-        alert("Transaction failed. " + error.message);
-      });
+    // For transfers, get the recipient mobile number
+    let recipient_mobile = "";
+    if (transaction_type === 'transfer') {
+      recipient_mobile = e.target.recipient_mobile ? e.target.recipient_mobile.value : "";
+      if (!recipient_mobile) {
+        alert("Please provide a recipient mobile number for transfers.");
+        return;
+      }
+    }
+
+    const device_info = getDeviceInfo();
+    const location = await getLocation();
+
+    // Build payload; include recipient_mobile only if it's a transfer
+    const payload = {
+      amount,
+      transaction_type,
+      device_info,
+      location
+    };
+    if (transaction_type === 'transfer') {
+      payload.recipient_mobile = recipient_mobile;
+    }
+
+    fetch('/api/transactions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    })
+    .then(async response => {
+      // If the response is not OK, try to extract and throw the error message
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Transaction failed');
+      }
+      return response.json();
+    })
+    .then(data => {
+      alert('Transaction successful!');
+      fetchUserData();
+      fetchTransactions();
+      fetchTransactionsForChart();
+      transactionForm.reset();
+    })
+    .catch(error => {
+      console.error("Error during transaction:", error);
+      alert("Transaction failed. " + error.message);
     });
-  }
+  });
+}
 
-  // 5) Logout
+  // ============================
+  // Logout Functionality
+  // ============================
   const logoutLink = document.getElementById('logout-link');
   if (logoutLink) {
     logoutLink.addEventListener('click', function(e) {
@@ -132,8 +370,18 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // Initial load: show overview by default, fetch user data
-  overviewSection.style.display = 'flex';
-  transactionsSection.style.display = 'none';
+  // Update chart when aggregation type changes
+  const aggregationSelectEl = document.getElementById('aggregation-type');
+  if (aggregationSelectEl) {
+    aggregationSelectEl.addEventListener('change', function() {
+      fetchTransactionsForChart();
+    });
+  }
+
+  // Initial load: default to Overview section
+  document.getElementById('content-overview').style.display = 'block';
+  document.getElementById('content-transactions').style.display = 'none';
+  document.getElementById('content-profile').style.display = 'none';
   fetchUserData();
+  fetchTransactionsForChart();
 });

@@ -1,0 +1,52 @@
+{% extends "dashboard_base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+  <h1>Settings</h1>
+  
+  <!-- Update Personal Information -->
+  <div class="settings-section">
+    <h2>Update Personal Information</h2>
+    <form id="personal-info-form" class="settings-form">
+      <div>
+        <label for="country">Country:</label>
+        <input type="text" name="country" id="country" class="input-field" placeholder="Your country" required />
+      </div>
+      <button type="submit" class="btn btn-primary">Update Information</button>
+    </form>
+  </div>
+  
+  <!-- Change Password -->
+  <div class="settings-section">
+    <h2>Change Password</h2>
+    <form id="change-password-form" class="settings-form">
+      <div>
+        <label for="current-password">Current Password:</label>
+        <input type="password" name="current_password" id="current-password" class="input-field" placeholder="Current password" required />
+      </div>
+      <div>
+        <label for="new-password">New Password:</label>
+        <input type="password" name="new_password" id="new-password" class="input-field" placeholder="New password" required />
+      </div>
+      <div>
+        <label for="confirm-password">Confirm New Password:</label>
+        <input type="password" name="confirm_password" id="confirm-password" class="input-field" placeholder="Confirm new password" required />
+      </div>
+      <button type="submit" class="btn btn-primary">Change Password</button>
+    </form>
+  </div>
+  
+  <!-- Account Deletion Request -->
+  <div class="settings-section">
+    <h2>Delete Account</h2>
+    <p>Once you request account deletion, your account will be flagged for review by an administrator. This action is not reversible.</p>
+    <button id="delete-account-button" class="btn btn-secondary">Request Account Deletion</button>
+  </div>
+  
+  <!-- Logout Button (optional if it's already in the sidebar) -->
+  <button id="logout-button" class="btn btn-secondary">Logout</button>
+</div>
+
+<script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+{% endblock %}

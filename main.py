@@ -67,7 +67,7 @@ def not_found_error(error):
 #@jwt_required()  # Optional: you can also check the token in your JS
 def transactions_dashboard():
     # This renders an HTML page; the JS on that page will fetch the data from /api/transactions.
-    return render_template('transactions_dashboard.html')
+    return render_template('dashboard.html')
 
 # Application Startup
 

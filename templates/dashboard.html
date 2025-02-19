@@ -1,21 +1,19 @@
-<!-- dashboard.html -->
-
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
 
 {% block body %}
-<!-- 1) The outer container for the entire dashboard -->
 <div class="dashboard-layout">
-
-  <!-- 2) The left sidebar -->
+  
+  <!-- Sidebar Navigation -->
   <aside class="sidebar">
     <div class="sidebar-header">
       <h2 class="app-brand">ZTN SIMULATION</h2>
     </div>
     <nav>
       <ul class="sidebar-menu">
-        <li><a href="/dashboard">Dashboard Home</a></li>
-        <li><a href="/transactions_dashboard">Transactions</a></li>
+        <!-- We use links that do not navigate away but trigger JS to show/hide sections -->
+        <li><a href="#" id="show-overview-link">Overview</a></li>
+        <li><a href="#" id="show-transactions-link">Transactions</a></li>
         <li><a href="/api/user/profile">Profile</a></li>
         <li><a href="/settings">Settings</a></li>
         <li><a href="#" id="logout-link">Logout</a></li>
@@ -23,10 +21,9 @@
     </nav>
   </aside>
 
-  <!-- 3) The main content area on the right -->
+  <!-- Main Content Area -->
   <main class="main-content">
-
-    <!-- The top bar at the top of main content -->
+    <!-- Top Bar -->
     <header class="top-bar">
       <div class="top-bar-left">
         <h1 id="welcome-title">Welcome, User!</h1>
@@ -47,22 +44,38 @@
       </div>
     </header>
 
-    <!-- A section for widgets (wallet, transactions, etc.) -->
-    <section class="widgets">
+    <!-- SECTION 1: Overview Widgets -->
+    <section class="widgets" id="overview-section">
       <div class="widget wallet-widget">
         <h2>Your Wallet</h2>
         <p>Balance: <span id="wallet-balance">Loading...</span></p>
         <p>Currency: <span id="wallet-currency">Loading...</span></p>
       </div>
-      <div class="widget transactions-widget">
-        <h2>Recent Transactions</h2>
-        <ul id="transaction-history">
-          <!-- Transaction items will be appended here --> 
-        </ul>
+      <!-- You could add more overview widgets here if needed -->
+    </section>
+
+    <!-- SECTION 2: Transactions -->
+    <section class="widgets" id="transactions-section" style="display: none;">
+      <div class="widget transactions-widget" style="flex: 1 1 100%;">
+        <h2>Transactions</h2>
+        
+        <!-- Transaction Form -->
+        <form id="transaction-form" class="transaction-form" style="margin-bottom: 20px;">
+          <input type="number" name="amount" placeholder="Amount" class="input-field" step="0.01" required />
+          <select name="transaction_type" class="input-field" required>
+            <option value="">Select Transaction Type</option>
+            <option value="deposit">Deposit</option>
+            <option value="withdrawal">Withdrawal</option>
+          </select>
+          <button type="submit" class="btn btn-primary">Submit Transaction</button>
+        </form>
+
+        <h3>Transaction History</h3>
+        <ul id="transaction-history"></ul>
       </div>
     </section>
 
-    <!-- Footer at the bottom of main content -->
+    <!-- Footer -->
     <footer class="footer">
       <p>© 2025 ZTN Simulation. All rights reserved.</p>
     </footer>

@@ -1,16 +1,37 @@
 console.log("Dashboard JS loaded");
 
 document.addEventListener('DOMContentLoaded', function() {
-  // Retrieve the JWT token from localStorage
   const token = localStorage.getItem('access_token');
   if (!token) {
     window.location.href = '/auth/login_form';
     return;
   }
 
-  // -------------------------------
-  // Fetch User Data (including wallet info)
-  // -------------------------------
+  // DOM Elements
+  const overviewSection = document.getElementById('overview-section');
+  const transactionsSection = document.getElementById('transactions-section');
+  const showOverviewLink = document.getElementById('show-overview-link');
+  const showTransactionsLink = document.getElementById('show-transactions-link');
+
+  // 1) Show/hide sections
+  if (showOverviewLink) {
+    showOverviewLink.addEventListener('click', function(e) {
+      e.preventDefault();
+      overviewSection.style.display = 'flex';    // or block
+      transactionsSection.style.display = 'none';
+    });
+  }
+
+  if (showTransactionsLink) {
+    showTransactionsLink.addEventListener('click', function(e) {
+      e.preventDefault();
+      overviewSection.style.display = 'none';
+      transactionsSection.style.display = 'flex';
+      fetchTransactions(); // load transactions whenever we switch to that section
+    });
+  }
+
+  // 2) Fetch user data & wallet info
   function fetchUserData() {
     fetch('/api/user', {
       method: 'GET',
@@ -19,29 +40,15 @@ document.addEventListener('DOMContentLoaded', function() {
         'Authorization': `Bearer ${token}`
       }
     })
-    .then(response => {
-      if (!response.ok) {
-        throw new Error('Failed to load user data');
-      }
-      return response.json();
+    .then(res => {
+      if (!res.ok) throw new Error('Failed to load user data');
+      return res.json();
     })
     .then(data => {
-      // Update the welcome message using only the first name
       document.getElementById('welcome-title').textContent = `Welcome, ${data.first_name || 'User'}!`;
-
-      // Combine first name and last name for full name display in profile (if an element exists)
-      const fullName = data.first_name + (data.last_name ? " " + data.last_name : "");
-      const fullNameElem = document.getElementById('full-name');
-      if (fullNameElem) {
-        fullNameElem.textContent = fullName || 'N/A';
-      }
-
-      // Update wallet info
       if (data.wallet) {
         document.getElementById('wallet-balance').textContent = data.wallet.balance;
         document.getElementById('wallet-currency').textContent = data.wallet.currency;
-      } else {
-        document.getElementById('wallet-balance').textContent = 'No wallet found';
       }
     })
     .catch(error => {
@@ -51,9 +58,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // -------------------------------
-  // Fetch Transactions History
-  // -------------------------------
+  // 3) Fetch Transactions
   function fetchTransactions() {
     fetch('/api/transactions', {
       method: 'GET',
@@ -62,15 +67,13 @@ document.addEventListener('DOMContentLoaded', function() {
         'Authorization': `Bearer ${token}`
       }
     })
-    .then(response => {
-      if (!response.ok) {
-        throw new Error('Failed to load transactions');
-      }
-      return response.json();
+    .then(res => {
+      if (!res.ok) throw new Error('Failed to load transactions');
+      return res.json();
     })
     .then(data => {
       const historyList = document.getElementById('transaction-history');
-      historyList.innerHTML = ''; // Clear any existing list items
+      historyList.innerHTML = '';
       data.forEach(tx => {
         const li = document.createElement('li');
         li.textContent = `${tx.transaction_type.toUpperCase()} of ${tx.amount} on ${tx.timestamp}`;
@@ -82,17 +85,55 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // Initial load of user data and transactions
-  fetchUserData();
-  fetchTransactions();
+  // 4) Transaction Form
+  const transactionForm = document.getElementById('transaction-form');
+  if (transactionForm) {
+    transactionForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      const amount = parseFloat(e.target.amount.value);
+      const transaction_type = e.target.transaction_type.value;
 
-  // -------------------------------
-  // Logout Functionality
-  // -------------------------------
-  document.getElementById('logout-link').addEventListener('click', function(e) {
-    e.preventDefault();
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('user_id');
-    window.location.href = '/';
-  });
+      fetch('/api/transactions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ amount, transaction_type })
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Transaction failed');
+        }
+        return response.json();
+      })
+      .then(data => {
+        alert('Transaction successful!');
+        // Refresh wallet info & transactions
+        fetchUserData();
+        fetchTransactions();
+        transactionForm.reset();
+      })
+      .catch(error => {
+        console.error("Error during transaction:", error);
+        alert("Transaction failed. " + error.message);
+      });
+    });
+  }
+
+  // 5) Logout
+  const logoutLink = document.getElementById('logout-link');
+  if (logoutLink) {
+    logoutLink.addEventListener('click', function(e) {
+      e.preventDefault();
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user_id');
+      window.location.href = '/';
+    });
+  }
+
+  // Initial load: show overview by default, fetch user data
+  overviewSection.style.display = 'flex';
+  transactionsSection.style.display = 'none';
+  fetchUserData();
 });

@@ -2,54 +2,41 @@
 {% block title %}Transactions Dashboard{% endblock %}
 
 {% block body %}
-<div class="dashboard-container">
+<div class="transactions-container">
   <h1>Transactions</h1>
-  <ul id="transaction-history">
-    <!-- Transactions will be loaded here -->
-  </ul>
+  
+  <!-- Transaction Form -->
+  <form id="transaction-form" class="transaction-form" method="POST">
+    <input type="number" name="amount" placeholder="Amount" class="input-field" step="0.01" required />
+    <select name="transaction_type" class="input-field" required>
+      <option value="">Select Transaction Type</option>
+      <option value="deposit">Deposit</option>
+      <option value="withdrawal">Withdrawal</option>
+    </select>
+    <button type="submit" class="btn btn-primary">Submit Transaction</button>
+  </form>
+
+  <!-- Wallet Information -->
+  <div class="wallet-info">
+    <h2>Your Wallet</h2>
+    <p>Balance: <span id="wallet-balance">Loading...</span></p>
+    <p>Currency: <span id="wallet-currency">Loading...</span></p>
+  </div>
+
+  <!-- Transaction History -->
+  <div class="transactions-list">
+    <h2>Transaction History</h2>
+    <ul id="transaction-history">
+      <!-- Transaction items will be loaded here via JS -->
+    </ul>
+  </div>
+  
+  <!-- Back Button -->
   <button id="back-to-dashboard" class="btn btn-secondary">Back to Dashboard</button>
+  
+  <!-- Logout Button -->
+  <button id="logout-button" class="btn btn-secondary">Logout</button>
 </div>
 
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-      window.location.href = '/auth/login_form';
-      return;
-    }
-
-    // Fetch transactions with the Authorization header
-    fetch('/api/transactions', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
-    })
-    .then(response => {
-      if (!response.ok) {
-        throw new Error('Failed to load transactions');
-      }
-      return response.json();
-    })
-    .then(data => {
-      const historyList = document.getElementById('transaction-history');
-      historyList.innerHTML = ''; // Clear any existing content
-      data.forEach(tx => {
-        const li = document.createElement('li');
-        li.textContent = `${tx.transaction_type.toUpperCase()} of ${tx.amount} on ${tx.timestamp}`;
-        historyList.appendChild(li);
-      });
-    })
-    .catch(error => {
-      console.error("Error fetching transactions:", error);
-      alert("Error loading transactions. Please try again.");
-    });
-
-    // Back button functionality
-    document.getElementById('back-to-dashboard').addEventListener('click', function() {
-      window.location.href = '/dashboard';
-    });
-  });
-</script>
+<script src="{{ url_for('static', filename='js/transactions.js') }}"></script>
 {% endblock %}

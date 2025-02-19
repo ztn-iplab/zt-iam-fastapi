@@ -64,7 +64,7 @@ def not_found_error(error):
     return jsonify({"error": "Resource not found."}), 404
 
 @app.route('/transactions_dashboard')
-@jwt_required()  # Optional: you can also check the token in your JS
+#@jwt_required()  # Optional: you can also check the token in your JS
 def transactions_dashboard():
     # This renders an HTML page; the JS on that page will fetch the data from /api/transactions.
     return render_template('transactions_dashboard.html')

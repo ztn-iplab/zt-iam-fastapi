@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.models import db, User
+from models.models import db, User,UserAccessControl, UserRole
+from utils.decorators import role_required
 
 
 user_bp = Blueprint('user', __name__)
@@ -29,7 +30,6 @@ def create_user():
     }), 201
 
 # Get the current user details
-# Get the current user details (including wallet data)
 @user_bp.route('/user', methods=['GET'])
 @jwt_required()
 def get_user():
@@ -38,25 +38,33 @@ def get_user():
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
+    # Check the user's role
+    role = "user"  # Default role
+    if user.user_access_control:  
+        user_role = UserRole.query.get(user.user_access_control.role_id)
+        if user_role:
+            role = user_role.role_name  # 'admin', 'agent', or 'user'
+
     user_data = {
         "id": user.id,
         "mobile_number": user.mobile_number,
         "first_name": user.first_name,
+        "email": user.email,
         "country": user.country,
         "identity_verified": user.identity_verified,
         "trust_score": user.trust_score,
         "last_login": user.last_login.isoformat() if user.last_login else None,
         "created_at": user.created_at.isoformat() if user.created_at else None,
-        "wallet": None
-    }
-    if user.wallet:
-        user_data["wallet"] = {
+        "role": role,
+        "wallet": None if role == "admin" else {
             "balance": user.wallet.balance,
             "currency": user.wallet.currency,
             "last_transaction_at": user.wallet.last_transaction_at.isoformat() if user.wallet.last_transaction_at else None
         }
+    }
 
     return jsonify(user_data), 200
+
 
 
 # Update the current user details

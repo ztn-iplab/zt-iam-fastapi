@@ -9,27 +9,32 @@ from werkzeug.security import generate_password_hash
 # 📌 User Model (Identity Management)
 class User(db.Model):
     __tablename__ = 'users'
+    
     id = db.Column(db.Integer, primary_key=True)
     mobile_number = db.Column(db.String(20), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)  # New email field
     first_name = db.Column(db.String(50), nullable=False)
-    last_name = db.Column(db.String(50), nullable=True)#Some people have one name
+    last_name = db.Column(db.String(50), nullable=True)  # Some people have one name
     identity_verified = db.Column(db.Boolean, default=False)
     country = db.Column(db.String(50))
     trust_score = db.Column(db.Float, default=0.5)  # Score between 0 (low) and 1 (high)
     last_login = db.Column(db.DateTime, nullable=True, default=db.func.current_timestamp())
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     password_hash = db.Column(db.String(255), nullable=False)
-
-    # New field for soft delete
-    is_active = db.Column(db.Boolean, default=True)
-
-# Relationships
+    
+    # New fields for account management
+    is_active = db.Column(db.Boolean, default=True)      # For soft delete
+    deletion_requested = db.Column(db.Boolean, default=False)  # For deletion request
+    
+    # Relationships
+    user_access_control = db.relationship('UserAccessControl', backref='user', uselist=False)
     auth_logs = db.relationship('UserAuthLog', backref='user', lazy=True)
     transactions = db.relationship('Transaction', backref='user', lazy=True)
     sim_cards = db.relationship('SIMRegistration', backref='user', lazy=True)
     wallet = db.relationship('Wallet', backref='user', uselist=False)  # One-to-One
+     
 
-# password setter and getter
+    # Password setter and getter
     @property
     def password(self):
         raise AttributeError("Password is not readable")

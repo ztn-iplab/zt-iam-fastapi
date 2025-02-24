@@ -9,7 +9,8 @@ from routes.user_routes import user_bp
 from routes.wallet_routes import wallet_bp
 from routes.transaction_routes import transaction_bp
 from routes.settings_routes import settings_bp
-
+from routes.roles_routes import roles_bp
+from routes.admin_routes import admin_bp
 
 
 app = Flask(__name__)
@@ -24,7 +25,8 @@ app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(wallet_bp, url_prefix='/api')
 app.register_blueprint(transaction_bp, url_prefix='/api')
 app.register_blueprint(settings_bp, url_prefix='/api')
-
+app.register_blueprint(roles_bp, url_prefix='/api')
+app.register_blueprint(admin_bp,url_prefix='/api')
 
 # Initialize the database and migrations
 db.init_app(app)

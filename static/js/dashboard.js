@@ -20,8 +20,166 @@ setInterval(() => {
 }, 60000); // check every minute
 
 // ============================
+// Check the Admin Access
+// ============================
+
+function checkAdminAccess() {
+  const token = localStorage.getItem("access_token");
+  if (!token) return;
+
+  fetch("/api/user", {
+      method: "GET",
+      headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+      }
+  })
+  .then(res => res.json())
+  .then(data => {
+      if (data.role === "admin" || data.role === "agent") {
+          document.getElementById("admin-panel").style.display = "block";
+          fetchUsersForAdmin();
+          fetchFlaggedTransactions();
+      }
+  })
+  .catch(error => console.error("Error checking admin access:", error));
+}
+
+// Call the function when dashboard loads
+document.addEventListener("DOMContentLoaded", function() {
+  checkAdminAccess();
+});
+
+
+// Fetch Users & Display in Admin Panel
+function fetchUsersForAdmin() {
+    const token = localStorage.getItem("access_token");
+
+    fetch("/api/admin/users", {
+        method: "GET",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        }
+    })
+    .then(res => res.json())
+    .then(users => {
+        const userList = document.getElementById("admin-user-list");
+        userList.innerHTML = ""; // Clear previous content
+
+        users.forEach(user => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td>${user.id}</td>
+                <td>${user.first_name} ${user.last_name || ""}</td>
+                <td>${user.mobile_number}</td>
+                <td>${user.email}</td>
+                <td>
+                    <select class="role-select" data-user-id="${user.id}">
+                        <option value="user" ${user.role === "user" ? "selected" : ""}>User</option>
+                        <option value="agent" ${user.role === "agent" ? "selected" : ""}>Agent</option>
+                        <option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option>
+                    </select>
+                </td>
+                <td>
+                    <button class="suspend-user" data-user-id="${user.id}">Suspend</button>
+                    <button class="verify-user" data-user-id="${user.id}">Verify</button>
+                </td>
+            `;
+            userList.appendChild(row);
+        });
+
+        // Attach event listeners to role selectors
+        document.querySelectorAll(".role-select").forEach(select => {
+            select.addEventListener("change", function () {
+                updateUserRole(this.dataset.userId, this.value);
+            });
+        });
+
+        // Attach event listeners to suspend buttons
+        document.querySelectorAll(".suspend-user").forEach(button => {
+            button.addEventListener("click", function () {
+                suspendUser(this.dataset.userId);
+            });
+        });
+
+        // Attach event listeners to verify buttons
+        document.querySelectorAll(".verify-user").forEach(button => {
+            button.addEventListener("click", function () {
+                verifyUser(this.dataset.userId);
+            });
+        });
+    })
+    .catch(error => console.error("Error fetching users:", error));
+}
+
+// Function to Update User Role
+function updateUserRole(userId, newRole) {
+    const token = localStorage.getItem("access_token");
+
+    fetch("/api/admin/assign_role", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ user_id: userId, role_id: newRole })
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert("Role updated successfully!");
+        fetchUsersForAdmin(); // Refresh user list
+    })
+    .catch(error => console.error("Error updating role:", error));
+}
+
+// Function to Suspend User
+function suspendUser(userId) {
+    const token = localStorage.getItem("access_token");
+
+    fetch(`/api/admin/suspend_user/${userId}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert("User suspended successfully!");
+        fetchUsersForAdmin();
+    })
+    .catch(error => console.error("Error suspending user:", error));
+}
+
+// Function to Verify User
+function verifyUser(userId) {
+    const token = localStorage.getItem("access_token");
+
+    fetch(`/api/admin/verify_user/${userId}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert("User verified successfully!");
+        fetchUsersForAdmin();
+    })
+    .catch(error => console.error("Error verifying user:", error));
+}
+
+// Load Admin Dashboard Functions
+document.addEventListener("DOMContentLoaded", function() {
+    checkAdminAccess();
+});
+
+// ============================
 // Utility Functions
 // ============================
+
 function getDeviceInfo() {
   return navigator.userAgent;
 }

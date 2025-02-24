@@ -1,0 +1,14 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Agent Dashboard{% endblock %}
+
+{% block content %}
+<section id="agent-dashboard" class="dashboard-section">
+  <h2>Agent Dashboard</h2>
+  <!-- Add agent-specific features here -->
+  <p>Agent functionality coming soon...</p>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/agent_dashboard.js') }}"></script>
+{% endblock %}

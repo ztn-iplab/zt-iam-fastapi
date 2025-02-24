@@ -1,0 +1,54 @@
+/* dashboard.css */
+
+/* Sidebar styling */
+.dashboard-layout .sidebar {
+    width: 250px;
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    float: left;
+    height: 100vh;
+    padding: 20px;
+  }
+  
+  .dashboard-layout .sidebar .app-brand {
+    font-size: 24px;
+    margin-bottom: 20px;
+  }
+  
+  /* Main Content Area */
+  .dashboard-layout .main-content {
+    margin-left: 250px;
+    padding: 20px;
+  }
+  
+  /* Top Bar */
+  .top-bar {
+    display: flex;
+    justify-content: space-between;
+    background-color: #34495e;
+    padding: 10px 20px;
+    color: #ecf0f1;
+  }
+  
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 40px;
+    color: #95a5a6;
+  }
+  
+  /* Table styling */
+  .admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+  }
+  .admin-table th, .admin-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+  }
+  .admin-table th {
+    background-color: #34495e;
+    color: #fff;
+  }
+  

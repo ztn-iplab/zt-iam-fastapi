@@ -15,9 +15,10 @@
     </p>
   {% endif %}
   
-  <form id="login-form" class="auth-form" method="POST">
+  <form id="login-form" class="auth-form" method="POST" action="{{ url_for('auth.login_route') }}">
     <input 
       type="text" 
+      id="mobile-number"
       name="mobile_number" 
       placeholder="Mobile Number" 
       class="input-field"
@@ -25,6 +26,7 @@
     />
     <input 
       type="password" 
+      id="password"
       name="password" 
       placeholder="Password" 
       class="input-field"
@@ -39,6 +41,6 @@
   </div>
 </div>
 
-<!-- Link to the external login.js file -->
-<script src="{{ url_for('static', filename='js/login.js') }}"></script>
+<!-- Remove or comment out any external login.js file if it intercepts the form submission -->
+{# <script src="{{ url_for('static', filename='js/login.js') }}"></script> #}
 {% endblock %}

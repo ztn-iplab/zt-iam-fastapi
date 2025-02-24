@@ -1,0 +1,53 @@
+{% extends "base_dashboard.html" %}
+{% block title %}User Dashboard{% endblock %}
+
+{% block dashboard_content %}
+<div class="dashboard-content">
+  <div class="wallet-info">
+    <h2>Your Wallet Information</h2>
+    <p>Balance: <span id="wallet-balance">Loading...</span></p>
+    <p>Currency: <span id="wallet-currency">Loading...</span></p>
+  </div>
+
+  <section id="content-transactions" class="content-section" style="display: none;">
+    <div class="widgets">
+      <div class="widget transactions-widget" style="flex: 1 1 100%;">
+        <h2>Transactions</h2>
+        <form id="transaction-form" class="transaction-form" method="POST">
+          <input type="number" name="amount" placeholder="Amount" class="input-field" step="0.01" required />
+          <select name="transaction_type" id="transaction-type" class="input-field" required>
+            <option value="">Select Transaction Type</option>
+            <option value="deposit">Deposit</option>
+            <option value="withdrawal">Withdrawal</option>
+            <option value="transfer">Transfer</option>
+          </select>
+          <input type="text" name="recipient_mobile" id="recipient-mobile" placeholder="Recipient Mobile" class="input-field" style="display:none;" />
+          <button type="submit" class="btn btn-primary">Submit Transaction</button>
+        </form>
+        <h3>Transaction History</h3>
+        <ul id="transaction-history"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="content-profile" class="content-section" style="display: none;">
+    <div class="widgets">
+      <div class="widget profile-widget">
+        <h2>Your Profile</h2>
+        <p><strong>Name:</strong> <span id="full-name">{{ user.first_name }} {{ user.last_name }}</span></p>
+        <p><strong>Mobile Number:</strong> <span id="mobile-number">{{ user.mobile_number }}</span></p>
+        <p><strong>Country:</strong> <span id="user-country">{{ user.country }}</span></p>
+        <p><strong>Trust Score:</strong> <span id="user-trust-score">Loading...</span></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="content-overview" class="content-section">
+    <!-- The overview section is shown by default -->
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/user_dashboard.js') }}"></script>
+{% endblock %}

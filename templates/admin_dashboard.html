@@ -1,0 +1,50 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block dashboard_content %}
+<section id="admin-panel" class="dashboard-section">
+  <h2>Admin Dashboard</h2>
+  <!-- Admin-specific features -->
+  <button id="add-user-btn" class="btn btn-primary">➕ Add User</button>
+
+  <!-- User Management Table -->
+  <h3>Manage Users</h3>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Full Name</th>
+        <th>Mobile</th>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="admin-user-list">
+      <!-- Users will be dynamically loaded here -->
+    </tbody>
+  </table>
+
+  <!-- Flagged Transactions -->
+  <h3>Flagged Transactions</h3>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>User</th>
+        <th>Amount</th>
+        <th>Type</th>
+        <th>Risk Score</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="flagged-transactions">
+      <!-- Flagged transactions will be dynamically loaded here -->
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
+{% endblock %}

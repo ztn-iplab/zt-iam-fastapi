@@ -1,45 +1,35 @@
 console.log("Login JS loaded");
 
-document.addEventListener('DOMContentLoaded', function() {
-  const loginForm = document.getElementById('login-form');
-  if (!loginForm) {
-    console.error("Login form not found!");
-    return;
-  }
-  
-  loginForm.addEventListener('submit', function(e) {
-    e.preventDefault(); // Prevent default form submission
+document.querySelector("#login-form").addEventListener("submit", function(e) {
+    e.preventDefault();
     console.log("Form submission intercepted");
-    
-    const mobile_number = loginForm.mobile_number.value;
-    const password = loginForm.password.value;
-    console.log("Mobile Number:", mobile_number, "Password:", password);
-    
-    fetch('/api/auth/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ mobile_number, password })
+
+    // Retrieve values from the form inputs
+    const mobile = document.querySelector("#mobile-number").value;
+    const password = document.querySelector("#password").value;
+    console.log("Mobile Number:", mobile, "Password:", password);
+
+    fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ mobile_number: mobile, password: password })
     })
+    .then(res => res.json().then(data => ({ status: res.status, data })))
     .then(response => {
-      console.log("Response status:", response.status);
-      if (!response.ok) {
-        throw new Error('Login failed');
-      }
-      return response.json();
-    })
-    .then(data => {
-      console.log("Login successful, received data:", data);
-      // Store the access token and user id in localStorage
-      localStorage.setItem('access_token', data.access_token);
-      localStorage.setItem('user_id', data.user_id);
-      // Redirect to the dashboard
-      window.location.href = '/dashboard';
+        console.log("Response status:", response.status);
+        if (response.status === 200) {
+            console.log("Login successful, received data:", response.data);
+            // Use the returned dashboard URL from the JSON response
+            let dashboardUrl = response.data.dashboard_url;
+            window.location.href = dashboardUrl;
+        } else {
+            console.error("Login error:", response.data.error);
+            alert("Login error: " + response.data.error);
+        }
     })
     .catch(error => {
-      console.error("Error during login:", error);
-      alert("Login failed. Please check your credentials.");
+        console.error("Error during login:", error);
     });
-  });
 });

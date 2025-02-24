@@ -1,9 +1,9 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, render_template, jsonify
 from config import Config
 from sqlalchemy import text
 from flask_migrate import Migrate
 from models.models import db, Wallet, User, Transaction
-from flask_jwt_extended import JWTManager, jwt_required
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 from routes.auth import auth_bp
 from routes.user_routes import user_bp
 from routes.wallet_routes import wallet_bp
@@ -11,60 +11,53 @@ from routes.transaction_routes import transaction_bp
 from routes.settings_routes import settings_bp
 from routes.roles_routes import roles_bp
 from routes.admin_routes import admin_bp
-
+from utils.decorators import role_required
 
 app = Flask(__name__)
-app.config.from_object(Config)  # Load configuration from config.py
+app.config.from_object(Config)
 
-# Initialize JWT Manager
 jwt = JWTManager(app)
 
-# Register Blueprints for API routes
+# Register Blueprints
 app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(wallet_bp, url_prefix='/api')
 app.register_blueprint(transaction_bp, url_prefix='/api')
 app.register_blueprint(settings_bp, url_prefix='/api')
 app.register_blueprint(roles_bp, url_prefix='/api')
-app.register_blueprint(admin_bp,url_prefix='/api')
+app.register_blueprint(admin_bp, url_prefix='/api')
 
-# Initialize the database and migrations
 db.init_app(app)
 migrate = Migrate(app, db)
 
-# Front-End Routes
+# Dashboard Routes
+@app.route('/admin/dashboard')
+@jwt_required()
+@role_required(['admin'])
+def admin_dashboard():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    return render_template('admin_dashboard.html', user=user)
+
+@app.route('/agent/dashboard')
+@jwt_required()
+@role_required(['agent'])
+def agent_dashboard():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    return render_template('agent_dashboard.html', user=user)
+
+@app.route('/user/dashboard')
+@jwt_required()
+@role_required(['user'])
+def user_dashboard():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    return render_template('user_dashboard.html', user=user)
 
 @app.route('/')
 def index():
-    """
-    Landing page displaying the combined login/registration form.
-    """
     return render_template('index.html')
-    
-@app.route('/profile')
-def profile():
-    return render_template('profile.html')
-
-@app.route('/dashboard')
-def dashboard():
-    """
-    A simple dashboard page. In a production scenario,
-    we'll retrieve the actual user data (and require authentication).
-    Here, we pass a dummy user for demonstration.
-    """
-    dummy_user = {
-        'full_name': 'John Doe',
-        'mobile_number': '123456789',
-        'country': 'KEN',
-        'trust_score': 0.85,
-        'wallet': {
-            'balance': 150.0,
-            'currency': 'RWF'
-        }
-    }
-    return render_template('dashboard.html', user=dummy_user)
-
-# Global Error Handlers
 
 @app.errorhandler(401)
 def unauthorized_error(error):
@@ -74,21 +67,11 @@ def unauthorized_error(error):
 def not_found_error(error):
     return jsonify({"error": "Resource not found."}), 404
 
-@app.route('/transactions_dashboard')
-#@jwt_required()  # Optional: you can also check the token in your JS
-def transactions_dashboard():
-    # This renders an HTML page; the JS on that page will fetch the data from /api/transactions.
-    return render_template('dashboard.html')
-
-# Application Startup
-
 if __name__ == '__main__':
     with app.app_context():
         try:
-            # Test database connection
             db.session.execute(text('SELECT 1'))
             print("✅ Database connected successfully!")
         except Exception as e:
             print(f"❌ Database connection failed: {e}")
-
     app.run(debug=True, host='0.0.0.0', port=5000)

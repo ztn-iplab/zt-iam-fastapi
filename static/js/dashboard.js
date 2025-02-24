@@ -19,42 +19,46 @@ setInterval(() => {
   }
 }, 60000); // check every minute
 
-// ============================
-// Check the Admin Access
-// ============================
+console.log("Admin Dashboard JS Loaded");
 
-function checkAdminAccess() {
-  const token = localStorage.getItem("access_token");
-  if (!token) return;
+// Function to check if user is Admin or Agent
 
-  fetch("/api/user", {
-      method: "GET",
-      headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-      }
-  })
-  .then(res => res.json())
-  .then(data => {
-      if (data.role === "admin" || data.role === "agent") {
-          document.getElementById("admin-panel").style.display = "block";
-          fetchUsersForAdmin();
-          fetchFlaggedTransactions();
-      }
-  })
-  .catch(error => console.error("Error checking admin access:", error));
+// ============================
+// Hide Sidebar Items for Admins
+// ============================
+function hideAdminRestrictedItems(userRole) {
+  if (userRole === "admin") {
+    document.getElementById("overview-link").style.display = "none";
+    document.getElementById("transactions-link").style.display = "none";
+  }
 }
 
-// Call the function when dashboard loads
-document.addEventListener("DOMContentLoaded", function() {
-  checkAdminAccess();
-});
+function checkAdminAccess() {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
 
+    fetch("/api/user", {
+        method: "GET",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.role === "admin" || data.role === "agent") {
+            document.getElementById("admin-panel").style.display = "block";
+            fetchUsersForAdmin();
+        } else {
+            document.getElementById("transactions-menu").style.display = "block";
+        }
+    })
+    .catch(error => console.error("Error checking admin access:", error));
+}
 
 // Fetch Users & Display in Admin Panel
 function fetchUsersForAdmin() {
     const token = localStorage.getItem("access_token");
-
     fetch("/api/admin/users", {
         method: "GET",
         headers: {
@@ -65,8 +69,7 @@ function fetchUsersForAdmin() {
     .then(res => res.json())
     .then(users => {
         const userList = document.getElementById("admin-user-list");
-        userList.innerHTML = ""; // Clear previous content
-
+        userList.innerHTML = "";
         users.forEach(user => {
             const row = document.createElement("tr");
             row.innerHTML = `
@@ -82,98 +85,132 @@ function fetchUsersForAdmin() {
                     </select>
                 </td>
                 <td>
-                    <button class="suspend-user" data-user-id="${user.id}">Suspend</button>
-                    <button class="verify-user" data-user-id="${user.id}">Verify</button>
+                    <button class="btn btn-primary verify-user" data-user-id="${user.id}">Verify</button>
+                    <button class="btn btn-danger suspend-user" data-user-id="${user.id}">Suspend</button>
+                    <button class="btn btn-secondary delete-user" data-user-id="${user.id}">Delete</button>
+                    <button class="btn btn-primary edit-user" data-user-id="${user.id}">Edit</button>
                 </td>
             `;
             userList.appendChild(row);
         });
+     // Attach event listeners to role selectors
+     document.querySelectorAll(".role-select").forEach(select => {
+      select.addEventListener("change", function () {
+          updateUserRole(this.dataset.userId, this.value);
+      });
+  });
 
-        // Attach event listeners to role selectors
-        document.querySelectorAll(".role-select").forEach(select => {
-            select.addEventListener("change", function () {
-                updateUserRole(this.dataset.userId, this.value);
-            });
-        });
+  // Attach event listeners to suspend buttons
+  document.querySelectorAll(".suspend-user").forEach(button => {
+      button.addEventListener("click", function () {
+          suspendUser(this.dataset.userId);
+      });
+  });
 
-        // Attach event listeners to suspend buttons
-        document.querySelectorAll(".suspend-user").forEach(button => {
-            button.addEventListener("click", function () {
-                suspendUser(this.dataset.userId);
-            });
-        });
-
-        // Attach event listeners to verify buttons
-        document.querySelectorAll(".verify-user").forEach(button => {
-            button.addEventListener("click", function () {
-                verifyUser(this.dataset.userId);
-            });
-        });
-    })
-    .catch(error => console.error("Error fetching users:", error));
+  // Attach event listeners to verify buttons
+  document.querySelectorAll(".verify-user").forEach(button => {
+      button.addEventListener("click", function () {
+          verifyUser(this.dataset.userId);
+      });
+  });
+  // Attach event listeners to delete buttons
+  document.querySelectorAll(".delete-user").forEach(button => {
+    button.addEventListener("click", function () {
+        deleteUser(this.dataset.userId);
+    });
+});
+// Attach event listeners to edit buttons
+document.querySelectorAll(".edit-user").forEach(button => {
+  button.addEventListener("click", function () {
+      editUser(this.dataset.userId);
+  });
+});
+})
+.catch(error => console.error("Error fetching users:", error));
 }
 
 // Function to Update User Role
 function updateUserRole(userId, newRole) {
-    const token = localStorage.getItem("access_token");
+const token = localStorage.getItem("access_token");
 
-    fetch("/api/admin/assign_role", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({ user_id: userId, role_id: newRole })
-    })
-    .then(response => response.json())
-    .then(data => {
-        alert("Role updated successfully!");
-        fetchUsersForAdmin(); // Refresh user list
-    })
-    .catch(error => console.error("Error updating role:", error));
+fetch("/api/admin/assign_role", {
+  method: "POST",
+  headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+  },
+  body: JSON.stringify({ user_id: userId, role_id: newRole })
+})
+.then(response => response.json())
+.then(data => {
+  alert("Role updated successfully!");
+  fetchUsersForAdmin(); // Refresh user list
+})
+.catch(error => console.error("Error updating role:", error));
 }
 
 // Function to Suspend User
 function suspendUser(userId) {
-    const token = localStorage.getItem("access_token");
+const token = localStorage.getItem("access_token");
 
-    fetch(`/api/admin/suspend_user/${userId}`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        alert("User suspended successfully!");
-        fetchUsersForAdmin();
-    })
-    .catch(error => console.error("Error suspending user:", error));
+fetch(`/api/admin/suspend_user/${userId}`, {
+  method: "POST",
+  headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+  }
+})
+.then(response => response.json())
+.then(data => {
+  alert("User suspended successfully!");
+  fetchUsersForAdmin();
+})
+.catch(error => console.error("Error suspending user:", error));
 }
 
 // Function to Verify User
 function verifyUser(userId) {
-    const token = localStorage.getItem("access_token");
+const token = localStorage.getItem("access_token");
 
-    fetch(`/api/admin/verify_user/${userId}`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        alert("User verified successfully!");
-        fetchUsersForAdmin();
-    })
-    .catch(error => console.error("Error verifying user:", error));
+fetch(`/api/admin/verify_user/${userId}`, {
+  method: "POST",
+  headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+  }
+})
+.then(response => response.json())
+.then(data => {
+  alert("User verified successfully!");
+  fetchUsersForAdmin();
+})
+.catch(error => console.error("Error verifying user:", error));
+}
+
+
+// Function to delete the User
+
+function deleteUser(userId) {
+  if (!confirm("Are you sure you want to delete this user?")) return;
+
+  const token = localStorage.getItem("access_token");
+  fetch(`/api/admin/delete_user/${userId}`, {
+      method: "DELETE",
+      headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+      }
+  })
+  .then(() => {
+      alert("User deleted successfully!");
+      fetchUsersForAdmin();
+  })
+  .catch(error => console.error("Error deleting user:", error));
 }
 
 // Load Admin Dashboard Functions
 document.addEventListener("DOMContentLoaded", function() {
-    checkAdminAccess();
+checkAdminAccess();
 });
 
 // ============================

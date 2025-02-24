@@ -11,14 +11,14 @@ with app.app_context():
         print("Admin role created.")
 
     # Check if admin user exists
-    admin_email = "admin@ztnsim.com"
+    admin_email = "super@ztnsim.com"
     admin_user = User.query.filter_by(email=admin_email).first()
 
     if not admin_user:
         admin_user = User(
-            mobile_number="0788888888",
+            mobile_number="0788888811",
             email=admin_email,
-            first_name="System",
+            first_name="Super",
             last_name="Admin",
             country="Rwanda",
             identity_verified=True,

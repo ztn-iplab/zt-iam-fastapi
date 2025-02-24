@@ -359,3 +359,42 @@ a {
 #logout-link:hover {
   background-color: var(--brand-blue-dark);
 }
+
+/* ======================= */
+/* Admin Panel styles 
+=======================*/
+
+/* Admin Panel Table */
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  background: #1e1e2f;
+  color: #fff;
+}
+
+.admin-table th, .admin-table td {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #333;
+}
+
+.admin-table th {
+  background: #24243e;
+}
+
+
+.btn-verify {
+  background-color: #35dc4b;
+  color: rgb(115, 141, 163);
+}
+
+.btn-suspend {
+  background-color: #dc3545;
+  color: rgb(182, 17, 17);
+}
+
+.btn-danger {
+  background-color: #6c757d;
+  color: white;
+}

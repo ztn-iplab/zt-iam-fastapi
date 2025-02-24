@@ -11,9 +11,9 @@
     <nav>
       <ul class="sidebar-menu">
         <li><a href="#" id="show-overview-link">Overview</a></li>
-        <li><a href="#" id="show-transactions-link">Transactions</a></li>
+        <li id="transactions-link"><a href="#" id="show-transactions-link">Transactions</a></li>
         <li><a href="#" id="show-profile-link">Profile</a></li>
-        <li><a href="/settings">Settings</a></li>
+        <li><a href="#" id="show-settings-link">Settings</a></li>
         <li><a href="#" id="logout-link">Logout</a></li>
       </ul>
     </nav>
@@ -36,7 +36,7 @@
         <div class="top-bar-icon" title="Help">
           <i class="fas fa-question-circle"></i>
         </div>
-        <a href="#" id="show-profile-icon" title="Your Profile">
+        <a href="#" id="show-profile-link" title="Your Profile">
           <div class="top-bar-avatar">
             <i class="fas fa-user-circle"></i>
           </div>
@@ -44,52 +44,51 @@
       </div>
     </header>
 
-    <!-- Admin Panel (Visible to Admins & Agents Only) -->
+    <!-- Admin Panel (Visible to Admins Only) -->
     <section id="admin-panel" class="dashboard-section" style="display: none;">
       <h2>Admin Dashboard</h2>
 
-      <!-- User Management -->
-      <div class="admin-section">
-        <h3>Manage Users</h3>
-        <table class="admin-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Full Name</th>
-              <th>Mobile</th>
-              <th>Email</th>
-              <th>Role</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="admin-user-list">
-            <!-- Users will be dynamically loaded here -->
-          </tbody>
-        </table>
-      </div>
+      <!-- Add New User Button -->
+      <button id="add-user-btn" class="btn btn-primary">➕ Add User</button>
 
-      <!-- Transaction Monitoring -->
-      <div class="admin-section">
-        <h3>Flagged Transactions</h3>
-        <table class="admin-table">
-          <thead>
-            <tr>
-              <th>User</th>
-              <th>Amount</th>
-              <th>Type</th>
-              <th>Risk Score</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="flagged-transactions">
-            <!-- Flagged transactions will load here dynamically -->
-          </tbody>
-        </table>
-      </div>
+      <!-- User Management Table -->
+      <h3>Manage Users</h3>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Full Name</th>
+            <th>Mobile</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="admin-user-list">
+          <!-- Users will be dynamically loaded here -->
+        </tbody>
+      </table>
+
+      <!-- Flagged Transactions -->
+      <h3>Flagged Transactions</h3>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Amount</th>
+            <th>Type</th>
+            <th>Risk Score</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="flagged-transactions">
+          <!-- Flagged transactions will load here -->
+        </tbody>
+      </table>
     </section>
 
-    <!-- Overview Section -->
+    <!-- Content Sections -->
     <section id="content-overview" class="content-section">
       <div class="widgets">
         <div class="widget wallet-widget">
@@ -109,12 +108,11 @@
       </div>
     </section>
 
-    <!-- Transactions Section -->
     <section id="content-transactions" class="content-section" style="display: none;">
       <div class="widgets">
-        <div class="widget transactions-widget">
+        <div class="widget transactions-widget" style="flex: 1 1 100%;">
           <h2>Transactions</h2>
-          <form id="transaction-form" class="transaction-form">
+          <form id="transaction-form" class="transaction-form" method="POST">
             <input type="number" name="amount" placeholder="Amount" class="input-field" step="0.01" required />
             <select name="transaction_type" id="transaction-type" class="input-field" required>
               <option value="">Select Transaction Type</option>
@@ -122,8 +120,7 @@
               <option value="withdrawal">Withdrawal</option>
               <option value="transfer">Transfer</option>
             </select>
-            <!-- Recipient Mobile: Initially hidden -->
-            <input type="text" name="recipient_mobile" id="recipient-mobile" placeholder="Recipient Mobile Number" class="input-field" style="display:none;" />
+            <input type="text" name="recipient_mobile" id="recipient-mobile" placeholder="Recipient Mobile" class="input-field" style="display:none;" />
             <button type="submit" class="btn btn-primary">Submit Transaction</button>
           </form>
           <h3>Transaction History</h3>
@@ -132,14 +129,12 @@
       </div>
     </section>
 
-    <!-- Profile Section -->
     <section id="content-profile" class="content-section" style="display: none;">
       <div class="widgets">
         <div class="widget profile-widget">
           <h2>Your Profile</h2>
           <p><strong>Name:</strong> <span id="full-name">Loading...</span></p>
           <p><strong>Mobile Number:</strong> <span id="mobile-number">Loading...</span></p>
-          <p><strong>Email:</strong> <span id="email">Loading...</span></p>
           <p><strong>Country:</strong> <span id="user-country">Loading...</span></p>
           <p><strong>Trust Score:</strong> <span id="user-trust-score">Loading...</span></p>
         </div>
@@ -153,6 +148,5 @@
   </main>
 </div>
 
-<!-- Include the unified dashboard.js -->
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}

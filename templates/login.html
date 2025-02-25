@@ -14,6 +14,9 @@
       Registration successful! Your wallet has been created. Please log in.
     </p>
   {% endif %}
+
+  <!-- Container for error messages -->
+  <div id="login-error" style="color: red;"></div>
   
   <form id="login-form" class="auth-form" method="POST" action="{{ url_for('auth.login_route') }}">
     <input 
@@ -41,6 +44,6 @@
   </div>
 </div>
 
-<!-- Remove or comment out any external login.js file if it intercepts the form submission -->
-{# <script src="{{ url_for('static', filename='js/login.js') }}"></script> #}
+<!-- Use the AJAX-based login.js -->
+<script src="{{ url_for('static', filename='js/login.js') }}"></script>
 {% endblock %}

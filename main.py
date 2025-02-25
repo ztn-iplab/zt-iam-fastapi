@@ -36,7 +36,7 @@ migrate = Migrate(app, db)
 @role_required(['admin'])
 def admin_dashboard():
     current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
+    user = db.session.get(User, current_user_id)
     return render_template('admin_dashboard.html', user=user)
 
 @app.route('/agent/dashboard')

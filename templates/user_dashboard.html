@@ -3,12 +3,27 @@
 
 {% block dashboard_content %}
 <div class="dashboard-content">
-  <div class="wallet-info">
-    <h2>Your Wallet Information</h2>
-    <p>Balance: <span id="wallet-balance">Loading...</span></p>
-    <p>Currency: <span id="wallet-currency">Loading...</span></p>
-  </div>
+  <!-- Overview Section -->
+  <section id="content-overview" class="content-section">
+    <div class="widgets">
+      <div class="widget wallet-widget">
+        <h2>Your Wallet</h2>
+        <p>Balance: <span id="wallet-balance">Loading...</span></p>
+        <p>Currency: <span id="wallet-currency">Loading...</span></p>
+      </div>
+      <div class="widget chart-widget">
+        <h2>Transaction Overview</h2>
+        <label for="aggregation-type">Aggregate by:</label>
+        <select id="aggregation-type">
+          <option value="daily" selected>Daily Totals</option>
+          <option value="monthly">Monthly Summaries</option>
+        </select>
+        <canvas id="transactionChart"></canvas>
+      </div>
+    </div>
+  </section>
 
+  <!-- Transactions Section -->
   <section id="content-transactions" class="content-section" style="display: none;">
     <div class="widgets">
       <div class="widget transactions-widget" style="flex: 1 1 100%;">
@@ -30,6 +45,7 @@
     </div>
   </section>
 
+  <!-- Profile Section -->
   <section id="content-profile" class="content-section" style="display: none;">
     <div class="widgets">
       <div class="widget profile-widget">
@@ -40,10 +56,6 @@
         <p><strong>Trust Score:</strong> <span id="user-trust-score">Loading...</span></p>
       </div>
     </div>
-  </section>
-
-  <section id="content-overview" class="content-section">
-    <!-- The overview section is shown by default -->
   </section>
 </div>
 {% endblock %}

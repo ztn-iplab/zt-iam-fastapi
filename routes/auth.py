@@ -1,8 +1,15 @@
 from flask import Blueprint, request, jsonify, render_template, redirect, url_for, make_response
-from flask_jwt_extended import create_access_token, set_access_cookies
+from flask_jwt_extended import (
+    create_access_token,
+    set_access_cookies,
+    jwt_required,  # use this with refresh=True for refresh endpoints
+    get_jwt_identity,
+    unset_jwt_cookies
+)
 from werkzeug.security import check_password_hash
 from models.models import User, Wallet, db, UserRole, UserAccessControl
-from flask_jwt_extended import unset_jwt_cookies
+
+
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/register_form', methods=['GET'])
@@ -15,7 +22,8 @@ def login_form():
 
 @auth_bp.route('/login', methods=['POST'])
 def login_route():
-    data = request.form if request.form else request.get_json()
+    # Force JSON input
+    data = request.get_json()
     mobile_number = data.get('mobile_number')
     password = data.get('password')
 
@@ -35,7 +43,6 @@ def login_route():
 
     access_token = create_access_token(identity=str(user.id))
 
-    # Determine dashboard URL based on role
     if role_name == 'admin':
         dashboard_url = url_for('admin_dashboard')
     elif role_name == 'agent':
@@ -43,10 +50,16 @@ def login_route():
     else:
         dashboard_url = url_for('user_dashboard')
 
-    # Always set the JWT cookie and redirect
-    resp = make_response(redirect(dashboard_url))
+    # Always return JSON with the dashboard URL (no redirects)
+    resp = jsonify({
+        "access_token": access_token,
+        "user_id": user.id,
+        "role": role_name,
+        "dashboard_url": dashboard_url
+    })
     set_access_cookies(resp, access_token)
-    return resp
+    return resp, 200
+
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -111,7 +124,14 @@ def register():
             }
         }), 201
 
-
+@auth_bp.route('/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    current_user = get_jwt_identity()
+    new_access_token = create_access_token(identity=current_user)
+    resp = jsonify({"access_token": new_access_token})
+    set_access_cookies(resp, new_access_token)
+    return resp, 200
 
 @auth_bp.route('/logout', methods=['GET'])
 def logout():

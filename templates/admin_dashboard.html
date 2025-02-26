@@ -1,50 +1,119 @@
 {% extends "base_dashboard.html" %}
 {% block title %}Admin Dashboard{% endblock %}
 
+{% block sidebar_menu %}
+<ul class="sidebar-menu">
+  <li><a href="#" id="show-user-management">User Management</a></li>
+  <li><a href="#" id="show-flagged-transactions">Flagged Transactions</a></li>
+  <li><a href="#" id="show-real-time-logs">Real-Time Logs</a></li>
+  <li><a href="#" id="show-user-auth-logs">User Auth Logs</a></li>
+  <li><a href="#" id="logout-link">Logout</a></li>
+</ul>
+{% endblock %}
+
 {% block dashboard_content %}
 <section id="admin-panel" class="dashboard-section">
-  <h2>Admin Dashboard</h2>
-  <!-- Admin-specific features -->
+  <!-- Add User Button below the welcome message -->
   <button id="add-user-btn" class="btn btn-primary">➕ Add User</button>
-
-  <!-- User Management Table -->
-  <h3>Manage Users</h3>
-  <table class="admin-table">
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Full Name</th>
-        <th>Mobile</th>
-        <th>Email</th>
-        <th>Role</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody id="admin-user-list">
-      <!-- Users will be dynamically loaded here -->
-    </tbody>
-  </table>
-
-  <!-- Flagged Transactions -->
-  <h3>Flagged Transactions</h3>
-  <table class="admin-table">
-    <thead>
-      <tr>
-        <th>User</th>
-        <th>Amount</th>
-        <th>Type</th>
-        <th>Risk Score</th>
-        <th>Status</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody id="flagged-transactions">
-      <!-- Flagged transactions will be dynamically loaded here -->
-    </tbody>
-  </table>
+  
+  <!-- Content Sections -->
+  <div id="admin-content">
+    <!-- User Management Section -->
+    <section id="user-management" class="admin-section" style="display:none;">
+      <h3>Manage Users</h3>
+      <!-- Customized Search Bar -->
+      <div id="user-search-container">
+        <input type="text" id="user-search" placeholder="Search users...">
+        <button id="search-user-btn">Search</button>
+      </div>      
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Full Name</th>
+            <th>Mobile</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="admin-user-list">
+          <!-- Users will be dynamically loaded here -->
+        </tbody>
+      </table>
+    </section>
+    
+    <!-- Flagged Transactions Section -->
+    <section id="flagged-transactions-section" class="admin-section" style="display:none;">
+      <h3>Flagged Transactions</h3>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Amount</th>
+            <th>Type</th>
+            <th>Risk Score</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="flagged-transactions">
+          <!-- Flagged transactions will be dynamically loaded here -->
+        </tbody>
+      </table>
+    </section>
+    
+    <!-- Real-Time Logs Section -->
+    <section id="real-time-logs" class="admin-section" style="display:none;">
+      <h3>Real-Time Logs</h3>
+      <div id="real-time-logs-container">
+        <!-- Real-Time logs content goes here -->
+      </div>
+    </section>
+    
+    <!-- User Auth Logs Section -->
+    <section id="user-auth-logs" class="admin-section" style="display:none;">
+      <h3>User Auth Logs</h3>
+      <div id="user-auth-logs-container">
+        <!-- User authentication logs go here -->
+      </div>
+    </section>
+  </div>
 </section>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function(){
+    // Hide all admin sections initially
+    document.querySelectorAll(".admin-section").forEach(section => section.style.display = "none");
+    
+    // Bind sidebar button events
+    document.getElementById("show-user-management").addEventListener("click", function(){
+      document.querySelectorAll(".admin-section").forEach(s => s.style.display = "none");
+      document.getElementById("user-management").style.display = "block";
+      fetchUsersForAdmin();
+    });
+    document.getElementById("show-flagged-transactions").addEventListener("click", function(){
+      document.querySelectorAll(".admin-section").forEach(s => s.style.display = "none");
+      document.getElementById("flagged-transactions-section").style.display = "block";
+      // Optionally load flagged transactions here
+    });
+    document.getElementById("show-real-time-logs").addEventListener("click", function(){
+      document.querySelectorAll(".admin-section").forEach(s => s.style.display = "none");
+      document.getElementById("real-time-logs").style.display = "block";
+      // Optionally load real-time logs here
+    });
+    document.getElementById("show-user-auth-logs").addEventListener("click", function(){
+      document.querySelectorAll(".admin-section").forEach(s => s.style.display = "none");
+      document.getElementById("user-auth-logs").style.display = "block";
+      // Optionally load user auth logs here
+    });
+    
+    // Default to User Management view
+    document.getElementById("show-user-management").click();
+    
+  });
+</script>
 {% endblock %}

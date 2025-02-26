@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify,redirect
 from config import Config
 from sqlalchemy import text
 from flask_migrate import Migrate
@@ -17,6 +17,20 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 jwt = JWTManager(app)
+
+@jwt.expired_token_loader
+def expired_token_callback(jwt_header, jwt_payload):
+    # Optionally clear any authentication cookies or localStorage via client-side code
+    return redirect(url_for('auth.login_form'))
+
+@jwt.invalid_token_loader
+def invalid_token_callback(error):
+    return redirect(url_for('auth.login_form'))
+
+@jwt.unauthorized_loader
+def missing_token_callback(error):
+    return redirect(url_for('auth.login_form'))
+
 
 # Register Blueprints
 app.register_blueprint(auth_bp, url_prefix='/api/auth')

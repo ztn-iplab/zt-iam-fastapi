@@ -398,3 +398,41 @@ a {
   background-color: #6c757d;
   color: white;
 }
+
+/* ======================= */
+/* Global Search Bar Styles */
+/* ======================= */
+#user-search-container {
+  display: flex;
+  align-items: center;
+  max-width: 600px;
+  display: flex;
+  align-items: center;
+}
+
+#user-search {
+  padding: 5px 8px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  color: #000;
+  flex-grow: 1;
+}
+
+#search-user-btn {
+  padding: 8px 14px;
+  font-size: 14px;
+  background-color: #34495e !important;
+  color: #fff !important;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: background-color 0.2s ease;
+}
+
+#search-user-btn:hover {
+  background-color: #2c3e50 !important;
+}
+

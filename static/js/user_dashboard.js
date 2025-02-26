@@ -282,3 +282,13 @@ document.addEventListener('DOMContentLoaded', function() {
   fetchWalletInfo();
   fetchTransactions();
 });
+
+const logoutLink = document.getElementById('logout-link');
+  if (logoutLink) {
+    logoutLink.addEventListener('click', function(e) {
+      e.preventDefault();
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user_id');
+      window.location.href = '/';
+    });
+  }

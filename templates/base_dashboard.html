@@ -3,24 +3,31 @@
 
 {% block head %}
   {{ super() }}
+  <!-- Dashboard-specific CSS -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 {% endblock %}
 
 {% block body %}
   <div class="dashboard-layout">
+    <!-- Sidebar Navigation -->
     <aside class="sidebar">
       <div class="sidebar-header">
         <h2 class="app-brand">ZTN SIMULATION</h2>
       </div>
       <nav>
+        {% block sidebar_menu %}
         <ul class="sidebar-menu">
           <li><a href="#" id="show-overview-link">Overview</a></li>
           <li><a href="#" id="show-transactions-link">Transactions</a></li>
           <li><a href="#" id="show-profile-link">Profile</a></li>
-          <li><a href="{{ url_for('auth.logout') }}" id="logout-link">Logout</a></li>
+          <li><a href="#" id="show-settings-link">Settings</a></li>
+          <li><a href="#" id="logout-link">Logout</a></li>
         </ul>
+        {% endblock %}
       </nav>
     </aside>
+
+    <!-- Main Content Area -->
     <main class="main-content">
       <header class="top-bar">
         <div class="top-bar-left">
@@ -43,7 +50,9 @@
           </a>
         </div>
       </header>
+      
       {% block dashboard_content %}{% endblock %}
+      
       <footer class="footer">
         <p>© 2025 ZTN Simulation. All rights reserved.</p>
       </footer>

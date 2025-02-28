@@ -1,12 +1,111 @@
 {% extends "base_dashboard.html" %}
 {% block title %}Agent Dashboard{% endblock %}
 
-{% block content %}
-<section id="agent-dashboard" class="dashboard-section">
-  <h2>Agent Dashboard</h2>
-  <!-- Add agent-specific features here -->
-  <p>Agent functionality coming soon...</p>
+{% block sidebar_menu %}
+<ul class="sidebar-menu">
+  <li><a href="#" id="show-overview">Overview</a></li>
+  <li><a href="#" id="show-transactions">Transactions</a></li>
+  <li><a href="#" id="show-sim-registration">SIM Registrations</a></li>
+  <li><a href="#" id="show-profile">Profile</a></li>
+  <li><a href="#" id="show-settings">Settings</a></li>
+  <li><a href="#" id="logout-link">Logout</a></li>
+</ul>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="dashboard-content">
+  
+  <!-- Overview Section -->
+  <section id="content-overview" class="content-section">
+    <div class="widgets">
+      <div class="widget wallet-widget">
+        <h2>Transaction Summary</h2>
+        <p>Total Transactions: <span id="total-transactions">Loading...</span></p>
+        <p>Total SIMs Registered: <span id="total-sims">Loading...</span></p>
+      </div>
+      <div class="widget chart-widget">
+        <h2>Transaction Overview</h2>
+        <label for="aggregation-type">Aggregate by:</label>
+        <select id="aggregation-type">
+          <option value="daily" selected>Daily Totals</option>
+          <option value="monthly">Monthly Summaries</option>
+        </select>
+        <canvas id="transactionChart"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- Transactions Section -->
+  <section id="content-transactions" class="content-section" style="display: none;">
+    <div class="widgets">
+      <div class="widget transactions-widget">
+        <h2>Transactions</h2>
+        <form id="transaction-form" class="transaction-form">
+          <input type="number" name="amount" placeholder="Amount" class="input-field" step="0.01" required />
+          
+          <select name="transaction_type" id="transaction-type" class="input-field" required>
+            <option value="">Select Transaction Type</option>
+            <option value="deposit">Deposit</option>
+            <option value="withdrawal">Withdrawal</option>
+            <option value="transfer">Transfer</option>
+          </select>
+          
+          <input type="text" name="recipient_mobile" id="recipient-mobile" placeholder="Recipient Mobile" class="input-field" style="display:none;" />
+          
+          <button type="submit" class="btn btn-primary">Submit Transaction</button>
+        </form>
+        
+        <h3>Transaction History</h3>
+        <ul id="transaction-history"></ul>
+      </div>
+    </div>
+  </section>
+
+ <!-- SIM Registration Section -->
+<section id="content-sim-registration" class="content-section" style="display: none;">
+  <div class="widgets">
+    <div class="widget sim-widget">
+      <h2>SIM Card Registration</h2>
+      <form id="sim-registration-form" class="transaction-form">
+        <div class="input-group">
+          <div class="fixed-input-wrapper">
+            <input type="text" name="mobile_number" placeholder="User Mobile Number" class="input-field">
+          </div>
+          <button type="submit" class="btn btn-primary">Register SIM</button>
+        </div>
+      </form>
+                   
+      <h3>SIM Registration History</h3>
+      <ul id="sim-registration-history"></ul>
+    </div>
+  </div>
 </section>
+
+
+  <!-- Profile Section -->
+  <section id="content-profile" class="content-section" style="display: none;">
+    <div class="widgets">
+      <div class="widget profile-widget">
+        <h2>Your Profile</h2>
+        <p><strong>Name:</strong> <span id="full-name">{{ user.full_name }}</span></p>
+        <p><strong>Mobile Number:</strong> <span id="mobile-number">{{ user.mobile_number }}</span></p>
+        <p><strong>Country:</strong> <span id="user-country">{{ user.country }}</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Settings Section -->
+  <section id="content-settings" class="content-section" style="display: none;">
+    <div class="widgets">
+      <div class="widget settings-widget">
+        <h2>Settings</h2>
+        <p>Update account preferences here.</p>
+        <button class="btn btn-primary">Change Password</button>
+      </div>
+    </div>
+  </section>
+
+</div>
 {% endblock %}
 
 {% block scripts %}

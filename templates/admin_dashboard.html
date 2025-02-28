@@ -80,10 +80,48 @@
     </section>
   </div>
 </section>
+
+<!-- Add User Modal using Bootstrap 5, styled like the registration form -->
+<div class="modal fade" id="addUserModal" tabindex="-1" aria-labelledby="addUserModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <!-- We apply the auth-form class to the form -->
+    <form id="add-user-form" class="auth-form">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="addUserModalLabel">Register New User</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <!-- We wrap the form fields in a container with auth-container to get the same styling -->
+        <div class="modal-body auth-container">
+          <input type="text" class="input-field" id="add-first-name" placeholder="Enter first name" required>
+          <input type="text" class="input-field" id="add-last-name" placeholder="Enter last name (optional)">
+          <input type="email" class="input-field" id="add-email" placeholder="Enter email" required>
+          <input type="text" class="input-field" id="add-mobile" placeholder="Enter mobile number" required>
+          <select class="input-field" id="add-country" required>
+            <option value="">Select Country</option>
+            <option value="Rwanda">Rwanda</option>
+            <option value="Kenya">Kenya</option>
+            <option value="Uganda">Uganda</option>
+            <option value="Tanzania">Tanzania</option>
+            <option value="Ethiopia">Ethiopia</option>
+          </select>
+          <input type="password" class="input-field" id="add-password" placeholder="Enter password" required>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Register User</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
+<!-- Include Bootstrap 5 CSS and JS from CDN if not already included -->
 <script>
   document.addEventListener("DOMContentLoaded", function(){
     // Hide all admin sections initially

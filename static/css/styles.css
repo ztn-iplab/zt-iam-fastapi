@@ -299,24 +299,23 @@ a {
 
 
 /* Titles for wallet/transactions widgets */
-.wallet-widget h2,
-.transactions-widget h2 {
-  margin-top: 0;
+.transaction-form {
+  display: flex;
+  align-items: center; /* Ensures elements align vertically in the center */
+  gap: 10px; /* Adds spacing between elements */
+  flex-wrap: wrap; /* Prevents breaking on small screens */
 }
 
-/* Transaction history list */
-.transactions-widget ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+.transaction-form .input-field {
+  flex: 1; /* Makes inputs expand evenly */
+  min-width: 120px; /* Ensures minimum width */
 }
 
-.transactions-widget ul li {
-  margin-bottom: 10px;
-  padding: 8px;
-  background-color: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+.transaction-form .btn-primary {
+  white-space: nowrap; /* Prevents button text from wrapping */
+  padding: 10px 15px;
 }
+
 
 /* --------------------------------------------------------------------
    5. FOOTER
@@ -434,5 +433,49 @@ a {
 
 #search-user-btn:hover {
   background-color: #2c3e50 !important;
+}
+
+/* Override the modal dialog to match the auth container width */
+.modal-dialog {
+  max-width: 360px;
+  margin: auto;
+}
+
+/* Override modal content to match your auth container style */
+.modal-content {
+  background-color: var(--card-bg) !important; /* Uses your card background */
+  border: none !important;
+  border-radius: 12px !important;
+  box-shadow: var(--card-shadow) !important;
+}
+
+/* Remove modal header border (if not desired) */
+.modal-header {
+  border-bottom: none;
+}
+
+/* Optionally, hide the close button if you want a cleaner look
+.btn-close {
+  display: none;
+} */
+
+/* Override modal footer border if needed */
+.modal-footer {
+  border-top: none;
+  padding: 1rem;
+}
+
+
+/* Agent Simcard registration */
+
+.input-group {
+  display: flex;
+  align-items: center;
+  gap: 10px; /* ✅ This ensures spacing between input and button */
+}
+
+.fixed-input-wrapper {
+  width: 250px !important; /* ✅ Fix input width */
+  display: inline-block;
 }
 

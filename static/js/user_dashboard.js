@@ -19,7 +19,11 @@ function resetActivityTimer() {
 setInterval(() => {
   if (Date.now() - lastActivityTime > INACTIVITY_LIMIT) {
     alert("You've been inactive. Logging out.");
-    window.location.href = '/api/auth/logout';
+    // Redirect to the logout endpoint which clears the cookie
+    fetch("/api/auth/logout", { method: "POST" })
+      .then(() => {
+        window.location.href = '/api/auth/login_form';
+      });
   }
 }, 60000);
 
@@ -276,19 +280,28 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 });
-  
+
+// ============================
 // Initial Data Load
+// ============================
 document.addEventListener('DOMContentLoaded', function() {
   fetchWalletInfo();
   fetchTransactions();
 });
 
-const logoutLink = document.getElementById('logout-link');
+// ---------------------------
+// Bind Logout Event
+// ---------------------------
+document.addEventListener('DOMContentLoaded', function(){
+  const logoutLink = document.getElementById('logout-link');
   if (logoutLink) {
-    logoutLink.addEventListener('click', function(e) {
+    logoutLink.addEventListener('click', function(e){
       e.preventDefault();
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('user_id');
-      window.location.href = '/';
+      fetch("/api/auth/logout", { method: "POST" })
+        .then(() => {
+          window.location.href = "/api/auth/login_form";
+        });
     });
   }
+});
+

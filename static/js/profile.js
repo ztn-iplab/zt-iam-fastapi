@@ -1,12 +1,5 @@
 console.log("Profile JS loaded");
 
-document.addEventListener('DOMContentLoaded', function() {
-  const token = localStorage.getItem('access_token');
-  if (!token) {
-    window.location.href = '/auth/login_form';
-    return;
-  }
-
   // Fetch profile data from the API
   fetch('/api/user/profile', {
     method: 'GET',
@@ -35,14 +28,15 @@ document.addEventListener('DOMContentLoaded', function() {
     window.location.href = '/auth/login_form';
   });
 
-  // Logout functionality
-  const logoutButton = document.getElementById('logout-button');
-  if (logoutButton) {
-    logoutButton.addEventListener('click', function(e) {
-      e.preventDefault();
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('user_id');
-      window.location.href = '/';
-    });
-  }
-});
+  document.addEventListener('DOMContentLoaded', function(){
+    const logoutLink = document.getElementById('logout-link');
+    if (logoutLink) {
+      logoutLink.addEventListener('click', function(e){
+        e.preventDefault();
+        fetch("/api/auth/logout", { method: "POST" })
+          .then(() => {
+            window.location.href = "/api/auth/login_form";
+          });
+      });
+    }
+  });

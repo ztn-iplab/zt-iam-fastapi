@@ -1,9 +1,33 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.decorators import role_required
 from models.models import db, User, UserAccessControl, UserRole, Wallet, Transaction, UserAuthLog, SIMRegistration, RealTimeLog
 
 admin_bp = Blueprint("admin", __name__)
+
+#Admin Dashboard
+@admin_bp.route('/admin/dashboard')
+@jwt_required()
+@role_required(['admin'])
+def admin_dashboard():
+    user_id = get_jwt_identity()
+    user = db.session.get(User, user_id)
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Fetch the role properly from UserAccessControl or UserRole table
+    user_access = UserAccessControl.query.filter_by(user_id=user.id).first()
+    role = db.session.get(UserRole, user_access.role_id).role_name if user_access else "Unknown"
+
+    full_name = f"{user.first_name} {user.last_name or ''}".strip()
+    first_name = user.first_name  # extract the first name for the welcome message
+
+    # Pass both first_name and full_name to the template
+    admin_user = { 'first_name': first_name, 'full_name': full_name, 'role': role }
+    
+    return render_template('admin_dashboard.html', user=admin_user)
+
 
 # List all users
 @admin_bp.route("/admin/users", methods=["GET"])
@@ -125,8 +149,7 @@ def delete_user(user_id):
     return jsonify({"message": "User and all related data have been permanently deleted."}), 200
 
 
-
-    
+   
 # Updading the user
 @admin_bp.route("/admin/edit_user/<int:user_id>", methods=["PUT"])
 @jwt_required()

@@ -12,18 +12,25 @@ from models.models import User, Wallet, db, UserRole, UserAccessControl
 
 auth_bp = Blueprint('auth', __name__)
 
+#Register form
 @auth_bp.route('/register_form', methods=['GET'])
 def register_form():
     return render_template('register.html')
 
+#Login
 @auth_bp.route('/login_form', methods=['GET'])
 def login_form():
     return render_template('login.html')
 
+#Login Endpoint
 @auth_bp.route('/login', methods=['POST'])
 def login_route():
-    # Force JSON input
+    """Handles user login and redirects to the correct dashboard"""
+
     data = request.get_json()
+    if not data or 'mobile_number' not in data or 'password' not in data:
+        return jsonify({"error": "Mobile number and password are required"}), 400
+
     mobile_number = data.get('mobile_number')
     password = data.get('password')
 
@@ -35,32 +42,42 @@ def login_route():
     if not user_access:
         return jsonify({"error": "User has no assigned role"}), 403
 
-    user_role_obj = UserRole.query.get(user_access.role_id)
-    if not user_role_obj:
+    user_role = db.session.get(UserRole, user_access.role_id)
+    if not user_role:
         return jsonify({"error": "User role not found"}), 403
 
-    role_name = user_role_obj.role_name
+    role_name = user_role.role_name
 
     access_token = create_access_token(identity=str(user.id))
 
-    if role_name == 'admin':
-        dashboard_url = url_for('admin_dashboard')
-    elif role_name == 'agent':
-        dashboard_url = url_for('agent_dashboard')
-    else:
-        dashboard_url = url_for('user_dashboard')
+    # ✅ Corrected `url_for()` calls to match new structure
+    dashboard_urls = {
+        "admin": url_for("admin.admin_dashboard", _external=True),  # ✅ Corrected
+        "agent": url_for("agent.agent_dashboard", _external=True),  # ✅ Corrected
+        "user": url_for("user.user_dashboard", _external=True)  # ✅ Corrected
+    }
 
-    # Always return JSON with the dashboard URL (no redirects)
-    resp = jsonify({
+    dashboard_url = dashboard_urls.get(role_name, url_for("user.user_dashboard", _external=True))
+
+    response = jsonify({
         "access_token": access_token,
         "user_id": user.id,
         "role": role_name,
         "dashboard_url": dashboard_url
     })
-    set_access_cookies(resp, access_token)
-    return resp, 200
+
+    set_access_cookies(response, access_token)
+
+    return response, 200
+
+    
+    # Set HTTP-only access cookie for security
+    set_access_cookies(response, access_token)
+
+    return response, 200
 
 
+#Reister a new User
 @auth_bp.route('/register', methods=['POST'])
 def register():
     data = request.form if request.form else request.get_json()
@@ -124,6 +141,7 @@ def register():
             }
         }), 201
 
+# Refres the access token
 @auth_bp.route('/refresh', methods=['POST'])
 @jwt_required(refresh=True)
 def refresh():
@@ -133,6 +151,7 @@ def refresh():
     set_access_cookies(resp, new_access_token)
     return resp, 200
 
+#Logout
 @auth_bp.route('/logout', methods=['GET'])
 def logout():
     resp = make_response(redirect(url_for('auth.login_form')))

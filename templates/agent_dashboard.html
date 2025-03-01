@@ -16,24 +16,34 @@
 <div class="dashboard-content">
   
   <!-- Overview Section -->
-  <section id="content-overview" class="content-section">
-    <div class="widgets">
-      <div class="widget wallet-widget">
-        <h2>Transaction Summary</h2>
-        <p>Total Transactions: <span id="total-transactions">Loading...</span></p>
-        <p>Total SIMs Registered: <span id="total-sims">Loading...</span></p>
-      </div>
-      <div class="widget chart-widget">
-        <h2>Transaction Overview</h2>
-        <label for="aggregation-type">Aggregate by:</label>
-        <select id="aggregation-type">
-          <option value="daily" selected>Daily Totals</option>
-          <option value="monthly">Monthly Summaries</option>
-        </select>
-        <canvas id="transactionChart"></canvas>
-      </div>
+<section id="content-overview" class="content-section">
+  <div class="widgets">
+    <!-- Wallet Widget -->
+    <div class="widget wallet-widget">
+      <h2>Your Wallet</h2>
+      <p>Balance: <span id="wallet-balance">Loading...</span></p>
+      <p>Currency: <span id="wallet-currency">Loading...</span></p>
     </div>
-  </section>
+
+    <!-- Transaction Summary -->
+    <div class="widget wallet-widget">
+      <h2>Transaction Summary</h2>
+      <p>Total Transactions: <span id="total-transactions">Loading...</span></p>
+      <p>Total SIMs Registered: <span id="total-sims">Loading...</span></p>
+    </div>
+
+    <!-- Transaction Chart -->
+    <div class="widget chart-widget">
+      <h2>Transaction Overview</h2>
+      <label for="aggregation-type">Aggregate by:</label>
+      <select id="aggregation-type">
+        <option value="daily" selected>Daily Totals</option>
+        <option value="monthly">Monthly Summaries</option>
+      </select>
+      <canvas id="transactionChart"></canvas>
+    </div>
+  </div>
+</section>
 
   <!-- Transactions Section -->
   <section id="content-transactions" class="content-section" style="display: none;">
@@ -95,15 +105,21 @@
   </section>
 
   <!-- Settings Section -->
-  <section id="content-settings" class="content-section" style="display: none;">
-    <div class="widgets">
-      <div class="widget settings-widget">
-        <h2>Settings</h2>
-        <p>Update account preferences here.</p>
-        <button class="btn btn-primary">Change Password</button>
-      </div>
+<section id="content-settings" class="content-section" style="display: none;">
+  <div class="widgets">
+    <div class="widget settings-widget">
+      <h2>Account Settings</h2>
+      <form id="settings-form" class="settings-form">
+        <input type="text" id="settings-first-name" placeholder="First Name" class="input-field" required>
+        <input type="text" id="settings-last-name" placeholder="Last Name" class="input-field">
+        <input type="email" id="settings-email" placeholder="Email" class="input-field" required>
+        <input type="text" id="settings-mobile" placeholder="Mobile Number" class="input-field" required>
+        <button type="submit" class="btn btn-primary">Update Settings</button>
+      </form>
     </div>
-  </section>
+  </div>
+</section>
+
 
 </div>
 {% endblock %}

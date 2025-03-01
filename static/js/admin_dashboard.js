@@ -32,7 +32,7 @@ setInterval(() => {
 // Admin Functions: Fetch Users & Bind Actions
 // ---------------------------
 function fetchUsersForAdmin() {
-  fetch("/api/admin/users", {
+  fetch("/admin/users", {
       method: "GET",
       headers: { "Content-Type": "application/json" }
   })
@@ -98,7 +98,7 @@ function fetchUsersForAdmin() {
 // Admin User Actions
 // ---------------------------
 function updateUserRole(userId, newRole) {
-  fetch("/api/admin/assign_role", {
+  fetch("/admin/assign_role", {
       method: "POST",
       headers: { 
           "Content-Type": "application/json"
@@ -127,7 +127,7 @@ function suspendUser(userId) {
     return;
   }
 
-  fetch(`/api/admin/suspend_user/${userId}`, {
+  fetch(`/admin/suspend_user/${userId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include" // Ensure cookies are included for authentication
@@ -153,7 +153,7 @@ function verifyUser(userId) {
     return;
   }
 
-  fetch(`/api/admin/verify_user/${userId}`, {
+  fetch(`/admin/verify_user/${userId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include" // Ensures authentication cookies are sent
@@ -180,7 +180,7 @@ function deleteUser(userId) {
     return;
   }
 
-  fetch(`/api/admin/delete_user/${userId}`, {
+  fetch(`/admin/delete_user/${userId}`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     credentials: "include" // Include authentication cookies
@@ -219,7 +219,7 @@ function editUser(userId) {
       return;
   }
   
-  fetch(`/api/admin/edit_user/${userId}`, {
+  fetch(`/admin/edit_user/${userId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include", // Ensure cookies are included

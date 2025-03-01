@@ -1,10 +1,24 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models.models import db, User,UserAccessControl, UserRole
 from utils.decorators import role_required
 
 
 user_bp = Blueprint('user', __name__)
+
+#User Dashboard
+@user_bp.route("/user/dashboard")
+@jwt_required()
+def user_dashboard():  # ✅ Function name must be "user_dashboard"
+    """User dashboard view"""
+    user_id = get_jwt_identity()
+    user = db.session.get(User, user_id)
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    return render_template("user_dashboard.html", user=user)
+
 #Create User
 @user_bp.route('/users', methods=['POST'])
 @jwt_required()
@@ -103,8 +117,8 @@ def delete_user():
     db.session.commit()
     return jsonify({'message': 'User deleted successfully'}), 200
 
-    # Profile route
-@user_bp.route('user/profile', methods=['GET'])
+# Profile route
+@user_bp.route('/user/profile', methods=['GET'])
 @jwt_required()
 def profile():
     current_user_id = get_jwt_identity()  # Extract user ID from JWT
@@ -121,6 +135,7 @@ def profile():
         "identity_verified": user.identity_verified
     }), 200
 
+#Request Deletion
 @user_bp.route('/user/request_deletion', methods=['POST'])
 @jwt_required()
 def request_deletion():

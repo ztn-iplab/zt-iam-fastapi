@@ -55,14 +55,17 @@ def agent_transactions():
     user_id = get_jwt_identity()
     transactions = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.timestamp.desc()).all()
 
-    transaction_list = [
-        {
+    transaction_list = []
+    for tx in transactions:
+        # Ensure transaction_metadata is parsed correctly
+        metadata = json.loads(tx.transaction_metadata) if tx.transaction_metadata else {}
+
+        transaction_list.append({
             "amount": tx.amount,
             "transaction_type": tx.transaction_type,
-            "timestamp": tx.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-        }
-        for tx in transactions
-    ]
+            "timestamp": tx.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            "recipient_mobile": metadata.get("recipient_mobile") if tx.transaction_type == "transfer" else "Self"
+        })
 
     return jsonify({"transactions": transaction_list}), 200
 

@@ -133,18 +133,21 @@ def get_transactions():
     transactions = Transaction.query.filter_by(user_id=logged_in_user).all()
 
     return jsonify([{
-        "id": transaction.id,
-        "user_id": transaction.user_id,
-        "amount": transaction.amount,
-        "transaction_type": transaction.transaction_type,
-        "status": transaction.status,
-        "timestamp": transaction.timestamp.isoformat() if transaction.timestamp else None,
-        "location": transaction.location,
-        "device_info": transaction.device_info,
-        "fraud_flag": transaction.fraud_flag,
-        "risk_score": transaction.risk_score,
-        "transaction_metadata": transaction.transaction_metadata
-    } for transaction in transactions]), 200
+    "id": transaction.id,
+    "user_id": transaction.user_id,
+    "amount": transaction.amount,
+    "transaction_type": transaction.transaction_type,
+    "status": transaction.status,
+    "timestamp": transaction.timestamp.isoformat() if transaction.timestamp else None,
+    "location": transaction.location,
+    "device_info": transaction.device_info,
+    "fraud_flag": transaction.fraud_flag,
+    "risk_score": transaction.risk_score,
+    "recipient_mobile": (
+        "Self" if transaction.transaction_type in ["deposit", "withdrawal"]
+        else json.loads(transaction.transaction_metadata).get("recipient_mobile") if transaction.transaction_metadata else "N/A"
+    )
+} for transaction in transactions]), 200
 
 # Update a specific transaction (only if it belongs to the logged-in user)
 @transaction_bp.route('/transactions/<int:transaction_id>', methods=['PUT'])

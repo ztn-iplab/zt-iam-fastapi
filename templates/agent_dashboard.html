@@ -66,7 +66,19 @@
         </form>
         
         <h3>Transaction History</h3>
-        <ul id="transaction-history"></ul>
+        <table id="transaction-history" class="transaction-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Amount</th>
+              <th>Recipient</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Transactions will be appended here -->
+          </tbody>
+        </table> 
       </div>
     </div>
   </section>
@@ -86,7 +98,19 @@
       </form>
                    
       <h3>SIM Registration History</h3>
-      <ul id="sim-registration-history"></ul>
+<table id="sim-registration-history" class="sim-table">
+  <thead>
+    <tr>
+      <th>Mobile Number</th>
+      <th>Registration Date</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <!-- SIM registration records will be appended here -->
+  </tbody>
+</table>
+
     </div>
   </div>
 </section>

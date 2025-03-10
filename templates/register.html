@@ -5,6 +5,11 @@
 {% block body_class %}auth-page{% endblock %}
 
 {% block body %}
+
+<div class="home-link-container">
+  <a href="{{ url_for('index') }}" class="home-link">&larr; Back to Home</a>
+</div>
+
 <div class="auth-container">
   <h1>Register</h1>
   <form class="auth-form" method="POST" action="{{ url_for('auth.register') }}">

@@ -158,6 +158,25 @@ a {
   text-decoration: underline;
 }
 
+.home-link-container {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+}
+
+.home-link {
+  text-decoration: none;
+  color: #888;
+  transition: color 0.3s ease;
+  font-size: 0.9rem;
+}
+
+.home-link:hover {
+  color: var(--brand-green);
+}
+
+
+
 /* --------------------------------------------------------------------
    3. HOME / LANDING PAGE (Optional)
 -------------------------------------------------------------------- */
@@ -314,6 +333,62 @@ a {
 .transaction-form .btn-primary {
   white-space: nowrap; /* Prevents button text from wrapping */
   padding: 10px 15px;
+}
+
+/* Consistent Table Styling for the transaction history */
+/*  */
+.transaction-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 0.95rem;
+  text-align: left;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.transaction-table th, .transaction-table td {
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.transaction-table thead {
+  background-color: var(--brand-blue);
+  color: #ffffff;
+}
+
+.transaction-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* For Agent Simcard Transactions history */
+/*  */
+.sim-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 0.95rem;
+  text-align: left;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.sim-table th, .sim-table td {
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.sim-table thead {
+  background-color: var(--brand-blue);
+  color: #ffffff;
+}
+
+.sim-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 
@@ -528,20 +603,37 @@ a {
 }
 
 /* Contact button - normal background with hover effect */
-.navbar .contact-btn {
-  padding: 10px 20px;
-  font-size: 1rem;
-  font-weight: bold;
-  border-radius: 6px;
-  background-color: var(--button-bg); /* Default button background */
+.navbar-buttons {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.navbar-buttons .nav-link {
   color: #fff;
   text-decoration: none;
-  border: 2px solid var(--brand-green); /* Keeps it looking like a button */
+  padding: 8px 12px;
+  border-radius: 4px;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-.navbar .contact-btn:hover {
-  background-color: var(--brand-green); /* Turns green on hover */
+.navbar-buttons .nav-link:hover {
+  background-color: var(--brand-green);
+  color: #fff;
+}
+
+.contact-btn {
+  padding: 8px 12px;
+  color: #fff;
+  background-color: var(--button-bg);
+  text-decoration: none;
+  border-radius: 4px;
+  border: 2px solid var(--brand-green);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.contact-btn:hover {
+  background-color: var(--brand-green);
   color: #fff;
 }
 

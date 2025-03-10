@@ -45,19 +45,25 @@ document.addEventListener("DOMContentLoaded", function () {
     .then(response => response.json())
     .then(data => {
       console.log("Transaction History:", data);
-      const historyList = document.getElementById("transaction-history");
-      historyList.innerHTML = "";
+      const historyTable = document.getElementById("transaction-history").querySelector("tbody");
+      historyTable.innerHTML = "";
       data.transactions.forEach(tx => {
-        const li = document.createElement("li");
-        li.textContent = `${tx.transaction_type.toUpperCase()} of ${tx.amount} on ${tx.timestamp}`;
-        historyList.appendChild(li);
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${new Date(tx.timestamp).toLocaleDateString()}</td>
+          <td>${tx.transaction_type.toUpperCase()}</td>
+          <td>${tx.amount}</td>
+          <td>${tx.transaction_type === 'transfer' ? tx.recipient_mobile : 'Self'}</td>
+        `;
+        historyTable.appendChild(row);
       });
 
       // ✅ Render transaction chart
       renderTransactionChart(data.transactions);
     })
     .catch(error => console.error("Error fetching transactions:", error));
-  }
+}
+
 
   // ✅ Function to Get User Location
   function getLocation() {
@@ -215,28 +221,33 @@ function fetchSimRegistrationHistory() {
   })
   .then(data => {
       console.log("SIM Registration History:", data);
-      const simList = document.getElementById("sim-registration-history");
+      const simTable = document.getElementById("sim-registration-history").querySelector("tbody");
 
-      if (!simList) {
-          console.error("❌ Error: SIM registration history section not found!");
+      if (!simTable) {
+          console.error("❌ Error: SIM registration history table not found!");
           return;
       }
 
-      simList.innerHTML = ""; // ✅ Clear the list before adding new items
+      simTable.innerHTML = ""; // ✅ Clear table before adding new rows
 
       if (data.sims.length === 0) {
-          simList.innerHTML = "<li>No SIMs registered yet.</li>";
+          simTable.innerHTML = `<tr><td colspan='3'>No SIMs registered yet.</td></tr>`;
           return;
       }
 
       data.sims.forEach(sim => {
-          const li = document.createElement("li");
-          li.textContent = `SIM: ${sim.mobile_number} - Registered on ${sim.timestamp} (${sim.status})`;
-          simList.appendChild(li);
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${sim.mobile_number}</td>
+            <td>${new Date(sim.timestamp).toLocaleDateString()}</td>
+            <td>${sim.status}</td>
+          `;
+          simTable.appendChild(row);
       });
   })
   .catch(error => console.error("❌ Error fetching SIM registrations:", error));
 }
+
 
 
 

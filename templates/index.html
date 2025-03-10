@@ -3,6 +3,7 @@
 
 {% block body %}
   <!-- Static Header -->
+  <!-- Updated Navbar Section -->
   <header class="navbar">
     <div class="navbar-container">
       <h2>ZTN_Sim</h2>
@@ -13,7 +14,11 @@
           <li><a href="#transactions">Services</a></li>
         </ul>
       </nav>
-      <a href="#contact" class="contact-btn">Contact</a>
+      <div class="navbar-buttons">
+        <a href="{{ url_for('auth.login_form') }}" class="nav-link">Login</a>
+        <a href="{{ url_for('auth.register_form') }}" class="nav-link">Register</a>
+        <a href="#contact" class="contact-btn">Contact</a>
+      </div>
     </div>
   </header>
 

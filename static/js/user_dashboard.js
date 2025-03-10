@@ -148,12 +148,17 @@ function fetchTransactions() {
   })
   .then(transactions => {
     console.log("Transactions received:", transactions);
-    const historyList = document.getElementById('transaction-history');
-    historyList.innerHTML = "";
+    const historyTable = document.getElementById('transaction-history').querySelector('tbody');
+    historyTable.innerHTML = "";
     transactions.forEach(tx => {
-      const li = document.createElement('li');
-      li.textContent = `${tx.transaction_type.toUpperCase()} of ${tx.amount} on ${tx.timestamp}`;
-      historyList.appendChild(li);
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${new Date(tx.timestamp).toLocaleDateString()}</td>
+        <td>${tx.transaction_type.toUpperCase()}</td>
+        <td>${tx.amount}</td>
+        <td>${tx.recipient_mobile ? tx.recipient_mobile : 'N/A'}</td>
+      `;
+      historyTable.appendChild(row);
     });
 
     // Aggregate transaction data for chart rendering
@@ -287,6 +292,16 @@ document.addEventListener('DOMContentLoaded', function() {
 document.addEventListener('DOMContentLoaded', function() {
   fetchWalletInfo();
   fetchTransactions();
+});
+
+// / ============================
+// Apply Table Styling for Professional Look
+// ============================
+document.addEventListener('DOMContentLoaded', function() {
+  const table = document.getElementById('transaction-history');
+  if (table) {
+    table.classList.add('styled-table');
+  }
 });
 
 // ---------------------------

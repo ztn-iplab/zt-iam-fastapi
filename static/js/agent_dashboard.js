@@ -64,7 +64,6 @@ document.addEventListener("DOMContentLoaded", function () {
     .catch(error => console.error("Error fetching transactions:", error));
 }
 
-
   // ✅ Function to Get User Location
   function getLocation() {
     return new Promise((resolve) => {
@@ -86,123 +85,165 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // ✅ Submit Transaction (Show Backend Validation Messages)
-  async function submitTransaction(event) {
-    event.preventDefault();
-    const amount = parseFloat(document.querySelector('[name="amount"]').value);
-    const transactionType = document.querySelector('[name="transaction_type"]').value;
-    const recipientMobileInput = document.querySelector('[name="recipient_mobile"]');
-    const recipientMobile = recipientMobileInput && recipientMobileInput.value.trim() ? recipientMobileInput.value.trim() : null;
+async function submitTransaction(event) {
+  event.preventDefault();
 
-    const device_info = navigator.userAgent;
-    const location = await getLocation();
+  const amountInput = document.querySelector('[name="amount"]');
+  const transactionTypeInput = document.querySelector('[name="transaction_type"]');
+  const recipientMobileInput = document.querySelector('[name="recipient_mobile"]');
 
-    fetch("/agent/transaction", {
+  const amount = parseFloat(amountInput.value);
+  const transactionType = transactionTypeInput.value;
+  const recipientMobile = recipientMobileInput && recipientMobileInput.value.trim() ? recipientMobileInput.value.trim() : null;
+
+  if (isNaN(amount) || amount <= 0) {
+    alert("❌ Error: Please enter a valid amount greater than zero.");
+    return;
+  }
+
+  if (!transactionType) {
+    alert("❌ Error: Please select a transaction type.");
+    return;
+  }
+
+  // ✅ Ensure deposits require a recipient (Agents cannot deposit to themselves)
+  if (transactionType === "deposit" && !recipientMobile) {
+    alert("❌ Error: Deposits must have a recipient mobile number.");
+    return;
+  }
+
+  // ✅ Ensure transfers have a recipient
+  if (transactionType === "transfer" && !recipientMobile) {
+    alert("❌ Error: Transfers require a recipient mobile number.");
+    return;
+  }
+
+  const device_info = navigator.userAgent;
+  const location = await getLocation();
+
+  try {
+    const response = await fetch("/agent/transaction", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ amount, transaction_type: transactionType, recipient_mobile: recipientMobile, device_info, location })
-    })
-    .then(async response => {
-      const responseData = await response.json();
-      if (!response.ok) {
-        throw new Error(responseData.error || "Transaction failed");
-      }
-      return responseData;
-    })
-    .then(data => {
-      alert(`✅ Success: ${data.message}`);
-      fetchWalletInfo();
-      fetchTransactionHistory();
-    })
-    .catch(error => {
-      alert(`❌ Error: ${error.message}`);
-      console.error("Transaction error:", error);
+      body: JSON.stringify({
+        amount,
+        transaction_type: transactionType,
+        recipient_mobile: recipientMobile,
+        device_info,
+        location
+      })
     });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Transaction failed");
+    }
+
+    alert(`✅ Success: ${data.message}`);
+    fetchWalletInfo(); // ✅ Refresh wallet balance
+    fetchTransactionHistory(); // ✅ Refresh transaction history
+  } catch (error) {
+    alert(`❌ Error: ${error.message}`);
+    console.error("Transaction error:", error);
+  }
+}
+
+// ✅ Attach Event Listener for Transactions
+document.addEventListener("DOMContentLoaded", function () {
+  const transactionForm = document.getElementById("transaction-form");
+  if (transactionForm) {
+    transactionForm.addEventListener("submit", submitTransaction);
+  }
+});
+
+// ✅ Render Transaction Chart
+function renderTransactionChart(transactions) {
+  const ctx = document.getElementById("transactionChart").getContext("2d");
+
+  if (window.transactionChart) {
+    window.transactionChart.destroy(); // ✅ Destroy previous chart before rendering new one
   }
 
-  // ✅ Render Transaction Chart
-  function renderTransactionChart(transactions) {
-    const ctx = document.getElementById("transactionChart").getContext("2d");
+  const labels = transactions.map(tx => tx.timestamp.slice(0, 10));
+  const data = transactions.map(tx => tx.amount);
 
-    if (transactionChart) transactionChart.destroy(); // Clear previous chart
-
-    const labels = transactions.map(tx => tx.timestamp.slice(0, 10));
-    const data = transactions.map(tx => tx.amount);
-
-    transactionChart = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: labels,
-        datasets: [{
-          label: "Transaction Amount",
-          data: data,
-          borderColor: "#2962ff",
-          borderWidth: 2,
-          fill: true
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: {
-          x: { title: { display: true, text: "Date" } },
-          y: { title: { display: true, text: "Amount" } }
-        }
+  window.transactionChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Transaction Amount",
+        data: data,
+        borderColor: "#2962ff",
+        borderWidth: 2,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: { title: { display: true, text: "Date" } },
+        y: { title: { display: true, text: "Amount" } }
       }
-    });
-  }
-
-  // ✅ Show Mobile Input for Transfer Transactions
-  document.getElementById("transaction-type").addEventListener("change", function () {
-    const recipientMobileField = document.getElementById("recipient-mobile");
-    if (this.value === "transfer") {
-        recipientMobileField.style.display = "block"; // ✅ Show when Transfer is selected
-        recipientMobileField.setAttribute("required", "true"); // ✅ Ensure it's required
-    } else {
-        recipientMobileField.style.display = "none"; // ✅ Hide for other transaction types
-        recipientMobileField.removeAttribute("required"); // ✅ Remove required for non-transfer transactions
     }
   });
-
-  // ✅ SIM Registration
-  function registerSIM(event) {
-    event.preventDefault();
-    
-    const mobileInput = document.querySelector('input[name="mobile_number"]');
-    
-    if (!mobileInput) {
-        console.error("❌ Error: SIM mobile number input field not found!");
-        alert("❌ SIM mobile number input field is missing.");
-        return;
-    }
-
-    const mobileNumber = mobileInput.value.trim();
-    
-    if (!mobileNumber) {
-        alert("❌ Mobile number is required!");
-        return;
-    }
-
-    fetch("/agent/register_sim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ mobile_number: mobileNumber })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert(`❌ Error: ${data.error}`);
-        } else {
-            alert(`✅ ${data.message}`);
-            document.querySelector("#sim-registration-form").reset();
-            fetchSimRegistrationHistory(); // ✅ Refresh SIM history
-        }
-    })
-    .catch(error => {
-        console.error("❌ Error registering SIM:", error);
-        alert("❌ An unexpected error occurred while registering the SIM.");
-    });
 }
+
+// ✅ Show Mobile Input for Transfer & Deposit Transactions
+document.getElementById("transaction-type").addEventListener("change", function () {
+  const recipientMobileField = document.getElementById("recipient-mobile");
+  
+  if (this.value === "transfer" || this.value === "deposit") {
+    recipientMobileField.style.display = "block"; // ✅ Show input field
+    recipientMobileField.setAttribute("required", "true"); // ✅ Make it required
+  } else {
+    recipientMobileField.style.display = "none"; // ✅ Hide input field
+    recipientMobileField.removeAttribute("required"); // ✅ Remove required for other transactions
+  }
+});
+
+// ✅ SIM Registration (Agent Registers SIMs)
+function registerSIM(event) {
+  event.preventDefault();
+
+  const userIdInput = document.getElementById("register-user-id");
+  const userId = userIdInput ? userIdInput.value.trim() : null; // Get user ID if provided
+
+  const payload = userId ? { user_id: userId } : {}; // Include user_id only if available
+
+  fetch("/agent/register_sim", {
+      method: "POST",
+      headers: { 
+          "Content-Type": "application/json"
+      },
+      credentials: "include",  // ✅ Uses HTTP-only cookies for authentication
+      body: JSON.stringify(payload) // ✅ Send user_id if available
+  })
+  .then(response => response.json())
+  .then(data => {
+      if (data.error) {
+          alert(`❌ Error: ${data.error}`);
+      } else {
+          alert(`✅ SIM Registered Successfully!\nICCID: ${data.iccid}\nMobile Number: ${data.mobile_number}`);
+          fetchSimRegistrationHistory(); // ✅ Refresh SIM list after registration
+      }
+  })
+  .catch(error => {
+      console.error("❌ Error registering SIM:", error);
+      alert("❌ An unexpected error occurred while registering the SIM.");
+  });
+}
+
+// ✅ Attach Event Listener for SIM Registration
+document.addEventListener("DOMContentLoaded", function () {
+  const simRegistrationForm = document.getElementById("sim-registration-form");
+  if (simRegistrationForm) {
+      simRegistrationForm.addEventListener("submit", registerSIM);
+  }
+});
+
 
 // ✅ Function to fetch and display the SIMs registered by the agent.
 function fetchSimRegistrationHistory() {
@@ -212,12 +253,10 @@ function fetchSimRegistrationHistory() {
       credentials: "include"
   })
   .then(response => {
-      console.log("Raw Response:", response); // ✅ Debugging
-      return response.text(); // Read response as text first
-  })
-  .then(text => {
-      console.log("Response Text:", text); // ✅ Debugging
-      return JSON.parse(text); // Convert text to JSON
+      if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      return response.json(); // ✅ Convert response to JSON
   })
   .then(data => {
       console.log("SIM Registration History:", data);
@@ -230,8 +269,8 @@ function fetchSimRegistrationHistory() {
 
       simTable.innerHTML = ""; // ✅ Clear table before adding new rows
 
-      if (data.sims.length === 0) {
-          simTable.innerHTML = `<tr><td colspan='3'>No SIMs registered yet.</td></tr>`;
+      if (!data.sims || data.sims.length === 0) {
+          simTable.innerHTML = `<tr><td colspan='3' class="text-center">No SIMs registered yet.</td></tr>`;
           return;
       }
 
@@ -245,54 +284,56 @@ function fetchSimRegistrationHistory() {
           simTable.appendChild(row);
       });
   })
-  .catch(error => console.error("❌ Error fetching SIM registrations:", error));
+  .catch(error => {
+      console.error("❌ Error fetching SIM registrations:", error);
+      alert("❌ Failed to load SIM registration history.");
+  });
 }
 
 
+ // ✅ Fetch Profile Information
+ function fetchProfileInfo() {
+  fetch("/agent/profile", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include"
+  })
+  .then(response => response.json())
+  .then(data => {
+      console.log("Profile Info:", data);
 
+      if (data.error) {
+          alert(`❌ Error: ${data.error}`);
+          return;
+      }
 
-  // ✅ Fetch Profile Information
-  function fetchProfileInfo() {
-    fetch("/agent/profile", {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include"
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log("Profile Info:", data);
+      document.getElementById("full-name").textContent = data.full_name || "N/A";
+      document.getElementById("mobile-number").textContent = data.mobile_number || "N/A";
+      document.getElementById("user-country").textContent = data.country || "N/A";
+  })
+  .catch(error => console.error("Error fetching profile info:", error));
+}
 
-        if (data.error) {
-            alert(`❌ Error: ${data.error}`);
-            return;
-        }
+// ✅ Ensure Sections Work
+document.getElementById("transaction-form").addEventListener("submit", submitTransaction);
+document.getElementById("show-overview").addEventListener("click", () => showSection(overviewSection, fetchAgentDashboardData));
+document.getElementById("show-transactions").addEventListener("click", () => showSection(transactionsSection, fetchTransactionHistory));
+document.getElementById("show-sim-registration").addEventListener("click", () => showSection(simRegistrationSection));
+document.getElementById("show-profile").addEventListener("click", () => showSection(profileSection, fetchProfileInfo));
+document.getElementById("sim-registration-form").addEventListener("submit", registerSIM);
 
-        document.getElementById("full-name").textContent = data.full_name || "N/A";
-        document.getElementById("mobile-number").textContent = data.mobile_number || "N/A";
-        document.getElementById("user-country").textContent = data.country || "N/A";
-    })
-    .catch(error => console.error("Error fetching profile info:", error));
-  }
-
-  // ✅ Ensure Sections Work
-  document.getElementById("transaction-form").addEventListener("submit", submitTransaction);
-  document.getElementById("show-overview").addEventListener("click", () => showSection(overviewSection, fetchAgentDashboardData));
-  document.getElementById("show-transactions").addEventListener("click", () => showSection(transactionsSection, fetchTransactionHistory));
-  document.getElementById("show-sim-registration").addEventListener("click", () => showSection(simRegistrationSection));
-  document.getElementById("show-profile").addEventListener("click", () => showSection(profileSection, fetchProfileInfo));
-  document.getElementById("sim-registration-form").addEventListener("submit", registerSIM);
-
-  // ✅ Logout Button
-  document.getElementById("logout-link").addEventListener("click", function (e) {
-    e.preventDefault();
-    fetch("/api/auth/logout", { method: "POST" }).then(() => window.location.href = "/api/auth/login_form");
-  });
-
-  // ✅ Show Overview on First Load
-  showSection(overviewSection);
-  fetchAgentDashboardData();
-  fetchWalletInfo();
-  fetchTransactionHistory();
-  fetchProfileInfo();
-  fetchSimRegistrationHistory();
+// ✅ Logout Button
+document.getElementById("logout-link").addEventListener("click", function (e) {
+  e.preventDefault();
+  fetch("/api/auth/logout", { method: "POST" }).then(() => window.location.href = "/api/auth/login_form");
 });
+
+// ✅ Show Overview on First Load
+showSection(overviewSection);
+fetchAgentDashboardData();
+fetchWalletInfo();
+fetchTransactionHistory();
+fetchProfileInfo();
+fetchSimRegistrationHistory();
+});
+

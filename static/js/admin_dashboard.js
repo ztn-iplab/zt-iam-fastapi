@@ -1,4 +1,4 @@
-// ---------------------------
+
 // Role Mapping
 // ---------------------------
 const roleMapping = {
@@ -24,9 +24,10 @@ setInterval(() => {
     fetch("/api/auth/logout", { method: "POST" })
       .then(() => {
         window.location.href = '/api/auth/login_form';
-      });
-  }
+          });
+    }
 }, 60000);
+
 
 // ---------------------------
 // Admin Functions: Fetch Users & Bind Actions
@@ -40,32 +41,37 @@ function fetchUsersForAdmin() {
   .then(users => {
       const userList = document.getElementById("admin-user-list");
       userList.innerHTML = "";
+
       users.forEach(user => {
           const roleName = roleMapping[user.role] || user.role;
-          const fullName = user.name || (((user.first_name || '') + ' ' + (user.last_name || '')).trim() || 'N/A');
+          const fullName = user.name || "N/A";
+          const mobileNumber = user.mobile_number || "N/A"; // ✅ Fetch from backend (SIM-based)
+          const email = user.email || "N/A";
+
+          
           const row = document.createElement("tr");
           row.innerHTML = `
               <td>${user.id}</td>
               <td>${fullName}</td>
-              <td>${user.mobile_number}</td>
-              <td>${user.email}</td>
+              <td>${mobileNumber}</td>
+              <td class="user-email">${email}</td>
               <td>${roleName}</td>
-              <td>
-                  <button class="btn btn-primary assign-role" data-user-id="${user.id}">Assign Role</button>
-                  <button class="btn btn-primary verify-user" data-user-id="${user.id}">Verify</button>
-                  <button class="btn btn-danger suspend-user" data-user-id="${user.id}">Suspend</button>
-                  <button class="btn btn-secondary delete-user" data-user-id="${user.id}">Delete</button>
-                  <button class="btn btn-primary edit-user" data-user-id="${user.id}">Edit</button>
+              <td class="action-buttons">
+                  <button class="btn btn-sm btn-primary assign-role" data-user-id="${user.id}">Role</button>
+                  <button class="btn btn-sm btn-success verify-user" data-user-id="${user.id}">Verify</button>
+                  <button class="btn btn-sm btn-danger suspend-user" data-user-id="${user.id}">Suspend</button>
+                  <button class="btn btn-sm btn-danger delete-user" data-user-id="${user.id}">Delete</button>
+                  <button class="btn btn-sm btn-secondary edit-user" data-user-id="${user.id}">Edit</button>
               </td>
           `;
           userList.appendChild(row);
       });
-      
+
       // Attach event listeners for each action
       document.querySelectorAll(".assign-role").forEach(button => {
           button.addEventListener("click", function () {
               let newRole = prompt("Enter new role (user, agent, admin):");
-              if(newRole) {
+              if (newRole) {
                   updateUserRole(this.dataset.userId, newRole);
               }
           });
@@ -264,7 +270,7 @@ function searchUsers(searchTerm) {
   }
 }
 
-// ---------------------------
+/// ---------------------------
 // Bind All Events on DOMContentLoaded
 // ---------------------------
 document.addEventListener("DOMContentLoaded", function(){
@@ -284,86 +290,139 @@ document.addEventListener("DOMContentLoaded", function(){
       }
     });
   }
-  
-  // Bind Add User button event to open the modal using Bootstrap 5 API
+
+  // ---------------------------
+  // 🎯 Open Add User Modal
+  // ---------------------------
   const addUserBtn = document.getElementById("add-user-btn");
   if (addUserBtn) {
-    addUserBtn.addEventListener("click", function(){
-      console.log("Add User button clicked");
+    addUserBtn.addEventListener("click", function() {
+      console.log("✅ Add User button clicked");
+
       const modalEl = document.getElementById("addUserModal");
       if (!modalEl) {
-        console.error("Modal element with id 'addUserModal' not found.");
+        console.error("❌ Modal element with id 'addUserModal' not found.");
         return;
       }
-      // Create and show the modal using Bootstrap 5's native API
+
+      // ✅ Bootstrap 5 API to show the modal
       const addUserModal = new bootstrap.Modal(modalEl);
       addUserModal.show();
-      console.log("Modal should now be visible");
+
+      // ✅ Ensure fetchGeneratedSIM() only runs if function exists
+      if (typeof fetchGeneratedSIM === "function") {
+        fetchGeneratedSIM();
+      } else {
+        console.error("❌ fetchGeneratedSIM() function is not defined!");
+      }
     });
   } else {
-    console.error("Add User button (id 'add-user-btn') not found in the DOM.");
+    console.error("❌ Add User button (id 'add-user-btn') not found in the DOM.");
   }
-  
-  // Bind Add User form submission (inside the modal)
-  // Bind Add User form submission (inside the modal)
+
+  // ---------------------------
+// 🎯 Handle Manual SIM Refresh
+// ---------------------------
+document.getElementById("generate-mobile-btn").addEventListener("click", function() {
+  fetchGeneratedSIM(); // ✅ Call the function to get new SIM details
+});
+
+  // ---------------------------
+// 🎯 Fetch Auto-Generated SIM Details & Update Input Fields
+// ---------------------------
+function fetchGeneratedSIM() {
+  fetch("/admin/generate_sim", { method: "GET", credentials: "include" })
+    .then(response => response.json())
+    .then(data => {
+      if (data.error) {
+        alert("❌ Error fetching SIM details: " + data.error);
+      } else {
+        // ✅ Update the input fields with generated values
+        document.getElementById("generated-mobile").value = data.mobile_number;
+        document.getElementById("generated-iccid").value = data.iccid;
+
+        // ✅ Store values globally for form submission
+        window.generatedSIM = {
+          mobile_number: data.mobile_number,
+          iccid: data.iccid
+        };
+
+        console.log(`✅ SIM Updated: ICCID ${data.iccid}, Mobile ${data.mobile_number}`);
+      }
+    })
+    .catch(error => {
+      console.error("❌ Error generating SIM:", error);
+      alert("❌ Unexpected error occurred while generating SIM.");
+    });
+}
+
+
+
+  // ---------------------------
+// Admin: Add New User Form Submission (Modal)
+// ---------------------------
 const addUserForm = document.getElementById("add-user-form");
 if (addUserForm) {
-  addUserForm.addEventListener("submit", function(e){
+  addUserForm.addEventListener("submit", async function(e) {
     e.preventDefault();
-    
-    // Get values from form fields
+
+    // ✅ Get values from the form fields (not from background storage)
     const firstName = document.getElementById("add-first-name").value.trim();
     const lastName = document.getElementById("add-last-name").value.trim();
     const email = document.getElementById("add-email").value.trim();
-    const mobile = document.getElementById("add-mobile").value.trim();
     const country = document.getElementById("add-country").value.trim();
     const password = document.getElementById("add-password").value.trim();
-    
-    // Validate required fields
-    if (!firstName || !email || !mobile || !country || !password) {
-      alert("Please fill in all required fields.");
+    const mobileNumber = document.getElementById("generated-mobile").value.trim(); // ✅ Use the visible input field
+    const iccid = document.getElementById("generated-iccid").value.trim(); // ✅ Use the visible input field
+
+    if (!firstName || !email || !country || !password || !mobileNumber || !iccid) {
+      alert("❌ Please fill in all required fields.");
       return;
     }
-    
-    // Build payload with default role "user"
+
+    // ✅ Build user payload with displayed values
     const payload = {
       first_name: firstName,
       last_name: lastName,
       email: email,
-      mobile_number: mobile,
-      country: country,
       password: password,
-      role: "user"
+      country: country,
+      mobile_number: mobileNumber, // ✅ Now using displayed input value
+      iccid: iccid  // ✅ Now using displayed input value
     };
-  
-    // Send POST request to add the new user
-    fetch("/api/auth/register", {
+
+    console.log("📡 Sending registration payload:", payload); // Debugging step
+
+    // ✅ Step 3: Send registration request
+    const registerResponse = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      credentials: "include"
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.error) {
-        alert("Error adding user: " + data.error);
-      } else {
-        alert("User added successfully!");
-        fetchUsersForAdmin(); // Refresh user list
-        // Hide the modal using getOrCreateInstance
-        const addUserModal = bootstrap.Modal.getOrCreateInstance(document.getElementById("addUserModal"));
-        addUserModal.hide();
-        addUserForm.reset();
-      }
-    })
-    .catch(error => {
-      console.error("Error adding user:", error);
-      alert("Error adding user. Check the console for details.");
+      credentials: "include",
+      body: JSON.stringify(payload)
     });
+
+    const registerData = await registerResponse.json();
+    console.log("✅ Server Response:", registerData);
+
+    if (registerData.error) {
+      alert("❌ Error registering user: " + registerData.error);
+    } else {
+      alert(`✅ User registered successfully with Mobile: ${registerData.mobile_number}, ICCID: ${registerData.iccid}`);
+      fetchUsersForAdmin(); // ✅ Refresh user list
+
+      // ✅ Hide the modal after successful registration
+      const addUserModal = bootstrap.Modal.getOrCreateInstance(document.getElementById("addUserModal"));
+      addUserModal.hide();
+      addUserForm.reset();
+    }
   });
 }
 
-  // Bind Logout event
+
+
+  // ---------------------------
+  // Logout Functionality
+  // ---------------------------
   const logoutLink = document.getElementById("logout-link");
   if (logoutLink) {
     logoutLink.addEventListener("click", function(e){

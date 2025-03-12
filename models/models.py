@@ -1,7 +1,7 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from .import db
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 
 
 #db = SQLAlchemy()
@@ -11,30 +11,27 @@ class User(db.Model):
     __tablename__ = 'users'
     
     id = db.Column(db.Integer, primary_key=True)
-    mobile_number = db.Column(db.String(20), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)  # New email field
+    email = db.Column(db.String(120), unique=True, nullable=False)
     first_name = db.Column(db.String(50), nullable=False)
-    last_name = db.Column(db.String(50), nullable=True)  # Some people have one name
+    last_name = db.Column(db.String(50), nullable=True)  
     identity_verified = db.Column(db.Boolean, default=False)
     country = db.Column(db.String(50))
-    trust_score = db.Column(db.Float, default=0.5)  # Score between 0 (low) and 1 (high)
+    trust_score = db.Column(db.Float, default=0.5)  
     last_login = db.Column(db.DateTime, nullable=True, default=db.func.current_timestamp())
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     password_hash = db.Column(db.String(255), nullable=False)
     
-    # New fields for account management
-    is_active = db.Column(db.Boolean, default=True)      # For soft delete
-    deletion_requested = db.Column(db.Boolean, default=False)  # For deletion request
+    # Account Status
+    is_active = db.Column(db.Boolean, default=True)      
+    deletion_requested = db.Column(db.Boolean, default=False)  
     
     # Relationships
     user_access_control = db.relationship('UserAccessControl', backref='user', uselist=False)
     auth_logs = db.relationship('UserAuthLog', backref='user', lazy=True)
     transactions = db.relationship('Transaction', backref='user', lazy=True)
-    sim_cards = db.relationship('SIMRegistration', backref='user', lazy=True)
-    wallet = db.relationship('Wallet', backref='user', uselist=False)  # One-to-One
-     
+    sim_cards = db.relationship('SIMCard', backref='user', lazy=True)  # Updated relationship
+    wallet = db.relationship('Wallet', backref='user', uselist=False)
 
-    # Password setter and getter
     @property
     def password(self):
         raise AttributeError("Password is not readable")
@@ -45,6 +42,22 @@ class User(db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+
+# 📌 SIM Card Model (Realistic Mobile SIM Registration)
+class SIMCard(db.Model):
+    __tablename__ = 'sim_cards'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    iccid = db.Column(db.String(20), unique=True, nullable=False)  # Unique SIM Serial Number
+    mobile_number = db.Column(db.String(20), unique=True, nullable=False)
+    network_provider = db.Column(db.String(50), nullable=False)
+    status = db.Column(db.String(20), default="unregistered")  # active, suspended, lost, swapped
+    registered_by = db.Column(db.String(100))  # e.g., "Agent", "User", "Self-service"
+    registration_date = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Many-to-One relationship with User (One user can have multiple SIMs)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
 # 📌 Wallet Model (User Balance & Transactions)
 class Wallet(db.Model):
@@ -69,6 +82,7 @@ class UserAuthLog(db.Model):
     failed_attempts = db.Column(db.Integer, default=0)  # Failed login tracking
     geo_trust_score = db.Column(db.Float, default=0.5)  # Trust level based on location history
 
+
 # 📌 Transactions (Mobile Money Operations)
 class Transaction(db.Model):
     __tablename__ = 'transactions'
@@ -84,14 +98,8 @@ class Transaction(db.Model):
     risk_score = db.Column(db.Float, default=0.0)  # Score for fraud detection
     transaction_metadata = db.Column(db.Text, nullable=True)  # Store JSON-like metadata
 
-# 📌 SIM Card Registration (Ties Users to Mobile Networks)
-class SIMRegistration(db.Model):
-    __tablename__ = 'sim_registrations'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    registration_timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
-    verified_by = db.Column(db.String(100))  # agent, self-service, etc.
-    status = db.Column(db.String(20), default='active')  # active, suspended, expired
+
+
 
 # 📌 Role-Based Access Control (RBAC)
 class UserRole(db.Model):

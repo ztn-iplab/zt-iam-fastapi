@@ -88,29 +88,61 @@
   <div class="widgets">
     <div class="widget sim-widget">
       <h2>SIM Card Registration</h2>
+
+      <!-- ✅ SIM Registration Form -->
       <form id="sim-registration-form" class="transaction-form">
-        <div class="input-group">
-          <div class="fixed-input-wrapper">
-            <input type="text" name="mobile_number" placeholder="User Mobile Number" class="input-field">
+        <div class="row g-2">
+          <!-- Mobile Number (Auto-Generated) -->
+          <div class="col-md-6">
+            <label for="generated-mobile" class="form-label"> Mobile Number</label>
+            <input type="text" id="generated-mobile" class="form-control input-field text-center" placeholder="mobile-number" readonly>
           </div>
-          <button type="submit" class="btn btn-primary">Register SIM</button>
+
+          <!-- ICCID (Auto-Generated) -->
+          <div class="col-md-6">
+            <label for="generated-iccid" class="form-label">Sim card ICCID</label>
+            <input type="text" id="generated-iccid" class="form-control input-field text-center" placeholder="ICCID" readonly>
+          </div>
+
+          <!-- Network Provider Selection -->
+          <div class="col-md-6">
+            <label for="network-provider" class="form-label">Select Network Provider</label>
+            <select id="network-provider" class="form-select input-field" required>
+              <option value="">Select Network</option>
+              <option value="MTN">MTN</option>
+              <option value="Airtel">Airtel</option>
+            </select>
+          </div>
+
+          <!-- Generate & Register Buttons (Side by Side) -->
+          <div class="col-md-6 d-flex align-items-end justify-content-between">
+            <button type="button" id="generate-mobile-btn" class="btn btn-primary">
+              <i class="fas fa-microchip"></i> Get New SIM
+            </button>
+            <button type="submit" class="btn btn-success btn-sm">
+              <i class="fas fa-check-circle"></i> Register SIM
+            </button>
+          </div>
         </div>
       </form>
-                   
-      <h3>SIM Registration History</h3>
-<table id="sim-registration-history" class="sim-table">
-  <thead>
-    <tr>
-      <th>Mobile Number</th>
-      <th>Registration Date</th>
-      <th>Status</th>
-    </tr>
-  </thead>
-  <tbody>
-    <!-- SIM registration records will be appended here -->
-  </tbody>
-</table>
 
+      <!-- ✅ SIM Registration History -->
+      <h3 class="mt-4">SIM Registration History</h3>
+      <table id="sim-registration-history" class="sim-table">
+        <thead>
+          <tr>
+            <th>ICCID</th>
+            <th>Mobile Number</th>
+            <th>Network Provider</th>
+            <th>Status</th>
+            <th>Registration Date</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- SIM registration records will be appended here -->
+        </tbody>
+      </table>
     </div>
   </div>
 </section>

@@ -2,8 +2,9 @@ from flask import Flask, render_template, jsonify, redirect, url_for
 from config import Config
 from sqlalchemy import text
 from flask_migrate import Migrate
-from models.models import db, Wallet, User, Transaction, UserAccessControl, UserRole, SIMRegistration
+from models.models import db, Wallet, User, Transaction, UserAccessControl, UserRole, SIMCard
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
+from werkzeug.security import check_password_hash
 from routes.auth import auth_bp
 from routes.user_routes import user_bp
 from routes.wallet_routes import wallet_bp

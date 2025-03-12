@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.decorators import role_required
-from models.models import db, User, UserAccessControl, UserRole, Wallet, Transaction, UserAuthLog, SIMRegistration, RealTimeLog
-
+from models.models import db, User, UserAccessControl, UserRole, Wallet, Transaction, UserAuthLog, SIMCard, RealTimeLog
+import random
 admin_bp = Blueprint("admin", __name__)
 
 #Admin Dashboard
@@ -29,7 +29,7 @@ def admin_dashboard():
     return render_template('admin_dashboard.html', user=admin_user)
 
 
-# List all users
+# ✅ List all users (Admin Only)
 @admin_bp.route("/admin/users", methods=["GET"])
 @jwt_required()
 @role_required(["admin"])
@@ -39,16 +39,18 @@ def get_all_users():
         users = User.query.all()
         users_list = []
         for u in users:
+            # Fetch the SIM Card associated with the user
+            primary_sim = SIMCard.query.filter_by(user_id=u.id, status="active").first()
+
             users_list.append({
                 "id": u.id,
                 "name": f"{u.first_name} {u.last_name or ''}".strip(),
-                "mobile_number": u.mobile_number,
+                "mobile_number": primary_sim.mobile_number if primary_sim else "N/A",  # Get the assigned number
                 "email": u.email,
                 "role": UserRole.query.get(u.user_access_control.role_id).role_name if u.user_access_control else None
             })
         return jsonify(users_list), 200
     except Exception as e:
-        # Log the error (if you have logging set up)
         return jsonify({"error": "Failed to fetch users", "details": str(e)}), 500
 
 
@@ -59,10 +61,15 @@ def get_all_users():
 def assign_role():
     """Admins assign roles to users"""
     data = request.get_json()
+
     user = User.query.get(data.get("user_id"))
     if not user:
         return jsonify({"error": "User not found"}), 404
-    
+
+    # ✅ Get user's mobile number from SIMCard (since it's not in the User model anymore)
+    user_sim = SIMCard.query.filter_by(user_id=user.id).first()
+    mobile_number = user_sim.mobile_number if user_sim else "N/A"
+
     # Validate the role name
     role = UserRole.query.filter_by(role_name=data.get("role_name")).first()
     if not role:
@@ -77,7 +84,7 @@ def assign_role():
         db.session.add(new_access)
 
     db.session.commit()
-    return jsonify({"message": f"Role '{role.role_name}' assigned to user {user.mobile_number}"}), 200
+    return jsonify({"message": f"Role '{role.role_name}' assigned to user with mobile {mobile_number}"}), 200
 
 
 # Suspend the user
@@ -134,11 +141,15 @@ def delete_user(user_id):
     if not user.deletion_requested:
         return jsonify({"error": "User has not requested account deletion."}), 400
 
+    # ✅ Fetch user's SIM card before deleting
+    user_sim = SIMCard.query.filter_by(user_id=user.id).first()
+    mobile_number = user_sim.mobile_number if user_sim else "N/A"
+
     # Delete related records first to maintain database integrity
     Wallet.query.filter_by(user_id=user_id).delete()
     Transaction.query.filter_by(user_id=user_id).delete()
     UserAuthLog.query.filter_by(user_id=user_id).delete()
-    SIMRegistration.query.filter_by(user_id=user_id).delete()
+    SIMCard.query.filter_by(user_id=user_id).delete()  # ✅ Changed from `SIMRegistration`
     UserAccessControl.query.filter_by(user_id=user_id).delete()
     RealTimeLog.query.filter_by(user_id=user_id).delete()
 
@@ -146,23 +157,27 @@ def delete_user(user_id):
     db.session.delete(user)
     db.session.commit()
 
-    return jsonify({"message": "User and all related data have been permanently deleted."}), 200
+    return jsonify({
+        "message": f"User with mobile {mobile_number} and all related data have been permanently deleted."
+    }), 200
+
 
 
    
-# Updading the user
+# ✅ Admin Updates a User's Information
 @admin_bp.route("/admin/edit_user/<int:user_id>", methods=["PUT"])
 @jwt_required()
 @role_required(["admin"])
 def edit_user(user_id):
-    """Allow an admin to edit user details."""
+    """Allow an admin to edit user details, including email & SIM-linked mobile number."""
+    
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 
     data = request.get_json()
     
-    # Update only fields that were provided
+    # ✅ Update only the provided fields
     if "first_name" in data:
         user.first_name = data["first_name"]
     if "last_name" in data:
@@ -172,11 +187,67 @@ def edit_user(user_id):
         if existing_email and existing_email.id != user_id:
             return jsonify({"error": "Email already in use"}), 400
         user.email = data["email"]
+
+    # ✅ Handle Mobile Number Update (Check in SIMCard, not User)
     if "mobile_number" in data:
-        existing_mobile = User.query.filter_by(mobile_number=data["mobile_number"]).first()
-        if existing_mobile and existing_mobile.id != user_id:
+        existing_sim = SIMCard.query.filter_by(mobile_number=data["mobile_number"]).first()
+        if existing_sim and existing_sim.user_id != user_id:
             return jsonify({"error": "Mobile number already in use"}), 400
-        user.mobile_number = data["mobile_number"]
+
+        # ✅ Update the SIM Card's mobile number (if user has one)
+        user_sim = SIMCard.query.filter_by(user_id=user.id).first()
+        if user_sim:
+            user_sim.mobile_number = data["mobile_number"]
+        else:
+            return jsonify({"error": "No SIM card linked to this user"}), 400
 
     db.session.commit()
     return jsonify({"message": "User updated successfully!"}), 200
+
+# 📌 ✅ Generate Unique Mobile Number
+def generate_unique_mobile_number():
+    """Generate a mobile number that does not exist in the database."""
+    while True:
+        new_number = "0787" + str(random.randint(100000, 999999))  # Example format
+        existing_number = SIMCard.query.filter_by(mobile_number=new_number).first()
+        if not existing_number:
+            return new_number
+
+# 📌 ✅ Generate Unique ICCID
+def generate_unique_iccid():
+    """Generate a unique SIM Serial Number (ICCID)."""
+    while True:
+        new_iccid = "8901" + str(random.randint(100000000000, 999999999999))
+        existing_iccid = SIMCard.query.filter_by(iccid=new_iccid).first()
+        if not existing_iccid:
+            return new_iccid
+
+# 📌 ✅ API: Generate New SIM for User Registration
+@admin_bp.route("/admin/generate_sim", methods=["GET"])
+@jwt_required()
+@role_required(["admin"])
+def generate_sim():
+    """Admin generates a new SIM card for a user."""
+    try:
+        new_iccid = generate_unique_iccid()  # ✅ Generate ICCID
+        new_mobile_number = generate_unique_mobile_number()  # ✅ Generate Mobile Number
+
+        new_sim = SIMCard(
+            iccid=new_iccid,
+            mobile_number=new_mobile_number,
+            network_provider="MTN Rwanda",  # Example network
+            status="unregistered",
+            registered_by="Admin"
+        )
+
+        db.session.add(new_sim)
+        db.session.commit()
+
+        return jsonify({
+            "iccid": new_sim.iccid,
+            "mobile_number": new_sim.mobile_number
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to generate SIM: {str(e)}"}), 500

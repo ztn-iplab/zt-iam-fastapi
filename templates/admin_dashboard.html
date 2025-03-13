@@ -26,23 +26,46 @@
         <input type="text" id="user-search" placeholder="Search users...">
         <button id="search-user-btn">Search</button>
       </div>      
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Full Name</th>
-            <th>Mobile</th>
-            <th>Email</th>
-            <th>Role</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="admin-user-list">
-          <!-- Users will be dynamically loaded here -->
-        </tbody>
-      </table>
+      <h3 class="mt-4">User Management</h3>
+
+      <!-- ✅ Wrap table inside a scrollable container -->
+      <div class="table-container">
+        <table id="admin-user-list" class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Full Name</th>
+              <th>Mobile Number</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th class="actions-header text-right">Actions</th> <!-- ✅ Fix Right Alignment -->
+            </tr>
+          </thead>
+          <tbody>
+            <!-- User records will be appended here dynamically -->
+          </tbody>
+        </table>
+      </div>
     </section>
-    
+        <!-- Admin View User Modal -->
+    <div class="modal" id="userDetailsModal" tabindex="-1" aria-labelledby="userDetailsModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="userDetailsModalLabel">User Details</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <!-- User details will be injected here by the viewUser function -->
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
     <!-- Flagged Transactions Section -->
     <section id="flagged-transactions-section" class="admin-section" style="display:none;">
       <h3>Flagged Transactions</h3>

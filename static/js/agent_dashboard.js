@@ -8,6 +8,28 @@ document.addEventListener("DOMContentLoaded", function () {
   const profileSection = document.getElementById("content-profile");
   let transactionChart;
 
+  // ✅ Ensure the modal and close button exist before adding event listeners
+  setTimeout(() => {
+    const modal = document.getElementById("simDetailsModal");
+    const closeButton = document.getElementById("closeSimDetails");
+
+    if (modal && closeButton) {
+        closeButton.addEventListener("click", function() {
+            modal.style.display = "none";
+        });
+        console.log("✅ Close button event listener added.");
+    } else {
+        console.warn("⚠️ Warning: SIM Details modal or close button not found. The modal may not exist on this page.");
+    }
+}, 500); // ✅ Delay checking elements for 500ms to allow rendering
+
+    // ✅ Assign functions to `window` to ensure they work globally
+    window.viewSIM = viewSIM;
+    window.activateSIM = activateSIM;
+    window.suspendSIM = suspendSIM;
+    window.transferSIM = transferSIM;
+    window.deleteSIM = deleteSIM;
+
   // ✅ Function to Show Sections
   function showSection(section, callback = null) {
     document.querySelectorAll(".content-section").forEach(s => s.style.display = "none");
@@ -204,43 +226,113 @@ document.getElementById("transaction-type").addEventListener("change", function 
   }
 });
 
-// ✅ SIM Registration (Agent Registers SIMs)
-function registerSIM(event) {
-  event.preventDefault();
+// ✅ New simcard generation
+function generateNewSIM() {
+  const networkProvider = document.getElementById("network-provider").value;
 
-  const userIdInput = document.getElementById("register-user-id");
-  const userId = userIdInput ? userIdInput.value.trim() : null; // Get user ID if provided
+  if (!networkProvider || networkProvider === "") {
+    alert("❌ Please select a network provider before generating a SIM.");
+    return;
+  }
 
-  const payload = userId ? { user_id: userId } : {}; // Include user_id only if available
-
-  fetch("/agent/register_sim", {
+  fetch("/agent/generate_sim", {
       method: "POST",
-      headers: { 
-          "Content-Type": "application/json"
-      },
-      credentials: "include",  // ✅ Uses HTTP-only cookies for authentication
-      body: JSON.stringify(payload) // ✅ Send user_id if available
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ network_provider: networkProvider })  // ✅ Send network provider
   })
   .then(response => response.json())
   .then(data => {
-      if (data.error) {
+      if (!data.success) {
           alert(`❌ Error: ${data.error}`);
       } else {
-          alert(`✅ SIM Registered Successfully!\nICCID: ${data.iccid}\nMobile Number: ${data.mobile_number}`);
-          fetchSimRegistrationHistory(); // ✅ Refresh SIM list after registration
+          document.getElementById("generated-mobile").value = data.mobile_number;
+          document.getElementById("generated-iccid").value = data.iccid;
+          alert(`✅ Success: ${data.message}`);
       }
   })
-  .catch(error => {
-      console.error("❌ Error registering SIM:", error);
-      alert("❌ An unexpected error occurred while registering the SIM.");
-  });
+  .catch(error => console.error("❌ Error generating new SIM:", error));
 }
 
-// ✅ Attach Event Listener for SIM Registration
+// ✅ Attach event listener to the button
+document.getElementById("generate-mobile-btn").addEventListener("click", generateNewSIM);
+
+
+// ✅ Function to Register SIM (Agent Registers SIMs)
+function registerSIM(event) {
+  event.preventDefault();
+
+  const iccid = document.getElementById("generated-iccid").value.trim();
+  const mobileNumber = document.getElementById("generated-mobile").value.trim();
+  const networkProvider = document.getElementById("network-provider").value;
+
+  // ✅ Validate all required fields
+  if (!networkProvider || networkProvider === "") {
+    alert("❌ Please select a network provider before registering a SIM.");
+    return;
+  }
+
+  if (!iccid || iccid === "") {
+    alert("❌ Error: SIM ICCID is missing. Get a new SIM first.");
+    return;
+  }
+
+  if (!mobileNumber || mobileNumber === "") {
+    alert("❌ Error: Mobile number is missing. Generate a SIM first.");
+    return;
+  }
+
+  fetch("/agent/register_sim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ iccid, mobile_number: mobileNumber, network_provider: networkProvider })
+  })
+  .then(response => response.json())
+  .then(data => {
+      if (!data.success) {
+          alert(`❌ Error: ${data.error}`);
+      } else {
+          alert(`✅ Success: ${data.message}`);
+
+          // ✅ Clear the form after successful registration
+          document.getElementById("generated-iccid").value = "";
+          document.getElementById("generated-mobile").value = "";
+          document.getElementById("network-provider").value = "";
+
+          // ✅ Refresh the SIM registration history
+          fetchSimRegistrationHistory();
+      }
+  })
+  .catch(error => console.error("❌ Error registering SIM:", error));
+}
+
+// ✅ Attach event listener
+document.getElementById("sim-registration-form").addEventListener("submit", registerSIM);
+
+// ✅ Attach event listener
+document.getElementById("sim-registration-form").addEventListener("submit", registerSIM);
+
+
+// ✅ Ensure registerSIM is Loaded Before Event Listeners
 document.addEventListener("DOMContentLoaded", function () {
+  console.log("✅ Agent Dashboard Loaded");
+
   const simRegistrationForm = document.getElementById("sim-registration-form");
   if (simRegistrationForm) {
       simRegistrationForm.addEventListener("submit", registerSIM);
+      console.log("✅ SIM Registration Form Event Listener Attached.");
+  } else {
+      console.error("❌ SIM Registration Form Not Found!");
+  }
+
+  // ✅ Ensure "Get New SIM" Button Works
+  const generateSimBtn = document.getElementById("generate-mobile-btn");
+  if (generateSimBtn) {
+      generateSimBtn.addEventListener("click", generateNewSIM);
+      console.log("✅ 'Get New SIM' button is now active.");
+  } else {
+      console.error("❌ 'Get New SIM' button not found!");
   }
 });
 
@@ -252,34 +344,50 @@ function fetchSimRegistrationHistory() {
       headers: { "Content-Type": "application/json" },
       credentials: "include"
   })
-  .then(response => {
-      if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-      return response.json(); // ✅ Convert response to JSON
-  })
+  .then(response => response.json())
   .then(data => {
       console.log("SIM Registration History:", data);
       const simTable = document.getElementById("sim-registration-history").querySelector("tbody");
 
-      if (!simTable) {
-          console.error("❌ Error: SIM registration history table not found!");
-          return;
-      }
-
       simTable.innerHTML = ""; // ✅ Clear table before adding new rows
 
       if (!data.sims || data.sims.length === 0) {
-          simTable.innerHTML = `<tr><td colspan='3' class="text-center">No SIMs registered yet.</td></tr>`;
+          simTable.innerHTML = `<tr><td colspan='6' class="text-center">No SIMs registered yet.</td></tr>`;
           return;
       }
 
       data.sims.forEach(sim => {
           const row = document.createElement("tr");
           row.innerHTML = `
+            <td>${sim.iccid}</td>
             <td>${sim.mobile_number}</td>
-            <td>${new Date(sim.timestamp).toLocaleDateString()}</td>
+            <td>${sim.network_provider}</td>
             <td>${sim.status}</td>
+            <td>${new Date(sim.timestamp).toLocaleDateString()}</td>
+            <td class="action-buttons">
+                <div class="dropdown">
+                    <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)" style="background-color: var(--brand-blue); color: white;">
+                      Actions ▼
+                    </button>
+                    <div class="dropdown-menu">
+                        <button class="btn btn-sm view-btn" onclick="viewSIM('${sim.iccid}')">
+                            <i class="fas fa-eye"></i> View
+                        </button>
+                        ${sim.status === "unregistered" ? `<button class="btn btn-sm activate-btn" onclick="activateSIM('${sim.iccid}')">
+                            <i class="fas fa-check-circle"></i> Activate
+                        </button>` : ""}
+                        ${sim.status === "active" ? `<button class="btn btn-sm suspend-btn" onclick="suspendSIM('${sim.iccid}')">
+                            <i class="fas fa-exclamation-triangle"></i> Suspend
+                        </button>` : ""}
+                        ${sim.status === "unregistered" ? `<button class="btn btn-sm transfer-btn" onclick="transferSIM('${sim.iccid}')">
+                            <i class="fas fa-random"></i> Transfer
+                        </button>` : ""}
+                        ${sim.status === "unregistered" ? `<button class="btn btn-sm delete-btn" onclick="deleteSIM('${sim.iccid}')">
+                            <i class="fas fa-trash-alt"></i> Delete
+                        </button>` : ""}
+                    </div>
+                </div>
+            </td>
           `;
           simTable.appendChild(row);
       });
@@ -290,6 +398,211 @@ function fetchSimRegistrationHistory() {
   });
 }
 
+// ✅ Ensure the function is globally accessible
+window.toggleDropdown = function(button) {
+  console.log("Dropdown Clicked!"); // ✅ Debugging to check if function runs
+
+  // Get the dropdown menu related to the clicked button
+  const dropdownMenu = button.nextElementSibling;
+
+  if (!dropdownMenu) {
+      console.error("❌ Dropdown menu not found!");
+      return;
+  }
+
+  // ✅ Close all other dropdowns before opening this one
+  document.querySelectorAll(".dropdown-menu").forEach(menu => {
+      if (menu !== dropdownMenu) {
+          menu.style.display = "none";
+      }
+  });
+
+  // ✅ Toggle the clicked dropdown menu
+  dropdownMenu.style.display = (dropdownMenu.style.display === "block") ? "none" : "block";
+};
+
+// ✅ Close dropdown when clicking outside
+document.addEventListener("click", function(event) {
+  if (!event.target.closest(".dropdown")) {
+      document.querySelectorAll(".dropdown-menu").forEach(menu => {
+          menu.style.display = "none";
+      });
+  }
+});
+
+ 
+// ✅ Make Modal Draggable
+function makeModalDraggable() {
+  const modal = document.getElementById("simDetailsModal");
+  const header = document.querySelector("#simDetailsModal .modal-header");
+  let offsetX, offsetY, isDragging = false;
+
+  if (!header) return;
+
+  header.addEventListener("mousedown", (e) => {
+      isDragging = true;
+      offsetX = e.clientX - modal.getBoundingClientRect().left;
+      offsetY = e.clientY - modal.getBoundingClientRect().top;
+      modal.style.position = "absolute"; // ✅ Ensure absolute positioning
+  });
+
+  document.addEventListener("mousemove", (e) => {
+      if (!isDragging) return;
+      modal.style.left = `${e.clientX - offsetX}px`;
+      modal.style.top = `${e.clientY - offsetY}px`;
+  });
+
+  document.addEventListener("mouseup", () => {
+      isDragging = false;
+  });
+}
+
+// ✅ View SIM Info function
+
+function viewSIM(iccid) {
+  fetch(`/agent/view_sim/${iccid}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include"
+  })
+  .then(response => response.json())
+  .then(data => {
+      if (data.error) {
+          alert(`❌ Error: ${data.error}`);
+          return;
+      }
+
+      // ✅ Remove existing content before adding new content
+      const modalContent = document.querySelector("#simDetailsModal .modal-content");
+      modalContent.innerHTML = ""; 
+
+      // ✅ Add formatted data WITHOUT extra space
+      modalContent.innerHTML = `
+          <div class="modal-header">
+              <h2 style="color: #4CAF50; margin-bottom: 5px;">SIM Details</h2>
+              <span id="closeSimDetails" class="close">&times;</span>
+          </div>
+          <div class="modal-body">
+              <p><strong>ICCID:</strong> ${data.iccid}</p>
+              <p><strong>Mobile Number:</strong> ${data.mobile_number}</p>
+              <p><strong>Network Provider:</strong> ${data.network_provider}</p>
+              <p><strong>Status:</strong> ${data.status}</p>
+              <p><strong>Registration Date:</strong> ${data.registration_date}</p>
+          </div>
+      `;
+
+      // ✅ Show the modal
+      const modal = document.getElementById("simDetailsModal");
+      modal.style.display = "block";
+
+      // ✅ Attach the close event again (since we replaced modal content)
+      document.getElementById("closeSimDetails").addEventListener("click", function() {
+          modal.style.display = "none";
+      });
+
+      // ✅ Ensure modal resizes properly
+      modal.style.height = "auto";
+      modal.style.minHeight = "auto";
+
+      // ✅ Make the modal draggable
+      makeModalDraggable();
+  })
+  .catch(error => console.error("❌ Error fetching SIM details:", error));
+}
+
+
+// ✅ Activate SIM Function
+function activateSIM(iccid) {
+  if (!confirm("Are you sure you want to activate this SIM?")) return;
+
+  fetch("/agent/activate_sim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ iccid })
+  })
+  .then(response => response.json())
+  .then(data => {
+      if (data.error) {
+          alert(`❌ Error: ${data.error}`);
+      } else {
+          alert(`✅ Success: ${data.message}`);
+          fetchSimRegistrationHistory(); // ✅ Refresh the SIM list
+      }
+  })
+  .catch(error => console.error("❌ Error activating SIM:", error));
+}
+
+// ✅ Suspend SIM Function
+function suspendSIM(iccid) {
+  if (!confirm("⚠️ Are you sure you want to suspend this SIM?")) return;
+
+  fetch("/agent/suspend_sim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ iccid })
+  })
+  .then(response => response.json())
+  .then(data => {
+      if (data.error) {
+          alert(`❌ Error: ${data.error}`);
+      } else {
+          alert(`⚠️ Success: ${data.message}`);
+          fetchSimRegistrationHistory(); // ✅ Refresh the SIM list
+      }
+  })
+  .catch(error => console.error("❌ Error suspending SIM:", error));
+}
+
+function transferSIM(iccid) {
+  const recipientMobile = prompt("Enter the recipient's mobile number:");
+
+  if (!recipientMobile) {
+      alert("❌ Transfer cancelled. No recipient mobile number provided.");
+      return;
+  }
+
+  // ✅ Transfer SIM function
+  fetch("/agent/transfer_sim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ iccid, recipient_mobile: recipientMobile })
+  })
+  .then(response => response.json())
+  .then(data => {
+      if (data.error) {
+          alert(`❌ Error: ${data.error}`);
+      } else {
+          alert(`🔄 Success: ${data.message}`);
+          fetchSimRegistrationHistory(); // ✅ Refresh the SIM list
+      }
+  })
+  .catch(error => console.error("❌ Error transferring SIM:", error));
+}
+
+// ✅ Delete SIM function
+function deleteSIM(iccid) {
+  if (!confirm("🗑️ Are you sure you want to delete this SIM? This action cannot be undone.")) return;
+
+  fetch("/agent/delete_sim", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ iccid })
+  })
+  .then(response => response.json())
+  .then(data => {
+      if (data.error) {
+          alert(`❌ Error: ${data.error}`);
+      } else {
+          alert(`🗑️ Success: ${data.message}`);
+          fetchSimRegistrationHistory(); // ✅ Refresh the SIM list
+      }
+  })
+  .catch(error => console.error("❌ Error deleting SIM:", error));
+}
 
  // ✅ Fetch Profile Information
  function fetchProfileInfo() {

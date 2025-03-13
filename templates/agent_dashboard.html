@@ -135,7 +135,7 @@
             <th>Mobile Number</th>
             <th>Network Provider</th>
             <th>Status</th>
-            <th>Registration Date</th>
+            <th>Date</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -147,6 +147,18 @@
   </div>
 </section>
 
+<!-- ✅ SIM Details Modal -->
+<div id="simDetailsModal" class="modal">
+  <div class="modal-content">
+    <span id="closeSimDetails" class="close">&times;</span>
+    <h2 style="color: #4CAF50;">SIM Details</h2>
+    <p><strong>ICCID:</strong> <span id="simDetailsICCID"></span></p>
+    <p><strong>Mobile Number:</strong> <span id="simDetailsMobile"></span></p>
+    <p><strong>Network Provider:</strong> <span id="simDetailsProvider"></span></p>
+    <p><strong>Status:</strong> <span id="simDetailsStatus"></span></p>
+    <p><strong>Registration Date:</strong> <span id="simDetailsDate"></span></p>
+  </div>
+</div>
 
   <!-- Profile Section -->
   <section id="content-profile" class="content-section" style="display: none;">

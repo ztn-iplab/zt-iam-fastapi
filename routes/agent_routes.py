@@ -1,16 +1,18 @@
 from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.models import db, User, Wallet, Transaction, SIMCard
+from models.models import db, User, Wallet, Transaction, SIMCard, UserAccessControl, UserRole
 from utils.decorators import role_required
 import random
 
 agent_bp = Blueprint("agent", __name__)
 
 # A function to generate a unique mobile number
-def generate_unique_mobile_number():
-    """Generate a mobile number that does not exist in the database."""
+def generate_unique_mobile_number(network_provider):
+    """Generate a mobile number based on the selected network provider."""
+    prefix = "078" if network_provider == "MTN" else "073"  # MTN → 078, Airtel → 073
+
     while True:
-        new_number = "0787" + str(random.randint(100000, 999999))  # Example format
+        new_number = prefix + str(random.randint(1000000, 9999999))  # Ensures 10-digit number
         existing_number = SIMCard.query.filter_by(mobile_number=new_number).first()
         if not existing_number:
             return new_number
@@ -23,6 +25,30 @@ def generate_unique_iccid():
         existing_iccid = SIMCard.query.filter_by(iccid=new_iccid).first()
         if not existing_iccid:
             return new_iccid
+@agent_bp.route("/agent/generate_sim", methods=["POST"])
+@jwt_required()
+def generate_sim():
+    """Generate a unique SIM number and ICCID but do not register it yet."""
+    data = request.get_json()
+    network_provider = data.get("network_provider")
+
+    if not network_provider:
+        return jsonify({"success": False, "error": "❌ Network provider is required."}), 400
+
+    if network_provider not in ["MTN", "Airtel"]:
+        return jsonify({"success": False, "error": "❌ Invalid network provider. Choose MTN or Airtel."}), 400
+
+    # ✅ Generate unique mobile number & ICCID
+    mobile_number = generate_unique_mobile_number(network_provider)
+    iccid = generate_unique_iccid()
+
+    return jsonify({
+        "success": True,
+        "message": f"✅ {network_provider} SIM generated successfully!",
+        "mobile_number": mobile_number,
+        "iccid": iccid
+    }), 200
+
 
 # ✅ API: Register SIM Card (Agents Only)
 @agent_bp.route("/agent/register_sim", methods=["POST"])
@@ -31,54 +57,59 @@ def register_sim():
     logged_in_user = get_jwt_identity()
     agent = User.query.get(logged_in_user)
 
-    # Only agents should be able to register SIMs
-    if not agent or agent.user_access_control.role != "agent":
-        return jsonify({"error": "Unauthorized. Only agents can register SIMs."}), 403
+    # ✅ Check if the user is an agent
+    user_access = UserAccessControl.query.filter_by(user_id=logged_in_user).first()
+    if not user_access:
+        return jsonify({"success": False, "error": "❌ Unauthorized. Agent role required."}), 403
+
+    user_role = UserRole.query.get(user_access.role_id)
+    if not user_role or user_role.role_name != "agent":
+        return jsonify({"success": False, "error": "❌ Unauthorized. Only agents can register SIMs."}), 403
 
     data = request.get_json()
-    user_id = data.get("user_id")
+    iccid = data.get("iccid")
+    mobile_number = data.get("mobile_number")
+    network_provider = data.get("network_provider")
 
-    if not user_id:
-        return jsonify({"error": "User ID is required"}), 400
+    if not iccid or not mobile_number or not network_provider:
+        return jsonify({"success": False, "error": "❌ Missing required SIM details."}), 400
 
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+    if network_provider not in ["MTN", "Airtel"]:
+        return jsonify({"success": False, "error": "❌ Invalid network provider. Choose MTN or Airtel."}), 400
 
-    # Generate unique mobile number and ICCID
-    mobile_number = generate_unique_mobile_number()
-    iccid = generate_unique_iccid()
+    # ✅ Ensure the ICCID is unique before saving
+    existing_sim = SIMCard.query.filter_by(iccid=iccid).first()
+    if existing_sim:
+        return jsonify({"success": False, "error": "❌ This ICCID is already registered."}), 400
 
-    # Create the SIM card
+    # ✅ Save the SIM with the agent's `user_id`
     new_sim = SIMCard(
         iccid=iccid,
         mobile_number=mobile_number,
-        network_provider="MTN Rwanda",  # Example telecom
-        status="active",
-        registered_by="Agent",
-        user_id=user.id
+        network_provider=network_provider,
+        status="unregistered",
+        registered_by=agent.id
     )
 
     db.session.add(new_sim)
     db.session.commit()
 
     return jsonify({
-        "message": "SIM card registered successfully",
-        "user_id": user.id,
+        "success": True,
+        "message": f"✅ {network_provider} SIM registered successfully!",
         "mobile_number": new_sim.mobile_number,
         "iccid": new_sim.iccid
     }), 201
 
+
 # ✅ API: Fetch SIM Registration History
 @agent_bp.route("/agent/sim-registrations", methods=["GET"])
 @jwt_required()
-@role_required(["agent"])
 def fetch_sim_registration_history():
-    """Fetch all SIM cards registered by the agent"""
     agent_id = get_jwt_identity()
 
-    # ✅ Get SIMs registered by this agent
-    sims = SIMCard.query.filter_by(registered_by="Agent").order_by(SIMCard.registration_date.desc()).all()
+    # ✅ Fetch only SIMs registered by the agent
+    sims = SIMCard.query.filter_by(registered_by=agent_id).order_by(SIMCard.registration_date.desc()).all()
 
     sim_list = [
         {
@@ -332,6 +363,67 @@ def agent_profile():
     }), 200
 
 
+@agent_bp.route("/agent/view_sim/<iccid>", methods=["GET"])
+@jwt_required()
+def view_sim(iccid):
+    sim = SIMCard.query.filter_by(iccid=iccid).first()
+    if not sim:
+        return jsonify({"error": "SIM not found"}), 404
+
+    return jsonify({
+        "iccid": sim.iccid,
+        "mobile_number": sim.mobile_number,
+        "network_provider": sim.network_provider,
+        "status": sim.status,
+        "registration_date": sim.registration_date.strftime("%Y-%m-%d %H:%M:%S"),
+    }), 200
 
 
+@agent_bp.route("/agent/activate_sim", methods=["POST"])
+@jwt_required()
+def activate_sim():
+    data = request.get_json()
+    iccid = data.get("iccid")
 
+    sim = SIMCard.query.filter_by(iccid=iccid).first()
+    if not sim:
+        return jsonify({"error": "SIM not found"}), 404
+
+    sim.status = "active"
+    db.session.commit()
+
+    return jsonify({"message": "✅ SIM activated successfully!"}), 200
+
+
+@agent_bp.route("/agent/suspend_sim", methods=["POST"])
+@jwt_required()
+def suspend_sim():
+    data = request.get_json()
+    iccid = data.get("iccid")
+
+    sim = SIMCard.query.filter_by(iccid=iccid).first()
+    if not sim:
+        return jsonify({"error": "SIM not found"}), 404
+
+    sim.status = "suspended"
+    db.session.commit()
+
+    return jsonify({"message": "⚠️ SIM suspended successfully!"}), 200
+
+@agent_bp.route("/agent/delete_sim", methods=["DELETE"])
+@jwt_required()
+def delete_sim():
+    data = request.get_json()
+    iccid = data.get("iccid")
+
+    sim = SIMCard.query.filter_by(iccid=iccid).first()
+    if not sim:
+        return jsonify({"error": "SIM not found"}), 404
+
+    if sim.status != "unregistered":
+        return jsonify({"error": "Cannot delete an activated SIM."}), 400
+
+    db.session.delete(sim)
+    db.session.commit()
+
+    return jsonify({"message": "🗑️ SIM deleted successfully!"}), 200

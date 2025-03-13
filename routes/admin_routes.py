@@ -251,3 +251,20 @@ def generate_sim():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Failed to generate SIM: {str(e)}"}), 500
+
+# View User Details
+@admin_bp.route("/admin/view_user/<user_id>", methods=["GET"])
+@jwt_required()
+def view_user(user_id):
+    user = User.query.filter_by(id=user_id).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({
+        "id": user.id,
+        "name": f"{user.first_name} {user.last_name}" if user.last_name else user.first_name,
+        "mobile_number": user.mobile_number,
+        "email": user.email,
+        "role": user.role,
+        "registration_date": user.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+    }), 200

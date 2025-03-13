@@ -29,75 +29,182 @@ setInterval(() => {
 }, 60000);
 
 
-// ---------------------------
-// Admin Functions: Fetch Users & Bind Actions
-// ---------------------------
+// ✅ Fetch Users & Bind Actions with Dropdown
+// ✅ Function to fetch and display users in Admin Dashboard
 function fetchUsersForAdmin() {
+  const userList = document.querySelector("#admin-user-list tbody");
+  userList.innerHTML = "<tr><td colspan='6' class='text-center'>Loading users...</td></tr>";
+  
   fetch("/admin/users", {
       method: "GET",
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
+      credentials: "include"
   })
   .then(res => res.json())
   .then(users => {
-      const userList = document.getElementById("admin-user-list");
-      userList.innerHTML = "";
+      userList.innerHTML = ""; // ✅ Clear only tbody, not thead
+
+      if (!users || users.length === 0) {
+          userList.innerHTML = "<tr><td colspan='6' class='text-center'>No users available.</td></tr>";
+          return;
+      }
 
       users.forEach(user => {
-          const roleName = roleMapping[user.role] || user.role;
-          const fullName = user.name || "N/A";
-          const mobileNumber = user.mobile_number || "N/A"; // ✅ Fetch from backend (SIM-based)
-          const email = user.email || "N/A";
-
-          
           const row = document.createElement("tr");
           row.innerHTML = `
               <td>${user.id}</td>
-              <td>${fullName}</td>
-              <td>${mobileNumber}</td>
-              <td class="user-email">${email}</td>
-              <td>${roleName}</td>
+              <td>${user.name || "N/A"}</td>
+              <td>${user.mobile_number || "N/A"}</td>
+              <td>${user.email || "N/A"}</td>
+              <td>${user.role || "N/A"}</td>
               <td class="action-buttons">
-                  <button class="btn btn-sm btn-primary assign-role" data-user-id="${user.id}">Role</button>
-                  <button class="btn btn-sm btn-success verify-user" data-user-id="${user.id}">Verify</button>
-                  <button class="btn btn-sm btn-danger suspend-user" data-user-id="${user.id}">Suspend</button>
-                  <button class="btn btn-sm btn-danger delete-user" data-user-id="${user.id}">Delete</button>
-                  <button class="btn btn-sm btn-secondary edit-user" data-user-id="${user.id}">Edit</button>
+                  <div class="dropdown">
+                      <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)">
+                          Actions ▼
+                      </button>
+                      <div class="dropdown-menu">
+                          <button class="btn btn-sm view-user" onclick="viewUser('${user.id}')">
+                              <i class="fas fa-eye"></i> View
+                          </button>
+                          <button class="btn btn-sm assign-role" onclick="assignRole('${user.id}')">
+                              <i class="fas fa-user-tag"></i> Assign Role
+                          </button>
+                          ${user.is_verified ? "" : `<button class="btn btn-sm verify-user" onclick="verifyUser('${user.id}')">
+                              <i class="fas fa-check-circle"></i> Verify
+                          </button>`}
+                          ${user.is_suspended ? `<button class="btn btn-sm unsuspend-user" onclick="unsuspendUser('${user.id}')">
+                              <i class="fas fa-user-check"></i> Unsuspend
+                          </button>` : `<button class="btn btn-sm suspend-user" onclick="suspendUser('${user.id}')">
+                              <i class="fas fa-user-slash"></i> Suspend
+                          </button>`}
+                          <button class="btn btn-sm delete-user" onclick="deleteUser('${user.id}')">
+                              <i class="fas fa-trash-alt"></i> Delete
+                          </button>
+                          <button class="btn btn-sm edit-user" onclick="editUser('${user.id}')">
+                              <i class="fas fa-edit"></i> Edit
+                          </button>
+                      </div>
+                  </div>
               </td>
           `;
           userList.appendChild(row);
       });
-
-      // Attach event listeners for each action
-      document.querySelectorAll(".assign-role").forEach(button => {
-          button.addEventListener("click", function () {
-              let newRole = prompt("Enter new role (user, agent, admin):");
-              if (newRole) {
-                  updateUserRole(this.dataset.userId, newRole);
-              }
-          });
-      });
-      document.querySelectorAll(".suspend-user").forEach(button => {
-          button.addEventListener("click", function () {
-              suspendUser(this.dataset.userId);
-          });
-      });
-      document.querySelectorAll(".verify-user").forEach(button => {
-          button.addEventListener("click", function () {
-              verifyUser(this.dataset.userId);
-          });
-      });
-      document.querySelectorAll(".delete-user").forEach(button => {
-          button.addEventListener("click", function () {
-              deleteUser(this.dataset.userId);
-          });
-      });
-      document.querySelectorAll(".edit-user").forEach(button => {
-          button.addEventListener("click", function () {
-              editUser(this.dataset.userId);
-          });
-      });
   })
-  .catch(error => console.error("Error fetching users:", error));
+  .catch(error => {
+      console.error("❌ Error fetching users:", error);
+      userList.innerHTML = "<tr><td colspan='6' class='text-center text-danger'>Error loading users</td></tr>";
+  });
+}
+
+// ✅ Fix Dropdown Functionality
+window.toggleDropdown = function(button) {
+  const dropdownMenu = button.nextElementSibling;
+  if (!dropdownMenu) return;
+
+  // ✅ Close other open dropdowns
+  document.querySelectorAll(".dropdown-menu").forEach(menu => {
+      if (menu !== dropdownMenu) {
+          menu.classList.remove("show");
+          menu.style.display = "none";
+      }
+  });
+
+  // ✅ Toggle the clicked dropdown
+  dropdownMenu.classList.toggle("show");
+  dropdownMenu.style.display = dropdownMenu.classList.contains("show") ? "block" : "none";
+};
+
+// ✅ Close dropdown when clicking outside
+document.addEventListener("click", function(event) {
+  if (!event.target.closest(".dropdown")) {
+      document.querySelectorAll(".dropdown-menu").forEach(menu => {
+          menu.classList.remove("show");
+          menu.style.display = "none";
+      });
+  }
+});
+
+// ✅ Make Modal Draggable
+function makeModalDraggable() {
+  const modal = document.getElementById("adminDetailsModal");
+  const header = document.querySelector("#adminDetailsModal .modal-header");
+  let offsetX, offsetY, isDragging = false;
+
+  if (!header) return;
+
+  header.addEventListener("mousedown", (e) => {
+      isDragging = true;
+      offsetX = e.clientX - modal.getBoundingClientRect().left;
+      offsetY = e.clientY - modal.getBoundingClientRect().top;
+      modal.style.position = "absolute"; // ✅ Ensure absolute positioning
+  });
+
+  document.addEventListener("mousemove", (e) => {
+      if (!isDragging) return;
+      modal.style.left = `${e.clientX - offsetX}px`;
+      modal.style.top = `${e.clientY - offsetY}px`;
+  });
+
+  document.addEventListener("mouseup", () => {
+      isDragging = false;
+  });
+}
+
+// ✅ Load users when the page is ready
+document.addEventListener("DOMContentLoaded", fetchUsersForAdmin);
+
+
+// ✅ View User Info function
+function viewUser(userId) {
+  fetch(`/admin/view_user/${userId}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include"
+  })
+  .then(response => response.json())
+  .then(data => {
+      if (data.error) {
+          alert(`❌ Error: ${data.error}`);
+          return;
+      }
+
+      // ✅ Remove existing content before adding new content
+      const modalContent = document.querySelector("#userDetailsModal .modal-content");
+      modalContent.innerHTML = ""; 
+
+      // ✅ Add formatted data WITHOUT extra space
+      modalContent.innerHTML = `
+          <div class="modal-header">
+              <h2 style="color: #4CAF50; margin-bottom: 5px;">User Details</h2>
+              <span id="closeUserDetails" class="close">&times;</span>
+          </div>
+          <div class="modal-body">
+              <p><strong>ID:</strong> ${data.id}</p>
+              <p><strong>Full Name:</strong> ${data.name}</p>
+              <p><strong>Mobile Number:</strong> ${data.mobile_number}</p>
+              <p><strong>Email:</strong> ${data.email}</p>
+              <p><strong>Role:</strong> ${data.role}</p>
+              <p><strong>Registration Date:</strong> ${data.registration_date}</p>
+          </div>
+      `;
+
+      // ✅ Show the modal
+      const modal = document.getElementById("userDetailsModal");
+      modal.style.display = "block";
+
+      // ✅ Attach the close event again (since we replaced modal content)
+      document.getElementById("closeUserDetails").addEventListener("click", function() {
+          modal.style.display = "none";
+      });
+
+      // ✅ Ensure modal resizes properly
+      modal.style.height = "auto";
+      modal.style.minHeight = "auto";
+
+      // ✅ Make the modal draggable
+      makeModalDraggable();
+  })
+  .catch(error => console.error("❌ Error fetching user details:", error));
 }
 
 // ---------------------------

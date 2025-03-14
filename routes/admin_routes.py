@@ -36,23 +36,29 @@ def admin_dashboard():
 def get_all_users():
     """Only admins can view all users"""
     try:
-        users = User.query.all()
+        users = User.query.all()  # Fetch all users
         users_list = []
+
         for u in users:
             # Fetch the SIM Card associated with the user
             primary_sim = SIMCard.query.filter_by(user_id=u.id, status="active").first()
+
+            # Safely get the user's role (check if user_access_control exists)
+            user_role = UserRole.query.get(u.user_access_control.role_id) if u.user_access_control else None
+            role_name = user_role.role_name if user_role else "N/A"
 
             users_list.append({
                 "id": u.id,
                 "name": f"{u.first_name} {u.last_name or ''}".strip(),
                 "mobile_number": primary_sim.mobile_number if primary_sim else "N/A",  # Get the assigned number
                 "email": u.email,
-                "role": UserRole.query.get(u.user_access_control.role_id).role_name if u.user_access_control else None
+                "role": role_name  # Safely fetch the role name
             })
+
         return jsonify(users_list), 200
+
     except Exception as e:
         return jsonify({"error": "Failed to fetch users", "details": str(e)}), 500
-
 
 # Assign role to user
 @admin_bp.route("/admin/assign_role", methods=["POST"])
@@ -253,18 +259,35 @@ def generate_sim():
         return jsonify({"error": f"Failed to generate SIM: {str(e)}"}), 500
 
 # View User Details
-@admin_bp.route("/admin/view_user/<user_id>", methods=["GET"])
+@admin_bp.route("/admin/view_user/<int:user_id>", methods=["GET"])
 @jwt_required()
 def view_user(user_id):
-    user = User.query.filter_by(id=user_id).first()
+    """Admin views user details and action buttons based on status."""
+    user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    return jsonify({
+    # Fetch the active SIM card associated with the user
+    primary_sim = SIMCard.query.filter_by(user_id=user.id, status="active").first()
+    
+    # Safely fetch the user's role
+    user_role = UserRole.query.get(user.user_access_control.role_id) if user.user_access_control else None
+    role_name = user_role.role_name if user_role else "N/A"
+    
+    # Prepare user details
+    user_details = {
         "id": user.id,
-        "name": f"{user.first_name} {user.last_name}" if user.last_name else user.first_name,
-        "mobile_number": user.mobile_number,
+        "name": f"{user.first_name} {user.last_name or ''}".strip(),
+        "mobile_number": primary_sim.mobile_number if primary_sim else "N/A",  # Fetch mobile from SIMCard
         "email": user.email,
-        "role": user.role,
-        "registration_date": user.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-    }), 200
+        "role": role_name,  # Fetch role name
+        "is_verified": user.identity_verified,
+        "is_suspended": user.is_active == False,
+        "can_assign_role": True,  # Add this as true, so front end knows to display "Assign Role"
+        "can_suspend": not user.is_active,  # Can suspend if user is active
+        "can_verify": not user.identity_verified,  # Can verify if not verified
+        "can_delete": True,  # Can always delete (after deletion request)
+        "can_edit": True,  # Can always edit
+    }
+
+    return jsonify(user_details), 200

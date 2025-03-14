@@ -435,152 +435,69 @@ a {
 }
 
 
-
 /* ======================= */
 /* Admin Panel styles 
 =======================*/
 
-/* Admin Panel Table */
-/* .admin-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 10px;
-  background: #1e1e2f;
-  color: #fff;
-}
-
-.admin-table th, .admin-table td {
-  padding: 10px;
-  text-align: left;
-  border-bottom: 1px solid #333;
-}
-
-.admin-table th {
-  background:rgb(6, 6, 212);
-} */
-
-/* ✅ 1. Ensure table headers are always visible and blue */
+/* ✅ Ensure table headers are always visible and blue */
+/* Ensure the table header stays visible */
 .admin-table thead {
   display: table-header-group !important;
-  background-color: #003366 !important; /* Blue for readability */
+  background-color: var(--brand-blue);
   color: white;
+  position: sticky;
+  top: 0;
+  z-index: 100; /* Keep header above rows */
 }
 
-/* ✅ 2. Fix the "Actions" header alignment */
+/* Ensure the actions column header is centered */
 .admin-table th.actions-header {
-  text-align: right !important;
-  padding-right: 15px; /* Ensures proper spacing */
+  text-align: center !important;
+  padding-right: 15px; /* Proper spacing */
 }
 
-/* ✅ 3. Fix column alignment and spacing */
+/* Ensure general table column spacing and alignment */
 .admin-table th, .admin-table td {
   padding: 12px;
   text-align: left;
   white-space: nowrap;
-  font-size: 14px; /* Match Agent Table */
-}
-
-/* ✅ 4. Ensure headers stay visible even when scrolling */
-.admin-table thead {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-/* ✅ 5. Fix Actions dropdown alignment */
-.admin-table .action-buttons {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 10px;
-}
-
-/* ✅ 6. Fix "Actions" dropdown menu */
-.admin-table .dropdown {
-  position: relative;
-}
-
-.admin-table .dropdown-menu {
-  z-index: 9999 !important;
-  position: absolute;
-  right: 0;
-  min-width: 150px;
-  background-color: var(--card-bg);
-  border-radius: 5px;
-  box-shadow: var(--card-shadow);
-  text-align: left;
-  display: none; /* Ensure it starts hidden */
-}
-
-/* ✅ 7. Ensure dropdown buttons are properly spaced */
-.admin-panel .dropdown-menu .btn-sm {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 8px 12px;
   font-size: 14px;
-  border-radius: 3px;
-  text-align: left;
-  background-color: transparent;
-  color: white;
-  border: none;
-  cursor: pointer;
-  transition: background-color 0.3s;
 }
 
-/* ✅ 8. Fix button hover effects */
-.admin-panel .dropdown-menu .btn-sm:hover {
+
+td.action-buttons {
+  overflow: visible !important; //Very important line, for the admin table Actions
+}
+
+.admin-table tbody tr:hover {
   background-color: rgba(255, 255, 255, 0.1);
-}
-.admin-panel .dropdown-menu .btn-sm.view-user:hover {
-  background-color: var(--brand-blue);
-}
-.admin-panel .dropdown-menu .btn-sm.assign-role:hover {
-  background-color: var(--brand-green);
-}
-.admin-panel .dropdown-menu .btn-sm.verify-user:hover {
-  background-color: #4CAF50; /* Green */
-}
-.admin-panel .dropdown-menu .btn-sm.suspend-user:hover {
-  background-color: #ff9800; /* Orange */
-}
-.admin-panel .dropdown-menu .btn-sm.unsuspend-user:hover {
-  background-color: #17a2b8; /* Cyan */
-}
-.admin-panel .dropdown-menu .btn-sm.delete-user:hover {
-  background-color: #d32f2f; /* Red */
-}
-.admin-panel .dropdown-menu .btn-sm.edit-user:hover {
-  background-color: #6c757d; /* Gray */
-}
-
-/* ✅ 9. Ensure the dropdown button styles match */
-.admin-panel .dropdown-toggle {
-  background-color: var(--brand-green);
-  color: white;
-  border: none;
-  padding: 8px 14px;
-  font-size: 14px;
-  cursor: pointer;
-}
-.admin-panel .dropdown-toggle:hover {
-  background-color: var(--brand-green-dark) !important;
-}
-
-/* ✅ 10. Make the table scrollable and full width */
-.table-container {
-  overflow-x: auto;
-  max-width: 100%;
 }
 
 .admin-table {
-  width: 100% !important; /* ✅ Ensure full width */
+  width: 100%;
   border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 0.95rem;
+  text-align: left;
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.admin-table th, .admin-table td {
-  border: 1px solid rgba(255, 255, 255, 0.2); /* ✅ Add light borders for better visibility */
+.admin-table th, .adminim-table td {
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
+
+.admin-table thead {
+  background-color: var(--brand-blue);
+  color: #ffffff;
+}
+/* Add light borders for better visibility
+.admin-table th, .admin-table td {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+} */
 
 
 /* ======================= */
@@ -708,7 +625,7 @@ a {
   width: 250px !important; /* ✅ Fix input width */
   display: inline-block;
 }
-
+//* ✅ Style the dropdown button */
 
 
 /* ✅ Actions button Slightly darker green on hover */
@@ -773,6 +690,89 @@ a {
 /* ✅ Icon and Text Alignment */
 .dropdown-menu .btn-sm i {
   margin-right: 8px;
+}
+
+/* Ensure hover styles are applied to Admin dropdown */
+.admin-dropdown-menu .btn-sm:hover {
+  background-color: var(--brand-blue-dark); /* Admin's hover effect */
+}
+
+
+/* ✅ Fix SIM Details Modal - Remove Extra Space */
+/* ✅ Fix SIM Details Modal - Now with Dark Blue */
+#simDetailsModal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 400px;
+  max-width: 90%;
+  background-color:rgb(22, 59, 119); /* ✅ Dark Blue */
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  min-height: auto !important;
+  height: auto !important;
+}
+
+/* ✅ Fix modal content */
+#simDetailsModal .modal-content {
+  padding: 20px;
+  color: white;
+  max-height: 90vh;
+  overflow-y: auto;
+  height: auto !important;
+  background-color:rgb(22, 59, 119) !important; /* ✅ Ensure content is also dark blue */
+}
+
+/* ✅ Ensure the modal header also follows the new color */
+#simDetailsModal .modal-header {
+  background:rgb(22, 59, 119) !important; /* ✅ Dark Blue */
+  color: white;
+  font-size: 16px;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+/* ✅ Fix unwanted extra space */
+#simDetailsModal .modal-body {
+  padding-bottom: 10px !important;
+  margin-bottom: 0 !important;
+}
+
+/* ✅ Remove any invisible empty elements */
+#simDetailsModal::after {
+  content: none !important;
+}
+
+/* ✅ Ensure no unnecessary padding */
+#simDetailsModal p {
+  margin-bottom: 5px !important;
+}
+
+/* ✅ Ensure the close button & drag handle */
+#simDetailsModal .modal-header {
+  cursor: move; /* ✅ Make it draggable */
+  padding: 10px;
+  background: var(--primary-color);
+  color: white;
+  font-size: 16px;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+/* ✅ Close button */
+#simDetailsModal .close {
+  float: right;
+  font-size: 20px;
+  cursor: pointer;
+  color: #fff;
+}
+
+#simDetailsModal .close:hover {
+  color: red;
 }
 
 /* ✅ Fix SIM Details Modal - Remove Extra Space */

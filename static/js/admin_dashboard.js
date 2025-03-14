@@ -28,13 +28,12 @@ setInterval(() => {
     }
 }, 60000);
 
-
-// ✅ Fetch Users & Bind Actions with Dropdown
+// ✅ Function to fetch and display users in Admin Dashboard
 // ✅ Function to fetch and display users in Admin Dashboard
 function fetchUsersForAdmin() {
   const userList = document.querySelector("#admin-user-list tbody");
   userList.innerHTML = "<tr><td colspan='6' class='text-center'>Loading users...</td></tr>";
-  
+
   fetch("/admin/users", {
       method: "GET",
       headers: { "Content-Type": "application/json" },
@@ -59,32 +58,32 @@ function fetchUsersForAdmin() {
               <td>${user.role || "N/A"}</td>
               <td class="action-buttons">
                   <div class="dropdown">
-                      <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)">
-                          Actions ▼
-                      </button>
-                      <div class="dropdown-menu">
-                          <button class="btn btn-sm view-user" onclick="viewUser('${user.id}')">
-                              <i class="fas fa-eye"></i> View
-                          </button>
-                          <button class="btn btn-sm assign-role" onclick="assignRole('${user.id}')">
-                              <i class="fas fa-user-tag"></i> Assign Role
-                          </button>
-                          ${user.is_verified ? "" : `<button class="btn btn-sm verify-user" onclick="verifyUser('${user.id}')">
-                              <i class="fas fa-check-circle"></i> Verify
-                          </button>`}
-                          ${user.is_suspended ? `<button class="btn btn-sm unsuspend-user" onclick="unsuspendUser('${user.id}')">
-                              <i class="fas fa-user-check"></i> Unsuspend
-                          </button>` : `<button class="btn btn-sm suspend-user" onclick="suspendUser('${user.id}')">
-                              <i class="fas fa-user-slash"></i> Suspend
-                          </button>`}
-                          <button class="btn btn-sm delete-user" onclick="deleteUser('${user.id}')">
-                              <i class="fas fa-trash-alt"></i> Delete
-                          </button>
-                          <button class="btn btn-sm edit-user" onclick="editUser('${user.id}')">
-                              <i class="fas fa-edit"></i> Edit
-                          </button>
-                      </div>
-                  </div>
+                    <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)" style="background-color: var(--brand-blue); color: white;">
+                        Actions ▼
+                    </button>
+                    <div class="dropdown-menu">
+                        <button class="btn btn-sm view-user dropdown-item" onclick="viewUser('${user.id}')">
+                            <i class="fas fa-eye"></i> View
+                        </button>
+                        <button class="btn btn-sm assign-role dropdown-item" onclick="updateUserRole('${user.id}', 'Admin')">
+                            <i class="fas fa-user-tag"></i> Assign Role
+                        </button>
+                        <button class="btn btn-sm verify-user dropdown-item" onclick="verifyUser('${user.id}')">
+                            <i class="fas fa-check-circle"></i> Verify
+                        </button>
+                        <button class="btn btn-sm suspend-user dropdown-item" onclick="suspendUser('${user.id}')">
+                            <i class="fas fa-user-slash"></i> Suspend
+                        </button>
+                        <button class="btn btn-sm delete-user dropdown-item" onclick="deleteUser('${user.id}')">
+                            <i class="fas fa-trash-alt"></i> Delete
+                        </button>
+                        <button class="btn btn-sm edit-user dropdown-item" onclick="editUser('${user.id}')">
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                    </div>
+                </div>
+                          
+
               </td>
           `;
           userList.appendChild(row);
@@ -96,33 +95,45 @@ function fetchUsersForAdmin() {
   });
 }
 
-// ✅ Fix Dropdown Functionality
+// ✅ Ensure the function is globally accessible
 window.toggleDropdown = function(button) {
-  const dropdownMenu = button.nextElementSibling;
-  if (!dropdownMenu) return;
+  console.log("Dropdown clicked!"); // Debugging to check if function runs
 
-  // ✅ Close other open dropdowns
+  // Get the dropdown menu related to the clicked button
+  const dropdownMenu = button.nextElementSibling;
+  console.log("Dropdown Menu:", dropdownMenu); // Debugging to check the menu
+
+  if (!dropdownMenu) {
+      console.error("❌ Dropdown menu not found!");
+      return;
+  }
+
+  // Close all other dropdowns before opening this one
   document.querySelectorAll(".dropdown-menu").forEach(menu => {
       if (menu !== dropdownMenu) {
-          menu.classList.remove("show");
-          menu.style.display = "none";
+          menu.style.display = "none"; // Hide other dropdowns
       }
   });
 
-  // ✅ Toggle the clicked dropdown
-  dropdownMenu.classList.toggle("show");
-  dropdownMenu.style.display = dropdownMenu.classList.contains("show") ? "block" : "none";
+  // Toggle the clicked dropdown menu visibility
+  if (dropdownMenu.style.display === "none" || dropdownMenu.style.display === "") {
+      dropdownMenu.style.display = "block"; // Show the dropdown
+      console.log("Dropdown is now visible.");
+  } else {
+      dropdownMenu.style.display = "none"; // Hide the dropdown
+      console.log("Dropdown is now hidden.");
+  }
 };
 
-// ✅ Close dropdown when clicking outside
+// Close dropdown when clicking outside
 document.addEventListener("click", function(event) {
-  if (!event.target.closest(".dropdown")) {
-      document.querySelectorAll(".dropdown-menu").forEach(menu => {
-          menu.classList.remove("show");
-          menu.style.display = "none";
-      });
-  }
+if (!event.target.closest(".dropdown")) {
+    document.querySelectorAll(".dropdown-menu").forEach(menu => {
+        menu.style.display = "none"; // Close all dropdowns when clicking outside
+    });
+}
 });
+
 
 // ✅ Make Modal Draggable
 function makeModalDraggable() {
@@ -152,7 +163,6 @@ function makeModalDraggable() {
 
 // ✅ Load users when the page is ready
 document.addEventListener("DOMContentLoaded", fetchUsersForAdmin);
-
 
 // ✅ View User Info function
 function viewUser(userId) {
@@ -524,8 +534,6 @@ if (addUserForm) {
     }
   });
 }
-
-
 
   // ---------------------------
   // Logout Functionality

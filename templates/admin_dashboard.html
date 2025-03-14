@@ -26,26 +26,24 @@
         <input type="text" id="user-search" placeholder="Search users...">
         <button id="search-user-btn">Search</button>
       </div>      
-      <h3 class="mt-4">User Management</h3>
 
-      <!-- ✅ Wrap table inside a scrollable container -->
-      <div class="table-container">
-        <table id="admin-user-list" class="admin-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Full Name</th>
-              <th>Mobile Number</th>
-              <th>Email</th>
-              <th>Role</th>
-              <th class="actions-header text-right">Actions</th> <!-- ✅ Fix Right Alignment -->
-            </tr>
-          </thead>
-          <tbody>
-            <!-- User records will be appended here dynamically -->
-          </tbody>
-        </table>
-      </div>
+      <h3 class="mt-4"></h3>
+      <!-- Directly add the table without a wrapper container -->
+      <table id="admin-user-list" class="admin-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Full Name</th>
+            <th>Mobile Number</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th class="actions-header text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+    <!-- User records will be appended here dynamically -->
+  </tbody>
+</table>
     </section>
         <!-- Admin View User Modal -->
     <div class="modal" id="userDetailsModal" tabindex="-1" aria-labelledby="userDetailsModalLabel" aria-hidden="true">

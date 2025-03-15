@@ -628,7 +628,7 @@ td.action-buttons {
 //* ✅ Style the dropdown button */
 
 
-/* ✅ Actions button Slightly darker green on hover */
+/* ✅ Ensure Actions button has a slightly darker green on hover */
 .action-buttons .dropdown-toggle:hover {
   background-color: var(--brand-green-dark) !important;
 }
@@ -641,15 +641,35 @@ td.action-buttons {
   min-width: 150px;
   box-shadow: var(--card-shadow);
   padding: 8px;
-  z-index: 1000;
+  z-index: 1050; /* Ensure it appears above other elements */
   border-radius: 4px;
   text-align: left;
   white-space: nowrap;
   right: 0;
   border: 1px solid var(--input-border);
+  overflow-y: auto;
+  transform-origin: top;
+  max-height: 200px; /* Prevents dropdown from being too tall */
 }
 
-/* ✅ Style buttons with default dark theme */
+/* ✅ Dropdown opens upwards when required */
+.dropup .dropdown-menu {
+  bottom: 100%;
+  top: auto !important; /* Ensures it always opens upwards when needed */
+}
+
+/* ✅ Ensure dropdown doesn't go out of the viewport */
+.dropdown-menu[data-position="up"] {
+  bottom: 100%;
+  top: auto;
+}
+
+.dropdown-menu[data-position="down"] {
+  top: 100%;
+  bottom: auto;
+}
+
+/* ✅ Style buttons inside the dropdown */
 .dropdown-menu .btn-sm {
   display: flex;
   align-items: center;
@@ -665,12 +685,11 @@ td.action-buttons {
   transition: background-color 0.3s;
 }
 
-/* ✅ Set specific colors on hover */
+/* ✅ Set hover colors */
 .dropdown-menu .btn-sm:hover {
-  background-color: var(--brand-blue-dark); /* Default hover for fallback */
+  background-color: var(--brand-blue-dark);
 }
 
-/* ✅ Individual Button Hover Colors */
 .dropdown-menu .btn-sm.view-btn:hover {
   background-color: var(--brand-blue);
 }
@@ -678,24 +697,20 @@ td.action-buttons {
   background-color: var(--brand-green);
 }
 .dropdown-menu .btn-sm.suspend-btn:hover {
-  background-color: #ff9800; /* Orange */
+  background-color: #ff9800;
 }
 .dropdown-menu .btn-sm.transfer-btn:hover {
-  background-color: #8e44ad; /* Purple */
+  background-color: #8e44ad;
 }
 .dropdown-menu .btn-sm.delete-btn:hover {
-  background-color: #d32f2f; /* Red */
+  background-color: #d32f2f;
 }
 
-/* ✅ Icon and Text Alignment */
+/* ✅ Align icon and text */
 .dropdown-menu .btn-sm i {
   margin-right: 8px;
 }
 
-/* Ensure hover styles are applied to Admin dropdown */
-.admin-dropdown-menu .btn-sm:hover {
-  background-color: var(--brand-blue-dark); /* Admin's hover effect */
-}
 
 
 /* ✅ Fix SIM Details Modal - Remove Extra Space */

@@ -365,7 +365,7 @@ function fetchSimRegistrationHistory() {
             <td>${sim.status}</td>
             <td>${new Date(sim.timestamp).toLocaleDateString()}</td>
             <td class="action-buttons">
-                <div class="dropdown">
+                <div class="dropdown dropup">
                     <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)" style="background-color: var(--brand-blue); color: white;">
                       Actions ▼
                     </button>
@@ -398,9 +398,9 @@ function fetchSimRegistrationHistory() {
   });
 }
 
-// ✅ Ensure the function is globally accessible
+// ✅ Ensure function is globally accessible
 window.toggleDropdown = function(button) {
-  console.log("Dropdown Clicked!"); // ✅ Debugging to check if function runs
+  console.log("✅ Agent Table Dropdown Clicked!");
 
   // Get the dropdown menu related to the clicked button
   const dropdownMenu = button.nextElementSibling;
@@ -414,11 +414,34 @@ window.toggleDropdown = function(button) {
   document.querySelectorAll(".dropdown-menu").forEach(menu => {
       if (menu !== dropdownMenu) {
           menu.style.display = "none";
+          menu.classList.remove("dropup", "dropdown-down");
       }
   });
 
-  // ✅ Toggle the clicked dropdown menu
-  dropdownMenu.style.display = (dropdownMenu.style.display === "block") ? "none" : "block";
+  // ✅ Show the dropdown to calculate position properly
+  dropdownMenu.style.display = "block";
+
+  // ✅ Calculate available space above and below
+  const rect = button.getBoundingClientRect();
+  const viewportHeight = window.innerHeight;
+  const dropdownHeight = dropdownMenu.scrollHeight;
+  const spaceAbove = rect.top;
+  const spaceBelow = viewportHeight - rect.bottom;
+
+  // ✅ Adjust dropdown position dynamically
+  if (spaceBelow > dropdownHeight) {
+      dropdownMenu.style.top = "100%";
+      dropdownMenu.style.bottom = "auto";
+      dropdownMenu.classList.add("dropdown-down");
+      dropdownMenu.classList.remove("dropup");
+  } else {
+      dropdownMenu.style.bottom = "100%";
+      dropdownMenu.style.top = "auto";
+      dropdownMenu.classList.add("dropup");
+      dropdownMenu.classList.remove("dropdown-down");
+  }
+
+  console.log(`Dropdown Position: ${dropdownMenu.classList.contains("dropup") ? "UP" : "DOWN"}`);
 };
 
 // ✅ Close dropdown when clicking outside
@@ -426,11 +449,12 @@ document.addEventListener("click", function(event) {
   if (!event.target.closest(".dropdown")) {
       document.querySelectorAll(".dropdown-menu").forEach(menu => {
           menu.style.display = "none";
+          menu.classList.remove("dropup", "dropdown-down");
       });
   }
 });
 
- 
+
 // ✅ Make Modal Draggable
 function makeModalDraggable() {
   const modal = document.getElementById("simDetailsModal");

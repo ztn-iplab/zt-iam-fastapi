@@ -1,13 +1,4 @@
 
-// Role Mapping
-// ---------------------------
-const roleMapping = {
-  "1": "Admin",
-  "2": "Agent",
-  "3": "User"
-};
-
-
 console.log("Admin Dashboard JS loaded");
 
 // ---------------------------
@@ -57,7 +48,7 @@ function fetchUsersForAdmin() {
               <td>${user.email || "N/A"}</td>
               <td>${user.role || "N/A"}</td>
               <td class="action-buttons">
-                  <div class="dropdown">
+                  <div class="dropdown dropup">
                     <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)" style="background-color: var(--brand-blue); color: white;">
                         Actions ▼
                     </button>
@@ -65,7 +56,7 @@ function fetchUsersForAdmin() {
                         <button class="btn btn-sm view-user dropdown-item" onclick="viewUser('${user.id}')">
                             <i class="fas fa-eye"></i> View
                         </button>
-                        <button class="btn btn-sm assign-role dropdown-item" onclick="updateUserRole('${user.id}', 'Admin')">
+                        <button class="btn btn-sm assign-role dropdown-item" onclick="assignUserRole('${user.id}', 'Admin')">
                             <i class="fas fa-user-tag"></i> Assign Role
                         </button>
                         <button class="btn btn-sm verify-user dropdown-item" onclick="verifyUser('${user.id}')">
@@ -95,13 +86,12 @@ function fetchUsersForAdmin() {
   });
 }
 
-// ✅ Ensure the function is globally accessible
+// ✅ Function to toggle dropdown and adjust position
 window.toggleDropdown = function(button) {
-  console.log("Dropdown clicked!"); // Debugging to check if function runs
+  console.log("Dropdown clicked!");
 
-  // Get the dropdown menu related to the clicked button
+  // Get the dropdown menu
   const dropdownMenu = button.nextElementSibling;
-  console.log("Dropdown Menu:", dropdownMenu); // Debugging to check the menu
 
   if (!dropdownMenu) {
       console.error("❌ Dropdown menu not found!");
@@ -111,27 +101,45 @@ window.toggleDropdown = function(button) {
   // Close all other dropdowns before opening this one
   document.querySelectorAll(".dropdown-menu").forEach(menu => {
       if (menu !== dropdownMenu) {
-          menu.style.display = "none"; // Hide other dropdowns
+          menu.style.display = "none";
+          menu.removeAttribute("data-position");
       }
   });
 
-  // Toggle the clicked dropdown menu visibility
-  if (dropdownMenu.style.display === "none" || dropdownMenu.style.display === "") {
-      dropdownMenu.style.display = "block"; // Show the dropdown
-      console.log("Dropdown is now visible.");
+  // ✅ Calculate available space above and below the button
+  const rect = button.getBoundingClientRect();
+  const viewportHeight = window.innerHeight;
+  const dropdownHeight = dropdownMenu.scrollHeight;
+  const spaceAbove = rect.top;
+  const spaceBelow = viewportHeight - rect.bottom;
+
+  // ✅ Adjust dropdown position based on space available
+  if (spaceBelow > dropdownHeight) {
+      dropdownMenu.style.top = "100%";
+      dropdownMenu.style.bottom = "auto";
+      dropdownMenu.setAttribute("data-position", "down");
+  } else if (spaceAbove > dropdownHeight) {
+      dropdownMenu.style.bottom = "100%";
+      dropdownMenu.style.top = "auto";
+      dropdownMenu.setAttribute("data-position", "up");
   } else {
-      dropdownMenu.style.display = "none"; // Hide the dropdown
-      console.log("Dropdown is now hidden.");
+      dropdownMenu.style.top = "100%";
+      dropdownMenu.style.bottom = "auto";
+      dropdownMenu.setAttribute("data-position", "down");
   }
+
+  // ✅ Toggle dropdown visibility
+  dropdownMenu.style.display = dropdownMenu.style.display === "block" ? "none" : "block";
 };
 
-// Close dropdown when clicking outside
+// ✅ Close dropdown when clicking outside
 document.addEventListener("click", function(event) {
-if (!event.target.closest(".dropdown")) {
-    document.querySelectorAll(".dropdown-menu").forEach(menu => {
-        menu.style.display = "none"; // Close all dropdowns when clicking outside
-    });
-}
+  if (!event.target.closest(".dropdown")) {
+      document.querySelectorAll(".dropdown-menu").forEach(menu => {
+          menu.style.display = "none";
+          menu.removeAttribute("data-position");
+      });
+  }
 });
 
 
@@ -220,26 +228,60 @@ function viewUser(userId) {
 // ---------------------------
 // Admin User Actions
 // ---------------------------
-function updateUserRole(userId, newRole) {
+// ✅ Update User Role Function (Now Displays Assigned Mobile Number)
+
+function assignUserRole(userId) {
+  let newRole = prompt("Enter new role (admin, agent, user):");
+
+  if (!newRole) {
+    alert("❌ Role assignment cancelled.");
+    return;
+  }
+
+  // ✅ Convert role name to role ID
+  const roleMapping = {
+    "admin": 1,
+    "agent": 2,
+    "user": 3
+  };
+
+  const roleId = roleMapping[newRole.toLowerCase()];
+  
+  if (!roleId) {
+    alert("❌ Invalid role. Please enter 'admin', 'agent', or 'user'.");
+    return;
+  }
+
   fetch("/admin/assign_role", {
       method: "POST",
       headers: { 
           "Content-Type": "application/json"
       },
-      credentials: "include", // Ensures cookies are sent with the request
-      body: JSON.stringify({ user_id: userId, role_name: newRole }) // Ensure you're sending role_name
+      credentials: "include",
+      body: JSON.stringify({ user_id: userId, role_id: roleId }) // ✅ Send role ID, not string
   })
   .then(response => response.json())
   .then(data => {
       if (data.error) {
-          alert("Error: " + data.error);
+          alert("❌ Error: " + data.error);
       } else {
-          alert("Role updated successfully!");
-          fetchUsersForAdmin(); // Refresh the list to reflect changes
+          alert(`✅ Role updated to ${newRole} successfully!`);
+          fetchUsersForAdmin(); // Refresh the list
       }
   })
-  .catch(error => console.error("Error updating role:", error));
+  .catch(error => console.error("❌ Error updating role:", error));
 }
+
+// ✅ Ensure Assign Role button triggers the prompt-based role change
+document.addEventListener("DOMContentLoaded", function() {
+  document.querySelectorAll(".assign-role").forEach(button => {
+    button.addEventListener("click", function () {
+      assignUserRole(this.dataset.userId);
+    });
+  });
+});
+
+
 
 // -------------------------
 // Suspend the user

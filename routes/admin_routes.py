@@ -60,7 +60,7 @@ def get_all_users():
     except Exception as e:
         return jsonify({"error": "Failed to fetch users", "details": str(e)}), 500
 
-# Assign role to user
+# ✅ Assign Role to User (Fixed for New Approach)
 @admin_bp.route("/admin/assign_role", methods=["POST"])
 @jwt_required()
 @role_required(["admin"])
@@ -76,21 +76,21 @@ def assign_role():
     user_sim = SIMCard.query.filter_by(user_id=user.id).first()
     mobile_number = user_sim.mobile_number if user_sim else "N/A"
 
-    # Validate the role name
-    role = UserRole.query.filter_by(role_name=data.get("role_name")).first()
+    # ✅ Validate the role ID instead of role name
+    role = UserRole.query.get(data.get("role_id"))
     if not role:
-        return jsonify({"error": "Invalid role"}), 400
+        return jsonify({"error": "Invalid role ID"}), 400
 
-    # Assign or update user role
+    # ✅ Assign or update user role
     user_access = UserAccessControl.query.filter_by(user_id=user.id).first()
     if user_access:
-        user_access.role_id = role.id  # Update existing role
+        user_access.role_id = role.id  # ✅ Update existing role
     else:
         new_access = UserAccessControl(user_id=user.id, role_id=role.id)
         db.session.add(new_access)
 
     db.session.commit()
-    return jsonify({"message": f"Role '{role.role_name}' assigned to user with mobile {mobile_number}"}), 200
+    return jsonify({"message": f"✅ Role '{role.role_name}' assigned to user with mobile {mobile_number}"}), 200
 
 
 # Suspend the user

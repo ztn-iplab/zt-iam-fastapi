@@ -19,17 +19,33 @@ def update_transaction_status(app, transaction_id, new_status):
             transaction.status = new_status
             db.session.commit()
 
+import threading
+import json
+from flask import Blueprint, request, jsonify, current_app
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from models.models import db, User, Wallet, Transaction, SIMCard
+
+transaction_bp = Blueprint("transaction", __name__)
+
+import threading
+import json
+from flask import Blueprint, request, jsonify, current_app
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from models.models import db, User, Wallet, Transaction, SIMCard
+
+transaction_bp = Blueprint("transaction", __name__)
+
 @transaction_bp.route('/transactions', methods=['POST'])
 @jwt_required()
 def create_transaction():
     logged_in_user = int(get_jwt_identity())  # Get the logged-in user's ID
     data = request.get_json()
 
-    # Validate required fields
+    # ✅ Validate required fields
     if not data.get('amount') or not data.get('transaction_type'):
         return jsonify({"error": "Amount and transaction type are required"}), 400
 
-    # Validate amount (should be a positive number)
+    # ✅ Validate amount (should be a positive number)
     try:
         amount = float(data['amount'])
         if amount <= 0:
@@ -39,52 +55,73 @@ def create_transaction():
 
     transaction_type = data['transaction_type'].lower()  # Normalize transaction type
 
-    # Fetch the sender's wallet
+    # ✅ Fetch the sender's wallet
     sender_wallet = Wallet.query.filter_by(user_id=logged_in_user).first()
     if not sender_wallet:
         return jsonify({"error": "Wallet not found"}), 404
 
-    # Process based on transaction type
+    # ✅ Users are not allowed to deposit
     if transaction_type == "deposit":
-        sender_wallet.balance += amount
-        status = "completed"
-    elif transaction_type in ["withdrawal", "payment"]:
+        return jsonify({"error": "Deposits are not allowed for regular users"}), 403
+
+    transaction_metadata = {}  # ✅ Initialize metadata
+
+    # ✅ Process withdrawals
+    if transaction_type == "withdrawal":
         if sender_wallet.balance < amount:
             return jsonify({"error": "Insufficient funds"}), 400
+
         sender_wallet.balance -= amount
         status = "completed"
+
+        # ✅ Store metadata for withdrawal
+        transaction_metadata = {
+            "withdrawal_method": "Self-Service"
+        }
+
+    # ✅ Process transfers
     elif transaction_type == "transfer":
         recipient_mobile = data.get('recipient_mobile')
         if not recipient_mobile:
-            return jsonify({"error": "Recipient mobile number is required for transfer"}), 400
+            return jsonify({"error": "Recipient mobile number is required for transfers"}), 400
 
-        recipient = User.query.filter_by(mobile_number=recipient_mobile, is_active=True).first()
-        if not recipient:
+        # ✅ Find recipient SIM card
+        recipient_sim = SIMCard.query.filter_by(mobile_number=recipient_mobile).first()
+        if not recipient_sim:
             return jsonify({"error": "Recipient not found"}), 404
 
-        recipient_wallet = Wallet.query.filter_by(user_id=recipient.id).first()
+        # ✅ Fetch recipient user using SIM card
+        recipient_user = User.query.get(recipient_sim.user_id)
+        if not recipient_user:
+            return jsonify({"error": "Recipient user not found"}), 404
+
+        # ✅ Fetch recipient's wallet
+        recipient_wallet = Wallet.query.filter_by(user_id=recipient_user.id).first()
         if not recipient_wallet:
             return jsonify({"error": "Recipient wallet not found"}), 404
 
+        # ✅ Ensure the sender has enough funds
         if sender_wallet.balance < amount:
             return jsonify({"error": "Insufficient funds"}), 400
 
+        # ✅ Deduct from sender and credit recipient
         sender_wallet.balance -= amount
         recipient_wallet.balance += amount
-        status = "pending"
+        status = "pending"  # Transfers start as "pending"
+
+        # ✅ Store metadata for transfer
+        transaction_metadata = {
+            "recipient_mobile": recipient_mobile,
+            "recipient_id": recipient_user.id
+        }
+
     else:
         return jsonify({"error": "Invalid transaction type"}), 400
 
-    # Prepare metadata: include recipient info if it's a transfer
-    transaction_metadata = data.get('transaction_metadata', {})
-    if transaction_type == "transfer":
-        transaction_metadata['recipient_mobile'] = recipient_mobile
-        transaction_metadata['recipient_id'] = recipient.id
-    if isinstance(transaction_metadata, dict):
-        transaction_metadata_str = json.dumps(transaction_metadata)
-    else:
-        transaction_metadata_str = transaction_metadata
+    # ✅ Convert metadata to JSON string
+    transaction_metadata_str = json.dumps(transaction_metadata)
 
+    # ✅ Create transaction record
     transaction = Transaction(
         user_id=logged_in_user,
         amount=amount,
@@ -100,10 +137,8 @@ def create_transaction():
     db.session.add(transaction)
     db.session.commit()
 
-    # For transfers, simulate asynchronous verification:
-    # Update status to "completed" after a delay
+    # ✅ For transfers, simulate async verification
     if transaction_type == "transfer":
-        # Get the current app instance so that we can use it in the thread
         app = current_app._get_current_object()
         threading.Thread(target=update_transaction_status, args=(app, transaction.id, "completed")).start()
 
@@ -118,10 +153,9 @@ def create_transaction():
         "device_info": transaction.device_info,
         "fraud_flag": transaction.fraud_flag,
         "risk_score": transaction.risk_score,
-        "transaction_metadata": transaction.transaction_metadata,
+        "transaction_metadata": transaction_metadata,  # ✅ Return as a parsed JSON object
         "updated_balance": sender_wallet.balance
     }), 201
-
 
 # Get Transactions (Only User-Specific)
 @transaction_bp.route('/transactions', methods=['GET'])

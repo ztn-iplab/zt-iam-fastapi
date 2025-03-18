@@ -6,8 +6,9 @@ from flask_jwt_extended import (
     get_jwt_identity,
     unset_jwt_cookies,
 )
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 from models.models import User, Wallet, db, UserRole, UserAccessControl,SIMCard
+
 
 
 auth_bp = Blueprint('auth', __name__)
@@ -22,7 +23,6 @@ def register_form():
 def login_form():
     return render_template('login.html')
 
-#Login Endpoint
 @auth_bp.route('/login', methods=['POST'])
 def login_route():
     """Handles user login using mobile number and redirects to the correct dashboard"""
@@ -37,16 +37,26 @@ def login_route():
     # ✅ Find the SIM card by mobile number
     sim_card = SIMCard.query.filter_by(mobile_number=mobile_number, status="active").first()
     if not sim_card:
+        print(f"Debug: No active SIM found for {mobile_number}")
         return jsonify({"error": "Invalid mobile number or inactive SIM card"}), 401
+
+    # ✅ Debug: Print SIM card details
+    print(f"Debug: Found SIM {sim_card.iccid} linked to user_id {sim_card.user_id}")
 
     # ✅ Get the linked user from the SIM card
     user = sim_card.user
     if not user:
+        print(f"Debug: No user found linked to SIM {sim_card.iccid}")
         return jsonify({"error": "User not found for this mobile number"}), 404
+
+    print(f"Debug: Found User {user.email} linked to mobile {sim_card.mobile_number}")
 
     # ✅ Validate password
     if not user.check_password(password):
+        print("Debug: Password does NOT match")
         return jsonify({"error": "Invalid credentials"}), 401
+
+    print("Debug: Password MATCHED!")
 
     # ✅ Check User Role
     user_access = UserAccessControl.query.filter_by(user_id=user.id).first()
@@ -73,8 +83,8 @@ def login_route():
     response = jsonify({
         "access_token": access_token,
         "user_id": user.id,
-        "mobile_number": sim_card.mobile_number,  # ✅ Mobile number included
-        "iccid": sim_card.iccid,  # ✅ ICCID included for internal reference
+        "mobile_number": sim_card.mobile_number,
+        "iccid": sim_card.iccid,
         "role": role_name,
         "dashboard_url": dashboard_url
     })
@@ -84,7 +94,6 @@ def login_route():
     return response, 200
 
 
-# 📌 Register a New User (Using ICCID)
 @auth_bp.route('/register', methods=['POST'])
 def register():
     try:
@@ -94,12 +103,13 @@ def register():
         return jsonify({"error": "Invalid JSON format"}), 400
 
     # ✅ Validate required fields
-    if not data.get('iccid') or not data.get('first_name') or not data.get('password') or not data.get('email'):
-        return jsonify({"error": "ICCID, email, first name, and password are required"}), 400
+    required_fields = ['iccid', 'first_name', 'password', 'email']
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify({"error": f"{field.replace('_', ' ').capitalize()} is required"}), 400
 
     # 🔹 Fetch the SIM card by ICCID
     sim_card = SIMCard.query.filter_by(iccid=data['iccid']).first()
-
     if not sim_card:
         return jsonify({"error": "Invalid ICCID. Please register a SIM first."}), 404
 
@@ -108,11 +118,11 @@ def register():
         sim_card.status = "active"
         db.session.commit()
 
-    if not sim_card:
-        return jsonify({"error": "Invalid ICCID. Please register a SIM first."}), 404
-
-    # 🔹 Check if a user is already linked to this SIM card
-    existing_user = User.query.filter((User.email == data['email']) | (User.id == sim_card.user_id)).first()
+    # 🔹 Check if a user is already linked to this SIM card or email exists
+    existing_user = User.query.filter(
+        (User.email == data['email']) | (User.id == sim_card.user_id)
+    ).first()
+    
     if existing_user:
         return jsonify({"error": "User with this email or SIM card already exists"}), 400
 
@@ -125,7 +135,9 @@ def register():
         identity_verified=False,
         is_active=True
     )
-    new_user.password = data['password']
+
+    # ✅ Use the setter to ensure hashing works correctly
+    new_user.password = data['password']  # This will hash the password automatically
 
     try:
         db.session.add(new_user)
@@ -140,19 +152,23 @@ def register():
 
     # 🔹 Assign Default "User" Role
     user_role = UserRole.query.filter_by(role_name="user").first()
-    if user_role:
-        new_access = UserAccessControl(user_id=new_user.id, role_id=user_role.id)
-        db.session.add(new_access)
-    else:
+    if not user_role:
         return jsonify({"error": "Default user role not found"}), 500
+
+    new_access = UserAccessControl(user_id=new_user.id, role_id=user_role.id)
+    db.session.add(new_access)
 
     # 🔹 Create Wallet for the User
     new_wallet = Wallet(user_id=new_user.id, balance=0.0, currency="RWF")
     db.session.add(new_wallet)
-    db.session.commit()
+    
+    db.session.commit()  # ✅ Ensure all database changes are saved
 
-    # 🔹 Return response
-    return jsonify({
+    # 🔹 Generate JWT token for the newly registered user
+    access_token = create_access_token(identity=new_user.id)
+
+    # 🔹 Construct Response with Success Message & User Data
+    response_data = {
         "message": "User registered successfully, assigned role: 'user', and wallet created.",
         "id": new_user.id,
         "email": new_user.email,
@@ -164,10 +180,17 @@ def register():
         "iccid": sim_card.iccid,
         "role": "user",
         "wallet": {
-            "balance": 0.0,
+            "balance": new_wallet.balance,
             "currency": "RWF"
         }
-    }), 201
+    }
+
+    # 🔹 Set the JWT token in a secure, HttpOnly cookie
+    response = make_response(response_data)
+    response.set_cookie('auth_token', access_token, httponly=True, secure=True, samesite='Strict')
+
+    return response, 201
+
 
 # Refres the access token
 @auth_bp.route('/refresh', methods=['POST'])

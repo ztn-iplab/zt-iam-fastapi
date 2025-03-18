@@ -12,12 +12,12 @@
 
 <div class="auth-container">
   <h1>Register</h1>
-  <form class="auth-form" method="POST" action="{{ url_for('auth.register') }}">
+  <form id="register-form" class="auth-form">
     
     <!-- ICCID Field (Instead of Mobile Number) -->
     <input 
       type="text" 
-      name="iccid" 
+      id="iccid" 
       placeholder="Enter ICCID from Your SIM Card" 
       class="input-field"
       required
@@ -26,7 +26,7 @@
     <!-- Email Address -->
     <input 
       type="email" 
-      name="email" 
+      id="email" 
       placeholder="Email Address" 
       class="input-field"
       required
@@ -35,7 +35,7 @@
     <!-- First Name (required) -->
     <input 
       type="text" 
-      name="first_name" 
+      id="first-name" 
       placeholder="First Name" 
       class="input-field"
       required
@@ -44,26 +44,25 @@
     <!-- Last Name (optional) -->
     <input 
       type="text" 
-      name="last_name" 
+      id="last-name" 
       placeholder="Last Name" 
       class="input-field"
     />
 
     <!-- Country Dropdown -->
-    <select name="country" class="input-field" required>
+    <select id="country" class="input-field" required>
       <option value="">Select Country</option>
       <option value="Rwanda">Rwanda</option>
       <option value="Kenya">Kenya</option>
       <option value="Uganda">Uganda</option>
       <option value="Tanzania">Tanzania</option>
       <option value="Ethiopia">Ethiopia</option>
-      <!-- Add more countries as needed -->
     </select>
 
     <!-- Password -->
     <input 
       type="password" 
-      name="password" 
+      id="password" 
       placeholder="Password" 
       class="input-field"
       required
@@ -72,10 +71,14 @@
     <button type="submit" class="btn btn-primary">Register</button>
   </form>
 
+  <div id="register-error" class="error-message"></div>
+  
   <div class="auth-note">
     Already have an account?
     <a href="{{ url_for('auth.login_form') }}" class="auth-link">Login here</a>
   </div>
 </div>
+
+<script src="{{ url_for('static', filename='js/register.js') }}"></script>
 
 {% endblock %}

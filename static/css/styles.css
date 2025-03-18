@@ -574,10 +574,7 @@ td.action-buttons {
     text-overflow: ellipsis; /* Adds '...' if text is too long */
 }
 
-/* Make sure buttons stay in one line */
-.action-buttons {
-    min-width: 250px; /* Adjust as needed */
-}
+
 
 .action-buttons div {
     display: flex;
@@ -589,6 +586,10 @@ td.action-buttons {
 .action-buttons button {
     flex-grow: 1;
     min-width: 100px; /* Adjust button width */
+    display: flex; /*This is making the .dropdown visible*/
+    flex-wrap: nowrap;
+    gap: 3px;
+    justify-content: center;
 }
 
 /* Specifically for admin buttons */
@@ -611,7 +612,7 @@ td.action-buttons {
 }
 
 /* ======================= */
-/* Specificaly for agent dashbord */
+/* Specificaly for agent dashbord but also works for the admin dashboard users list*/
 /* ======================= */
 /* Agent Simcard registration */
 
@@ -685,32 +686,46 @@ td.action-buttons {
   transition: background-color 0.3s;
 }
 
-/* ✅ Set hover colors */
+/* ✅ Default Hover Background */
 .dropdown-menu .btn-sm:hover {
   background-color: var(--brand-blue-dark);
 }
 
+/* ✅ Individual Button Hover Colors */
 .dropdown-menu .btn-sm.view-btn:hover {
-  background-color: var(--brand-blue);
+  background-color: var(--brand-blue); /* Blue */
 }
 .dropdown-menu .btn-sm.activate-btn:hover {
-  background-color: var(--brand-green);
+  background-color: var(--brand-green); /* Green */
 }
 .dropdown-menu .btn-sm.suspend-btn:hover {
-  background-color: #ff9800;
+  background-color: #ff9800; /* Orange */
 }
 .dropdown-menu .btn-sm.transfer-btn:hover {
-  background-color: #8e44ad;
+  background-color: #8e44ad; /* Purple */
 }
 .dropdown-menu .btn-sm.delete-btn:hover {
-  background-color: #d32f2f;
+  background-color: #d32f2f; /* Red */
+}
+.dropdown-menu .btn-sm.verify-btn:hover {
+  background-color: #27ae60; /* Deep Green */
+}
+.dropdown-menu .btn-sm.edit-btn:hover {
+  background-color: #3498db; /* Light Blue */
+}
+.dropdown-menu .btn-sm.assign-role-btn:hover {
+  background-color: #9b59b6; /* Soft Purple */
+}
+
+/* ✅ Icon and Text Alignment */
+.dropdown-menu .btn-sm i {
+  margin-right: 8px;
 }
 
 /* ✅ Align icon and text */
 .dropdown-menu .btn-sm i {
   margin-right: 8px;
 }
-
 
 
 /* ✅ Fix SIM Details Modal - Remove Extra Space */

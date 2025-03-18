@@ -40,45 +40,44 @@ function fetchUsersForAdmin() {
       }
 
       users.forEach(user => {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-              <td>${user.id}</td>
-              <td>${user.name || "N/A"}</td>
-              <td>${user.mobile_number || "N/A"}</td>
-              <td>${user.email || "N/A"}</td>
-              <td>${user.role || "N/A"}</td>
-              <td class="action-buttons">
-                  <div class="dropdown dropup">
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td>${user.id}</td>
+            <td>${user.name || "N/A"}</td>
+            <td>${user.mobile_number || "N/A"}</td>
+            <td>${user.email || "N/A"}</td>
+            <td>${user.role || "N/A"}</td>
+            <td class="action-buttons">
+                <div class="dropdown dropup">
                     <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)" style="background-color: var(--brand-blue); color: white;">
                         Actions ▼
                     </button>
                     <div class="dropdown-menu">
-                        <button class="btn btn-sm view-user dropdown-item" onclick="viewUser('${user.id}')">
+                        <button class="btn btn-sm view-btn" onclick="viewUser('${user.id}')">
                             <i class="fas fa-eye"></i> View
                         </button>
-                        <button class="btn btn-sm assign-role dropdown-item" onclick="assignUserRole('${user.id}', 'Admin')">
+                        <button class="btn btn-sm activate-btn" onclick="assignUserRole('${user.id}', 'Admin')">
                             <i class="fas fa-user-tag"></i> Assign Role
                         </button>
-                        <button class="btn btn-sm verify-user dropdown-item" onclick="verifyUser('${user.id}')">
+                        <button class="btn btn-sm verify-btn" onclick="verifyUser('${user.id}')">
                             <i class="fas fa-check-circle"></i> Verify
                         </button>
-                        <button class="btn btn-sm suspend-user dropdown-item" onclick="suspendUser('${user.id}')">
+                        <button class="btn btn-sm suspend-btn" onclick="suspendUser('${user.id}')">
                             <i class="fas fa-user-slash"></i> Suspend
                         </button>
-                        <button class="btn btn-sm delete-user dropdown-item" onclick="deleteUser('${user.id}')">
+                        <button class="btn btn-sm delete-btn" onclick="deleteUser('${user.id}')">
                             <i class="fas fa-trash-alt"></i> Delete
                         </button>
-                        <button class="btn btn-sm edit-user dropdown-item" onclick="editUser('${user.id}')">
+                        <button class="btn btn-sm edit-btn" onclick="editUser('${user.id}')">
                             <i class="fas fa-edit"></i> Edit
                         </button>
                     </div>
                 </div>
-                          
-
-              </td>
-          `;
-          userList.appendChild(row);
-      });
+            </td>
+        `;
+        userList.appendChild(row);
+    });
+    
   })
   .catch(error => {
       console.error("❌ Error fetching users:", error);
@@ -87,59 +86,57 @@ function fetchUsersForAdmin() {
 }
 
 // ✅ Function to toggle dropdown and adjust position
-window.toggleDropdown = function(button) {
-  console.log("Dropdown clicked!");
+window.toggleDropdown = function(triggerButton) {
+  console.log("✅ Dropdown Clicked!");
 
-  // Get the dropdown menu
-  const dropdownMenu = button.nextElementSibling;
+  const dropdown = triggerButton.nextElementSibling;
 
-  if (!dropdownMenu) {
+  if (!dropdown) {
       console.error("❌ Dropdown menu not found!");
       return;
   }
 
-  // Close all other dropdowns before opening this one
+  // ✅ Close all other dropdowns before opening the clicked one
   document.querySelectorAll(".dropdown-menu").forEach(menu => {
-      if (menu !== dropdownMenu) {
+      if (menu !== dropdown) {
           menu.style.display = "none";
-          menu.removeAttribute("data-position");
       }
   });
 
-  // ✅ Calculate available space above and below the button
-  const rect = button.getBoundingClientRect();
+  // ✅ Toggle the visibility of the clicked dropdown
+  dropdown.style.display = (dropdown.style.display === "block") ? "none" : "block";
+
+  // ✅ Adjust positioning dynamically (drop up/down based on space)
+  const rect = triggerButton.getBoundingClientRect();
+  const dropdownHeight = dropdown.scrollHeight;
   const viewportHeight = window.innerHeight;
-  const dropdownHeight = dropdownMenu.scrollHeight;
-  const spaceAbove = rect.top;
   const spaceBelow = viewportHeight - rect.bottom;
+  const spaceAbove = rect.top;
 
-  // ✅ Adjust dropdown position based on space available
-  if (spaceBelow > dropdownHeight) {
-      dropdownMenu.style.top = "100%";
-      dropdownMenu.style.bottom = "auto";
-      dropdownMenu.setAttribute("data-position", "down");
-  } else if (spaceAbove > dropdownHeight) {
-      dropdownMenu.style.bottom = "100%";
-      dropdownMenu.style.top = "auto";
-      dropdownMenu.setAttribute("data-position", "up");
+  if (spaceBelow < dropdownHeight && spaceAbove > dropdownHeight) {
+      dropdown.style.bottom = "100%";
+      dropdown.style.top = "auto";
   } else {
-      dropdownMenu.style.top = "100%";
-      dropdownMenu.style.bottom = "auto";
-      dropdownMenu.setAttribute("data-position", "down");
+      dropdown.style.top = "100%";
+      dropdown.style.bottom = "auto";
   }
-
-  // ✅ Toggle dropdown visibility
-  dropdownMenu.style.display = dropdownMenu.style.display === "block" ? "none" : "block";
 };
 
-// ✅ Close dropdown when clicking outside
+// ✅ Close dropdowns when clicking outside
 document.addEventListener("click", function(event) {
   if (!event.target.closest(".dropdown")) {
-      document.querySelectorAll(".dropdown-menu").forEach(menu => {
-          menu.style.display = "none";
-          menu.removeAttribute("data-position");
+      document.querySelectorAll(".dropdown-menu").forEach(dropdown => {
+          dropdown.style.display = "none";
       });
   }
+});
+
+// ✅ Ensure dropdowns start hidden on page load
+document.addEventListener("DOMContentLoaded", function () {
+  console.log("✅ Ensuring dropdowns start hidden.");
+  document.querySelectorAll(".dropdown-menu").forEach(menu => {
+      menu.style.display = "none";
+  });
 });
 
 

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, redirect, url_for
+from flask import Flask, render_template, jsonify, redirect, url_for, send_from_directory
 from config import Config
 from sqlalchemy import text
 from flask_migrate import Migrate
@@ -51,6 +51,12 @@ migrate = Migrate(app, db)
 @app.route('/')
 def index():
     return render_template('index.html')
+
+# Fav Icon
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
 #Login Error handler
 @app.errorhandler(401)

@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from models.models import db, User, Wallet, Transaction, SIMCard, UserAccessControl, UserRole
 from utils.decorators import role_required
 import random
+import json
 
 agent_bp = Blueprint("agent", __name__)
 
@@ -126,7 +127,6 @@ def fetch_sim_registration_history():
     return jsonify({"sims": sim_list}), 200
 
 
-
 # ✅ Agent Dashboard (HTML Page)
 @agent_bp.route("/agent/dashboard", methods=["GET"])
 @jwt_required()
@@ -141,76 +141,13 @@ def agent_dashboard():
 
     return render_template("agent_dashboard.html", user=user)
 
-# ✅ API: Fetch Agent Dashboard Data (Transactions + SIM Registrations Count)
-@agent_bp.route("/agent/dashboard/data", methods=["GET"])
-@jwt_required()
-@role_required(["agent"])
-def agent_dashboard_data():
-    """Return JSON data for agent dashboard"""
-    agent_id = get_jwt_identity()
-    agent = db.session.get(User, agent_id)
 
-    if not agent:
-        return jsonify({"error": "Agent not found"}), 404
-
-    # ✅ Get total transactions done by this agent
-    total_transactions = Transaction.query.filter_by(user_id=agent.id).count()
-
-    # ✅ Get total SIMs registered by this agent
-    total_sims = SIMCard.query.filter_by(registered_by="Agent").count()
-
-    # ✅ Get total deposits, withdrawals, and transfers
-    total_deposits = db.session.query(db.func.sum(Transaction.amount)).filter_by(user_id=agent.id, transaction_type="deposit").scalar() or 0
-    total_withdrawals = db.session.query(db.func.sum(Transaction.amount)).filter_by(user_id=agent.id, transaction_type="withdrawal").scalar() or 0
-    total_transfers = db.session.query(db.func.sum(Transaction.amount)).filter_by(user_id=agent.id, transaction_type="transfer").scalar() or 0
-
-    return jsonify({
-        "total_transactions": total_transactions,
-        "total_sims": total_sims,
-        "total_deposits": total_deposits,
-        "total_withdrawals": total_withdrawals,
-        "total_transfers": total_transfers
-    }), 200
-
-
-# ✅ API: Fetch Agent's Transaction History
-import json
-
-@agent_bp.route("/agent/transactions", methods=["GET"])
-@jwt_required()
-@role_required(["agent"])
-def agent_transactions():
-    """Return agent's transaction history with deposit restriction and recipient details"""
-    agent_id = get_jwt_identity()
-    transactions = Transaction.query.filter_by(user_id=agent_id).order_by(Transaction.timestamp.desc()).all()
-
-    transaction_list = []
-    for tx in transactions:
-        # ✅ Ensure transaction_metadata is parsed correctly
-        metadata = json.loads(tx.transaction_metadata) if tx.transaction_metadata else {}
-
-        # ✅ Prevent agents from making deposits (filter deposits out)
-        if tx.transaction_type == "deposit":
-            continue  # Skip deposits, agents cannot deposit into their own accounts
-
-        # ✅ Show recipient number only for transfers & deposits to other accounts
-        recipient_mobile = metadata.get("recipient_mobile") if tx.transaction_type in ["transfer", "deposit"] else "Self"
-
-        transaction_list.append({
-            "amount": tx.amount,
-            "transaction_type": tx.transaction_type,
-            "timestamp": tx.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-            "recipient_mobile": recipient_mobile
-        })
-
-    return jsonify({"transactions": transaction_list}), 200
-
-
+# ✅ Agent Transaction
 @agent_bp.route("/agent/transaction", methods=["POST"])
 @jwt_required()
 @role_required(["agent"])
 def process_agent_transaction():
-    """Handle transactions (Deposit for users, Withdrawal, Transfer) with strict validation"""
+    """Handle agent transactions: Deposits, Withdrawals, Transfers"""
     user_id = get_jwt_identity()
     data = request.get_json()
 
@@ -237,75 +174,88 @@ def process_agent_transaction():
     if not agent_wallet:
         return jsonify({"error": "Agent wallet not found"}), 404
 
-    # ✅ Handle Deposits (Agent can deposit into user accounts, not their own)
+    transaction_metadata = {}  # ✅ Store additional details
+
+    # ✅ Handle Deposits (Agent can deposit into user accounts, NOT their own)
     if transaction_type == "deposit":
         if not recipient_mobile:
             return jsonify({"error": "Recipient mobile is required for deposits"}), 400
 
-        recipient = User.query.filter_by(mobile_number=recipient_mobile).first()
-        if not recipient:
-            return jsonify({"error": "Recipient not found"}), 404
+        recipient_sim = SIMCard.query.filter_by(mobile_number=recipient_mobile).first()
+        if not recipient_sim:
+            return jsonify({"error": "Recipient SIM not found"}), 404
 
-        if recipient.id == agent.id:
-            return jsonify({"error": "Agents cannot deposit into their own accounts"}), 403
+        recipient = User.query.get(recipient_sim.user_id)
+        if not recipient:
+            return jsonify({"error": "Recipient user not found"}), 404
 
         recipient_wallet = Wallet.query.filter_by(user_id=recipient.id).first()
         if not recipient_wallet:
             return jsonify({"error": "Recipient wallet not found"}), 404
 
-        # ✅ Process Deposit into the User's Account
+        if recipient.id == agent.id:
+            return jsonify({"error": "Agents cannot deposit into their own accounts"}), 403  # ❌ Prevent self-deposits
+
+        # ✅ Process deposit: Reduce agent balance, increase recipient balance
+        if agent_wallet.balance < amount:
+            return jsonify({"error": "Insufficient balance for deposit"}), 400
+        agent_wallet.balance -= amount
         recipient_wallet.balance += amount
 
-        transaction_metadata = json.dumps({
-            "deposited_by": "Agent",
+        # ✅ Store metadata with recipient details
+        transaction_metadata = {
+            "deposited_by_mobile": agent.sim_cards[0].mobile_number,  # ✅ Agent's mobile number
             "recipient_mobile": recipient_mobile
-        })
+        }
 
-    # ✅ Handle Transfers (Agent sending money to another user)
+    # ✅ Handle Transfers
     elif transaction_type == "transfer":
         if not recipient_mobile:
             return jsonify({"error": "Recipient mobile is required for transfers"}), 400
 
-        recipient = User.query.filter_by(mobile_number=recipient_mobile).first()
+        recipient_sim = SIMCard.query.filter_by(mobile_number=recipient_mobile).first()
+        if not recipient_sim:
+            return jsonify({"error": "Recipient SIM not found"}), 404
+
+        recipient = User.query.get(recipient_sim.user_id)
         if not recipient:
-            return jsonify({"error": "Recipient not found"}), 404
+            return jsonify({"error": "Recipient user not found"}), 404
 
         recipient_wallet = Wallet.query.filter_by(user_id=recipient.id).first()
         if not recipient_wallet:
             return jsonify({"error": "Recipient wallet not found"}), 404
 
         if agent_wallet.balance < amount:
-            return jsonify({"error": "Insufficient balance for transfer"}), 400
+            return jsonify({"error": "Insufficient funds"}), 400
 
-        # ✅ Process Transfer
         agent_wallet.balance -= amount
         recipient_wallet.balance += amount
 
-        transaction_metadata = json.dumps({
+        transaction_metadata = {
             "transfer_by": "Agent",
             "recipient_mobile": recipient_mobile
-        })
+        }
 
-    # ✅ Handle Withdrawals (Agent withdrawing from their own wallet)
+    # ✅ Handle Withdrawals
     elif transaction_type == "withdrawal":
         if agent_wallet.balance < amount:
             return jsonify({"error": "Insufficient balance"}), 400
         agent_wallet.balance -= amount
 
-        transaction_metadata = json.dumps({
+        transaction_metadata = {
             "withdrawal_method": "Agent Processed"
-        })
+        }
 
     else:
         return jsonify({"error": "Invalid transaction type"}), 400
 
     # ✅ Save Transaction
     new_transaction = Transaction(
-        user_id=agent.id if transaction_type != "deposit" else recipient.id,  # Deposits are recorded under the recipient
+        user_id=agent.id if transaction_type != "deposit" else recipient.id,  # Deposits belong to recipient
         amount=amount,
         transaction_type=transaction_type,
         status="completed",
-        transaction_metadata=transaction_metadata
+        transaction_metadata=json.dumps(transaction_metadata)
     )
     db.session.add(new_transaction)
     db.session.commit()
@@ -315,6 +265,47 @@ def process_agent_transaction():
         "updated_balance": agent_wallet.balance if transaction_type != "deposit" else recipient_wallet.balance
     }), 200
 
+
+
+# ✅ API: Fetch Agent's Transaction History
+@agent_bp.route("/agent/transactions", methods=["GET"])
+@jwt_required()
+@role_required(["agent"])
+def agent_transactions():
+    """Return agent's transaction history including deposits with correct metadata."""
+    agent_id = get_jwt_identity()
+
+    # ✅ Fetch transactions where the agent is either the sender or the depositor
+    transactions = Transaction.query.filter(
+        (Transaction.user_id == agent_id) | 
+        (Transaction.transaction_metadata.contains(f'"deposited_by_id": {agent_id}'))
+    ).order_by(Transaction.timestamp.desc()).all()
+
+    transaction_list = []
+    for tx in transactions:
+        try:
+            # ✅ Extract metadata
+            metadata = json.loads(tx.transaction_metadata) if tx.transaction_metadata else {}
+
+            # ✅ Set recipient mobile properly for deposits and transfers
+            if tx.transaction_type == "deposit":
+                recipient_mobile = metadata.get("recipient_mobile", "N/A")
+            elif tx.transaction_type == "transfer":
+                recipient_mobile = metadata.get("recipient_mobile", "N/A")
+            else:
+                recipient_mobile = "Self"
+
+            transaction_list.append({
+                "amount": tx.amount,
+                "transaction_type": tx.transaction_type,
+                "timestamp": tx.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                "recipient_mobile": recipient_mobile
+            })
+        except Exception as e:
+            print(f"❌ Error processing transaction metadata: {e}")
+            continue  # Skip the transaction if there's a parsing error
+
+    return jsonify({"transactions": transaction_list}), 200
 
 # ✅ API: Fetch Agent Wallet Info
 @agent_bp.route("/agent/wallet", methods=["GET"])
@@ -333,6 +324,55 @@ def agent_wallet():
         "currency": wallet.currency,
         "can_deposit": False  # ✅ Agents cannot deposit into their own wallets
     }), 200
+
+
+# ✅ API: Fetch Agent Dashboard Data (Transactions + SIM Registrations Count)
+@agent_bp.route("/agent/dashboard/data", methods=["GET"])
+@jwt_required()
+@role_required(["agent"])
+def agent_dashboard_data():
+    """Return JSON data for agent dashboard, ensuring deposits into user accounts are counted."""
+    agent_id = get_jwt_identity()
+    agent = db.session.get(User, agent_id)
+
+    if not agent:
+        return jsonify({"error": "Agent not found"}), 404
+
+    # ✅ Count transactions made by this agent (withdrawal, transfer, deposits into user accounts)
+    total_transactions = Transaction.query.filter(
+        (Transaction.user_id == agent.id) | 
+        (Transaction.transaction_metadata.like(f'%\"deposited_by\": \"Agent\", \"agent_id\": {agent.id}%'))
+    ).count()
+
+    # ✅ Get total SIMs registered by this agent
+    total_sims = SIMCard.query.filter_by(registered_by=str(agent.id)).count()
+
+    # ✅ Get total deposits made BY THE AGENT into user accounts
+    total_deposits = db.session.query(db.func.sum(Transaction.amount)).filter(
+        Transaction.transaction_type == "deposit",
+        Transaction.transaction_metadata.like(f'%\"deposited_by\": \"Agent\", \"agent_id\": {agent.id}%')
+    ).scalar() or 0
+
+    # ✅ Get total withdrawals by the agent
+    total_withdrawals = db.session.query(db.func.sum(Transaction.amount)).filter(
+        Transaction.user_id == agent.id,
+        Transaction.transaction_type == "withdrawal"
+    ).scalar() or 0
+
+    # ✅ Get total transfers by the agent
+    total_transfers = db.session.query(db.func.sum(Transaction.amount)).filter(
+        Transaction.user_id == agent.id,
+        Transaction.transaction_type == "transfer"
+    ).scalar() or 0
+
+    return jsonify({
+        "total_transactions": total_transactions,
+        "total_sims": total_sims,
+        "total_deposits": total_deposits,  # ✅ Now counts deposits made by agents
+        "total_withdrawals": total_withdrawals,
+        "total_transfers": total_transfers
+    }), 200
+
 
 
 # ✅ API: Fetch Agent Profile (Ensure Name is Returned)
@@ -427,3 +467,101 @@ def delete_sim():
     db.session.commit()
 
     return jsonify({"message": "🗑️ SIM deleted successfully!"}), 200
+
+
+# ✅ AGENT VIEWS PENDING WITHDRAWALS 
+@agent_bp.route("/agent/pending-withdrawals", methods=["GET"])
+@jwt_required()
+@role_required(["agent"])
+def get_pending_withdrawals():
+    agent_id = int(get_jwt_identity())
+
+    pending_withdrawals = Transaction.query.filter_by(
+        transaction_type="withdrawal",
+        status="pending"
+    ).order_by(Transaction.timestamp.desc()).all()
+
+    result = []
+    for tx in pending_withdrawals:
+        try:
+            metadata = json.loads(tx.transaction_metadata or "{}")
+            assigned_agent_id_raw = metadata.get("assigned_agent_id")
+
+            assigned_agent_id = int(assigned_agent_id_raw) if assigned_agent_id_raw is not None else -1
+
+            print(f"🧾 Transaction ID: {tx.id}")
+            print(f"🔑 Assigned Agent ID in Metadata: {assigned_agent_id} (type: {type(assigned_agent_id)})")
+            print(f"👤 Logged-in Agent ID: {agent_id} (type: {type(agent_id)})")
+
+            if assigned_agent_id != agent_id:
+                print("⛔ Skipping — this withdrawal is not assigned to this agent.\n")
+                continue  # 🔐 Do not show unassigned transactions
+
+            user = User.query.get(tx.user_id)
+
+            result.append({
+                "transaction_id": tx.id,
+                "amount": tx.amount,
+                "timestamp": tx.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                "user_name": f"{user.first_name} {user.last_name}" if user else "Unknown",
+                "user_id": user.id if user else None,
+                "agent_mobile": metadata.get("assigned_agent_mobile"),
+                "metadata": metadata
+            })
+
+            print("✅ Included in result ✅\n")
+
+        except Exception as e:
+            print(f"❌ Skipping transaction ID {tx.id}: Metadata parsing error - {e}")
+            continue
+
+    return jsonify({"pending_withdrawals": result}), 200
+    
+
+# ✅ AGENT APPROVES WITHDRAWAL
+@agent_bp.route("/agent/approve-withdrawal/<int:transaction_id>", methods=["POST"])
+@jwt_required()
+@role_required(["agent"])
+def approve_user_withdrawal(transaction_id):
+    agent_id = get_jwt_identity()
+
+    # ✅ Fetch transaction
+    transaction = Transaction.query.get(transaction_id)
+    if not transaction or transaction.transaction_type != "withdrawal" or transaction.status != "pending":
+        return jsonify({"error": "Invalid or already processed withdrawal request"}), 400
+
+    # ✅ Load and check metadata
+    metadata = json.loads(transaction.transaction_metadata or "{}")
+    assigned_agent_id = metadata.get("assigned_agent_id")
+
+    # 🔐 Ensure this agent is authorized to approve this withdrawal
+    if assigned_agent_id != agent_id:
+        return jsonify({"error": "You are not authorized to approve this withdrawal"}), 403
+
+    # ✅ Deduct funds from user's wallet
+    user_wallet = Wallet.query.filter_by(user_id=transaction.user_id).first()
+    if not user_wallet:
+        return jsonify({"error": "User wallet not found"}), 404
+
+    if user_wallet.balance < transaction.amount:
+        return jsonify({"error": "Insufficient user balance"}), 400
+
+    user_wallet.balance -= transaction.amount
+    transaction.status = "completed"
+
+    # ✅ Update metadata
+    metadata["approved_by_agent"] = True
+    metadata["approved_by"] = agent_id
+    transaction.transaction_metadata = json.dumps(metadata)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "✅ Withdrawal approved and processed.",
+        "user_id": transaction.user_id,
+        "withdrawn_amount": transaction.amount,
+        "updated_balance": user_wallet.balance,
+        "approved_by": agent_id
+    }), 200
+
+

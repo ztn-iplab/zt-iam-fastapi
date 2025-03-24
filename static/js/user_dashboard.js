@@ -146,8 +146,17 @@ function fetchTransactions() {
     if (!res.ok) throw new Error("Failed to fetch transactions");
     return res.json();
   })
-  .then(transactions => {
-    console.log("Transactions received:", transactions);
+  .then(response => {
+    console.log("Transactions received:", response);
+    
+    // ✅ Access the transactions array inside the response object
+    const transactions = response.transactions;
+
+    // ✅ Check if transactions is an array before looping
+    if (!Array.isArray(transactions)) {
+      throw new Error("Invalid transaction data format");
+    }
+
     const historyTable = document.getElementById('transaction-history').querySelector('tbody');
     historyTable.innerHTML = "";
     transactions.forEach(tx => {
@@ -161,7 +170,7 @@ function fetchTransactions() {
       historyTable.appendChild(row);
     });
 
-    // Aggregate transaction data for chart rendering
+    // ✅ Aggregate transaction data for chart rendering
     const aggregationSelect = document.getElementById('aggregation-type');
     const aggregationType = aggregationSelect ? aggregationSelect.value : 'daily';
     const aggregated = {};
@@ -181,6 +190,7 @@ function fetchTransactions() {
   })
   .catch(err => console.error("Error fetching transactions:", err));
 }
+
 
 // ============================
 // Render Transaction Chart

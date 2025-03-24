@@ -60,26 +60,76 @@ def create_transaction():
     if not sender_wallet:
         return jsonify({"error": "Wallet not found"}), 404
 
-    # ✅ Users are not allowed to deposit
+    transaction_metadata = {}  # ✅ Initialize metadata
+
+    # ❌ Block deposit for users
     if transaction_type == "deposit":
         return jsonify({"error": "Deposits are not allowed for regular users"}), 403
 
-    transaction_metadata = {}  # ✅ Initialize metadata
-
-    # ✅ Process withdrawals
-    if transaction_type == "withdrawal":
+    # ✅ Handle withdrawals (user-initiated, agent must approve)
+    elif transaction_type == "withdrawal":
         if sender_wallet.balance < amount:
             return jsonify({"error": "Insufficient funds"}), 400
 
-        sender_wallet.balance -= amount
-        status = "completed"
+        agent_mobile = data.get("agent_mobile")
+        if not agent_mobile:
+            return jsonify({"error": "Agent mobile number is required to process withdrawal"}), 400
 
-        # ✅ Store metadata for withdrawal
+        # ✅ Find the agent by mobile
+        agent_sim = SIMCard.query.filter_by(mobile_number=agent_mobile).first()
+        if not agent_sim:
+            return jsonify({"error": "Agent not found"}), 404
+
+        assigned_agent = User.query.get(agent_sim.user_id)
+        if not assigned_agent:
+            return jsonify({"error": "Agent user not found"}), 404
+
+        # ✅ Store metadata
+        status = "pending"
         transaction_metadata = {
-            "withdrawal_method": "Self-Service"
+            "initiated_by": "user",
+            "approved_by_agent": False,
+            "assigned_agent_id": assigned_agent.id,
+            "assigned_agent_mobile": agent_mobile
         }
 
-    # ✅ Process transfers
+        transaction_metadata_str = json.dumps(transaction_metadata)
+
+        transaction = Transaction(
+            user_id=logged_in_user,
+            amount=amount,
+            transaction_type=transaction_type,
+            status=status,
+            location=data.get('location'),
+            device_info=data.get('device_info'),
+            transaction_metadata=transaction_metadata_str,
+            fraud_flag=data.get('fraud_flag', False),
+            risk_score=data.get('risk_score', 0)
+        )
+
+        db.session.add(transaction)
+        db.session.commit()
+        
+        # After user submits a withdrawal, print for verification
+        print("✅ Withdrawal metadata:", json.dumps(transaction_metadata, indent=2))
+
+        return jsonify({
+            "message": f"✅ Withdrawal request submitted. Awaiting approval from agent {agent_mobile}.",
+            "transaction_id": transaction.id,
+            "status": transaction.status,
+            "assigned_agent": agent_mobile,
+            "timestamp": transaction.timestamp.isoformat() if transaction.timestamp else None,
+            "amount": transaction.amount,
+            "transaction_type": transaction.transaction_type,
+            "updated_balance": sender_wallet.balance,
+            "location": transaction.location,
+            "device_info": transaction.device_info,
+            "fraud_flag": transaction.fraud_flag,
+            "risk_score": transaction.risk_score
+        }), 200
+
+
+    # ✅ Handle transfers
     elif transaction_type == "transfer":
         recipient_mobile = data.get('recipient_mobile')
         if not recipient_mobile:
@@ -115,73 +165,96 @@ def create_transaction():
             "recipient_id": recipient_user.id
         }
 
-    else:
-        return jsonify({"error": "Invalid transaction type"}), 400
+        transaction_metadata_str = json.dumps(transaction_metadata)
 
-    # ✅ Convert metadata to JSON string
-    transaction_metadata_str = json.dumps(transaction_metadata)
+        # ✅ Create transaction record
+        transaction = Transaction(
+            user_id=logged_in_user,
+            amount=amount,
+            transaction_type=transaction_type,
+            status=status,
+            location=data.get('location'),
+            device_info=data.get('device_info'),
+            transaction_metadata=transaction_metadata_str,
+            fraud_flag=data.get('fraud_flag', False),
+            risk_score=data.get('risk_score', 0)
+        )
 
-    # ✅ Create transaction record
-    transaction = Transaction(
-        user_id=logged_in_user,
-        amount=amount,
-        transaction_type=transaction_type,
-        status=status,
-        location=data.get('location'),
-        device_info=data.get('device_info'),
-        transaction_metadata=transaction_metadata_str,
-        fraud_flag=data.get('fraud_flag', False),
-        risk_score=data.get('risk_score', 0)
-    )
+        db.session.add(transaction)
+        db.session.commit()
 
-    db.session.add(transaction)
-    db.session.commit()
-
-    # ✅ For transfers, simulate async verification
-    if transaction_type == "transfer":
+        # ✅ For transfers, simulate async verification
         app = current_app._get_current_object()
         threading.Thread(target=update_transaction_status, args=(app, transaction.id, "completed")).start()
 
-    return jsonify({
-        "id": transaction.id,
-        "user_id": transaction.user_id,
-        "amount": transaction.amount,
-        "transaction_type": transaction.transaction_type,
-        "status": transaction.status,  # Initially "pending" for transfers
-        "timestamp": transaction.timestamp.isoformat() if transaction.timestamp else None,
-        "location": transaction.location,
-        "device_info": transaction.device_info,
-        "fraud_flag": transaction.fraud_flag,
-        "risk_score": transaction.risk_score,
-        "transaction_metadata": transaction_metadata,  # ✅ Return as a parsed JSON object
-        "updated_balance": sender_wallet.balance
-    }), 201
+        return jsonify({
+            "message": "✅ Transfer request submitted.",
+            "transaction_id": transaction.id,
+            "status": transaction.status,
+            "timestamp": transaction.timestamp.isoformat() if transaction.timestamp else None,
+            "amount": transaction.amount,
+            "transaction_type": transaction.transaction_type,
+            "updated_balance": sender_wallet.balance,
+            "location": transaction.location,
+            "device_info": transaction.device_info,
+            "fraud_flag": transaction.fraud_flag,
+            "risk_score": transaction.risk_score
+        }), 200
 
-# Get Transactions (Only User-Specific)
+    else:
+        return jsonify({"error": "Invalid transaction type"}), 400
+
+
+
 @transaction_bp.route('/transactions', methods=['GET'])
 @jwt_required()
 def get_transactions():
     logged_in_user = int(get_jwt_identity())
 
-    # Fetch only transactions belonging to the logged-in user
-    transactions = Transaction.query.filter_by(user_id=logged_in_user).all()
+    # ✅ Fetch transactions where the user is involved (sender or recipient)
+    transactions = Transaction.query.filter(
+        (Transaction.user_id == logged_in_user) |
+        (Transaction.transaction_metadata.contains(f'"recipient_id": {logged_in_user}'))
+    ).order_by(Transaction.timestamp.desc()).all()
 
-    return jsonify([{
-    "id": transaction.id,
-    "user_id": transaction.user_id,
-    "amount": transaction.amount,
-    "transaction_type": transaction.transaction_type,
-    "status": transaction.status,
-    "timestamp": transaction.timestamp.isoformat() if transaction.timestamp else None,
-    "location": transaction.location,
-    "device_info": transaction.device_info,
-    "fraud_flag": transaction.fraud_flag,
-    "risk_score": transaction.risk_score,
-    "recipient_mobile": (
-        "Self" if transaction.transaction_type in ["deposit", "withdrawal"]
-        else json.loads(transaction.transaction_metadata).get("recipient_mobile") if transaction.transaction_metadata else "N/A"
-    )
-} for transaction in transactions]), 200
+    transaction_list = []
+    for tx in transactions:
+        try:
+            metadata = json.loads(tx.transaction_metadata) if tx.transaction_metadata else {}
+            recipient_mobile = metadata.get("recipient_mobile", "N/A")
+            initiated_by = metadata.get("initiated_by", None)
+            approved_by_agent = metadata.get("approved_by_agent", None)
+
+            # ✅ Set dynamic labels per transaction type
+            if tx.transaction_type == "deposit":
+                label = f"Deposit from Agent {metadata.get('deposited_by_mobile', 'Unknown')}"
+            elif tx.transaction_type == "transfer":
+                label = f"Transfer to {recipient_mobile}"
+            elif tx.transaction_type == "withdrawal":
+                label = "Withdrawal"
+                if initiated_by == "user":
+                    label += " (Pending Agent Approval)" if tx.status == "pending" else " (Approved)"
+            else:
+                label = tx.transaction_type.capitalize()
+
+            transaction_list.append({
+                "transaction_id": tx.id,
+                "amount": tx.amount,
+                "transaction_type": tx.transaction_type,
+                "label": label,
+                "status": tx.status,
+                "timestamp": tx.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                "details": metadata
+            })
+
+        except Exception as e:
+            print(f"❌ Error processing transaction metadata: {e}")
+            continue  # Skip malformed ones
+
+    return jsonify({"transactions": transaction_list}), 200
+
+
+
 
 # Update a specific transaction (only if it belongs to the logged-in user)
 @transaction_bp.route('/transactions/<int:transaction_id>', methods=['PUT'])
@@ -219,4 +292,44 @@ def delete_transaction(transaction_id):
     db.session.commit()
     return jsonify({"message": "Transaction deleted successfully"}), 200
 
-    
+# Under agent approval withdraws
+# ✅ USER INITIATES WITHDRAWAL
+@transaction_bp.route('/user/initiated-withdrawal', methods=['POST'])
+@jwt_required()
+def user_initiate_withdrawal():
+    user_id = int(get_jwt_identity())
+    data = request.get_json()
+
+    try:
+        amount = float(data.get("amount"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid amount format"}), 400
+
+    if amount <= 0:
+        return jsonify({"error": "Amount must be greater than zero"}), 400
+
+    wallet = Wallet.query.filter_by(user_id=user_id).first()
+    if not wallet:
+        return jsonify({"error": "Wallet not found"}), 404
+
+    if wallet.balance < amount:
+        return jsonify({"error": "Insufficient funds"}), 400
+
+    # Don't deduct balance yet — wait for agent approval
+    withdrawal_request = Transaction(
+        user_id=user_id,
+        amount=amount,
+        transaction_type="withdrawal",
+        status="pending",
+        transaction_metadata=json.dumps({
+            "initiated_by": "user",
+            "approved_by_agent": False
+        })
+    )
+    db.session.add(withdrawal_request)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Withdrawal request submitted. Awaiting agent approval.",
+        "transaction_id": withdrawal_request.id
+    }), 200

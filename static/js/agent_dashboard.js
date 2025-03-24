@@ -40,14 +40,25 @@ document.addEventListener("DOMContentLoaded", function () {
   // ✅ Fetch Agent Dashboard Data
   function fetchAgentDashboardData() {
     fetch("/agent/dashboard/data", { method: "GET", credentials: "include" })
-    .then(response => response.json())
-    .then(data => {
-      console.log("Agent Dashboard Data:", data);
-      document.getElementById("total-transactions").textContent = data.total_transactions || 0;
-      document.getElementById("total-sims").textContent = data.total_sims || 0;
+    .then(response => {
+        if (response.status === 401 || response.status === 403) {
+            throw new Error("Session expired");
+        }
+        return response.json();
     })
-    .catch(error => console.error("Error fetching agent dashboard data:", error));
-  }
+    .then(data => {
+        console.log("Agent Dashboard Data:", data);
+        document.getElementById("total-transactions").textContent = data.total_transactions || 0;
+        document.getElementById("total-sims").textContent = data.total_sims || 0;
+    })
+    .catch(error => {
+        console.error("Error fetching agent dashboard data:", error);
+        if (error.message === "Session expired") {
+            alert("⚠️ Your session has expired. Please log in again.");
+            window.location.href = "/api/auth/login_form"; // Redirect to login
+        }
+    });
+}
 
   // ✅ Fetch Wallet Info
   function fetchWalletInfo() {
@@ -69,6 +80,12 @@ document.addEventListener("DOMContentLoaded", function () {
       console.log("Transaction History:", data);
       const historyTable = document.getElementById("transaction-history").querySelector("tbody");
       historyTable.innerHTML = "";
+  
+      if (!data.transactions || data.transactions.length === 0) {
+        console.warn("No transactions found.");
+        return; // ✅ Stop execution if no transactions exist
+      }
+  
       data.transactions.forEach(tx => {
         const row = document.createElement("tr");
         row.innerHTML = `
@@ -79,13 +96,13 @@ document.addEventListener("DOMContentLoaded", function () {
         `;
         historyTable.appendChild(row);
       });
-
-      // ✅ Render transaction chart
+  
+      // ✅ Render transaction chart only if data exists
       renderTransactionChart(data.transactions);
     })
     .catch(error => console.error("Error fetching transactions:", error));
-}
-
+  }
+  
   // ✅ Function to Get User Location
   function getLocation() {
     return new Promise((resolve) => {
@@ -184,13 +201,26 @@ document.addEventListener("DOMContentLoaded", function () {
 function renderTransactionChart(transactions) {
   const ctx = document.getElementById("transactionChart").getContext("2d");
 
-  if (window.transactionChart) {
-    window.transactionChart.destroy(); // ✅ Destroy previous chart before rendering new one
+  // ✅ Check if transactions exist before rendering
+  if (!transactions || transactions.length === 0) {
+    console.warn("No transactions available for chart rendering.");
+    if (window.transactionChart) {
+      window.transactionChart.destroy(); // ✅ Destroy chart if there are no transactions
+      window.transactionChart = null; // ✅ Reset reference
+    }
+    return;
   }
 
-  const labels = transactions.map(tx => tx.timestamp.slice(0, 10));
+  // ✅ Ensure previous chart is destroyed
+  if (window.transactionChart && typeof window.transactionChart.destroy === "function") {
+    window.transactionChart.destroy();
+  }
+
+  // ✅ Extract labels (dates) and data (amounts)
+  const labels = transactions.map(tx => new Date(tx.timestamp).toLocaleDateString());
   const data = transactions.map(tx => tx.amount);
 
+  // ✅ Ensure transactionChart is correctly assigned
   window.transactionChart = new Chart(ctx, {
     type: "line",
     data: {
@@ -212,6 +242,7 @@ function renderTransactionChart(transactions) {
     }
   });
 }
+
 
 // ✅ Show Mobile Input for Transfer & Deposit Transactions
 document.getElementById("transaction-type").addEventListener("change", function () {

@@ -205,7 +205,7 @@ def create_transaction():
         return jsonify({"error": "Invalid transaction type"}), 400
 
 
-
+# The Transactions history
 @transaction_bp.route('/transactions', methods=['GET'])
 @jwt_required()
 def get_transactions():
@@ -221,19 +221,25 @@ def get_transactions():
     for tx in transactions:
         try:
             metadata = json.loads(tx.transaction_metadata) if tx.transaction_metadata else {}
+
             recipient_mobile = metadata.get("recipient_mobile", "N/A")
+            agent_mobile = metadata.get("assigned_agent_mobile") or metadata.get("deposited_by_mobile", "N/A")
             initiated_by = metadata.get("initiated_by", None)
             approved_by_agent = metadata.get("approved_by_agent", None)
 
-            # ✅ Set dynamic labels per transaction type
+            # ✅ Labeling logic based on transaction type
             if tx.transaction_type == "deposit":
-                label = f"Deposit from Agent {metadata.get('deposited_by_mobile', 'Unknown')}"
+                label = f"Deposit from Agent {agent_mobile}"
+
             elif tx.transaction_type == "transfer":
                 label = f"Transfer to {recipient_mobile}"
+
             elif tx.transaction_type == "withdrawal":
-                label = "Withdrawal"
-                if initiated_by == "user":
-                    label += " (Pending Agent Approval)" if tx.status == "pending" else " (Approved)"
+                if tx.status == "pending":
+                    label = f"Withdrawal (Pending Agent Approval - {agent_mobile})"
+                else:
+                    label = f"Withdrawal (Approved by Agent {agent_mobile})"
+
             else:
                 label = tx.transaction_type.capitalize()
 
@@ -249,11 +255,9 @@ def get_transactions():
 
         except Exception as e:
             print(f"❌ Error processing transaction metadata: {e}")
-            continue  # Skip malformed ones
+            continue
 
     return jsonify({"transactions": transaction_list}), 200
-
-
 
 
 # Update a specific transaction (only if it belongs to the logged-in user)

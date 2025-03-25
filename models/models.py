@@ -91,7 +91,7 @@ class Transaction(db.Model):
     amount = db.Column(db.Float, nullable=False)
     transaction_type = db.Column(db.String(50), nullable=False)  # deposit, withdrawal, transfer
     status = db.Column(db.String(20))  # pending, completed, failed
-    timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     location = db.Column(db.String(100))
     device_info = db.Column(db.String(200))
     fraud_flag = db.Column(db.Boolean, default=False)

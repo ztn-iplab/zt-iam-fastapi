@@ -149,23 +149,21 @@ function fetchTransactions() {
   .then(response => {
     console.log("Transactions received:", response);
     
-    // ✅ Access the transactions array inside the response object
     const transactions = response.transactions;
-
-    // ✅ Check if transactions is an array before looping
     if (!Array.isArray(transactions)) {
       throw new Error("Invalid transaction data format");
     }
 
     const historyTable = document.getElementById('transaction-history').querySelector('tbody');
     historyTable.innerHTML = "";
+
     transactions.forEach(tx => {
       const row = document.createElement('tr');
       row.innerHTML = `
         <td>${new Date(tx.timestamp).toLocaleDateString()}</td>
         <td>${tx.transaction_type.toUpperCase()}</td>
         <td>${tx.amount}</td>
-        <td>${tx.recipient_mobile ? tx.recipient_mobile : 'N/A'}</td>
+        <td>${tx.label || 'N/A'}</td>
       `;
       historyTable.appendChild(row);
     });
@@ -241,15 +239,38 @@ function renderTransactionChart(labels, data) {
 // ============================
 // Transaction Form Submission
 // ============================
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
   const transactionForm = document.getElementById('transaction-form');
+  const transactionTypeSelect = transactionForm.querySelector('[name="transaction_type"]');
+  const recipientGroup = document.getElementById("recipient-mobile-group");
+  const agentGroup = document.getElementById("agent-mobile-group");
+
+  // 🔄 Show/hide inputs dynamically
+  transactionTypeSelect.addEventListener("change", function () {
+    const selectedType = transactionTypeSelect.value;
+    if (selectedType === "transfer") {
+      recipientGroup.style.display = "block";
+      agentGroup.style.display = "none";
+    } else if (selectedType === "withdrawal") {
+      agentGroup.style.display = "block";
+      recipientGroup.style.display = "none";
+    } else {
+      recipientGroup.style.display = "none";
+      agentGroup.style.display = "none";
+    }
+  });
+
+  // ✅ Form submission logic
   if (transactionForm) {
-    transactionForm.addEventListener('submit', async function(e) {
+    transactionForm.addEventListener('submit', async function (e) {
       e.preventDefault();
+
       const amount = transactionForm.querySelector('[name="amount"]').value;
       const transactionType = transactionForm.querySelector('[name="transaction_type"]').value;
       const recipientMobileInput = transactionForm.querySelector('[name="recipient_mobile"]');
+      const agentMobileInput = transactionForm.querySelector('[name="agent_mobile"]');
       let recipient_mobile = recipientMobileInput ? recipientMobileInput.value : null;
+      let agent_mobile = agentMobileInput ? agentMobileInput.value : null;
 
       const device_info = getDeviceInfo();
       const location = await getLocation();
@@ -260,12 +281,21 @@ document.addEventListener('DOMContentLoaded', function() {
         device_info: device_info,
         location: location
       };
+
       if (transactionType === 'transfer') {
         if (!recipient_mobile) {
           alert("Please provide a recipient mobile number for transfers.");
           return;
         }
         payload.recipient_mobile = recipient_mobile;
+      }
+
+      if (transactionType === 'withdrawal') {
+        if (!agent_mobile) {
+          alert("Please provide the agent's mobile number for withdrawals.");
+          return;
+        }
+        payload.agent_mobile = agent_mobile;
       }
 
       fetch('/api/transactions', {
@@ -285,6 +315,8 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(data => {
         alert("Transaction successful! Updated balance: " + data.updated_balance);
         transactionForm.reset();
+        recipientGroup.style.display = "none";
+        agentGroup.style.display = "none";
         fetchTransactions();
         fetchWalletInfo();
       })

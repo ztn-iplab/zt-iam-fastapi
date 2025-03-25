@@ -72,38 +72,94 @@ document.addEventListener("DOMContentLoaded", function () {
     .catch(error => console.error("Error fetching wallet info:", error));
   }
 
+  
   // ✅ Fetch Transaction History and Render Chart
   function fetchTransactionHistory() {
     fetch("/agent/transactions", { method: "GET", credentials: "include" })
-    .then(response => response.json())
-    .then(data => {
-      console.log("Transaction History:", data);
-      const historyTable = document.getElementById("transaction-history").querySelector("tbody");
-      historyTable.innerHTML = "";
+      .then(response => response.json())
+      .then(data => {
+        console.log("Transaction History:", data);
+        const historyTable = document.getElementById("transaction-history").querySelector("tbody");
+        historyTable.innerHTML = "";
   
-      if (!data.transactions || data.transactions.length === 0) {
-        console.warn("No transactions found.");
-        return; // ✅ Stop execution if no transactions exist
-      }
+        if (!data.transactions || data.transactions.length === 0) {
+          historyTable.innerHTML = `<tr><td colspan="6" class="text-center">No transactions found.</td></tr>`;
+          return;
+        }
   
-      data.transactions.forEach(tx => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${new Date(tx.timestamp).toLocaleDateString()}</td>
-          <td>${tx.transaction_type.toUpperCase()}</td>
-          <td>${tx.amount}</td>
-          <td>${tx.transaction_type === 'transfer' ? tx.recipient_mobile : 'Self'}</td>
-        `;
-        historyTable.appendChild(row);
-      });
-  
+        data.transactions.forEach(tx => {
+          const row = document.createElement("tr");
+
+          let dropdownActions = "";
+          if (tx.transaction_type === "withdrawal" && tx.status === "pending") {
+            dropdownActions = `
+              <div class="dropdown dropup">
+                <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)" style="background-color: var(--brand-blue); color: white;">
+                  Actions ▼
+                </button>
+                <div class="dropdown-menu">
+                  <button class="btn btn-sm approve-btn" onclick="approveWithdrawal(${tx.transaction_id})">
+                    ✅ Approve
+                  </button>
+                  <button class="btn btn-sm reject-btn" onclick="rejectWithdrawal(${tx.transaction_id})">
+                    ❌ Reject
+                  </button>
+                </div>
+              </div>
+            `;
+          }
+          row.innerHTML = `
+            <td>${new Date(tx.timestamp).toLocaleDateString()}</td>
+            <td>${tx.transaction_type.toUpperCase()}</td>
+            <td>${tx.amount}</td>
+            <td>${tx.recipient_mobile || 'N/A'}</td>
+            <td>${tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}</td>
+            <td class="action-buttons">${dropdownActions}</td>
+          `;
+          historyTable.appendChild(row);
+        });
+      
       // ✅ Render transaction chart only if data exists
       renderTransactionChart(data.transactions);
     })
     .catch(error => console.error("Error fetching transactions:", error));
   }
   
-  // ✅ Function to Get User Location
+  // ✅ Function to approve withdrwals
+// ✅ Make this globally accessible
+window.approveWithdrawal = function(transactionId) {
+  if (!confirm("Are you sure you want to approve this withdrawal?")) return;
+
+  fetch(`/agent/approve-withdrawal/${transactionId}`, {
+    method: "POST",
+    credentials: "include"
+  })
+  .then(async (res) => {
+    const data = await res.json();
+
+    if (!res.ok) {
+      // ❌ Server returned a 400/403/404
+      alert(data.error || "❌ Something went wrong.");
+      return;
+    }
+
+    // ✅ Success
+    alert(data.message || "✅ Withdrawal approved.");
+    fetchTransactionHistory(); // refresh the list
+    if (typeof fetchWalletInfo === "function") fetchWalletInfo(); // optional
+  })
+  .catch((err) => {
+    // ❌ Network or parsing error
+    alert("❌ Network or server error.");
+    console.error(err);
+  });
+};
+
+window.rejectWithdrawal = function(transactionId) {
+  alert("Reject functionality not implemented yet.");
+};
+
+// ✅ Function to Get User Location
   function getLocation() {
     return new Promise((resolve) => {
       if (navigator.geolocation) {

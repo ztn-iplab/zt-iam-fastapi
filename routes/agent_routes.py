@@ -4,6 +4,7 @@ from models.models import db, User, Wallet, Transaction, SIMCard, UserAccessCont
 from utils.decorators import role_required
 import random
 import json
+from datetime import datetime, timedelta
 
 agent_bp = Blueprint("agent", __name__)
 
@@ -272,40 +273,60 @@ def process_agent_transaction():
 @jwt_required()
 @role_required(["agent"])
 def agent_transactions():
-    """Return agent's transaction history including deposits with correct metadata."""
-    agent_id = get_jwt_identity()
-
-    # ✅ Fetch transactions where the agent is either the sender or the depositor
-    transactions = Transaction.query.filter(
-        (Transaction.user_id == agent_id) | 
-        (Transaction.transaction_metadata.contains(f'"deposited_by_id": {agent_id}'))
-    ).order_by(Transaction.timestamp.desc()).all()
+    """Return agent's transaction history including deposits & withdrawals assigned to them."""
+    agent_id = int(get_jwt_identity())
+    transactions = Transaction.query.order_by(Transaction.timestamp.desc()).all()
 
     transaction_list = []
     for tx in transactions:
         try:
-            # ✅ Extract metadata
-            metadata = json.loads(tx.transaction_metadata) if tx.transaction_metadata else {}
+            metadata = json.loads(tx.transaction_metadata or "{}")
 
-            # ✅ Set recipient mobile properly for deposits and transfers
-            if tx.transaction_type == "deposit":
+            # ✅ Agent is the initiator (for their own transfers/withdrawals)
+            if tx.user_id == agent_id:
+                involved = True
+            # ✅ Agent was assigned to approve withdrawal
+            elif metadata.get("assigned_agent_id") and int(metadata.get("assigned_agent_id")) == agent_id:
+                involved = True
+            # ✅ Agent did the deposit (mobile match)
+            elif metadata.get("deposited_by_mobile") and metadata.get("deposited_by_mobile") in [sim.mobile_number for sim in SIMCard.query.filter_by(user_id=agent_id).all()]:
+                involved = True
+            else:
+                involved = False
+
+            if not involved:
+                continue
+
+            # ✅ Handle recipient display
+            # 🔁 Transfer or Deposit: use metadata
+            if tx.transaction_type in ["deposit", "transfer"]:
                 recipient_mobile = metadata.get("recipient_mobile", "N/A")
-            elif tx.transaction_type == "transfer":
-                recipient_mobile = metadata.get("recipient_mobile", "N/A")
+
+            # 🏧 Withdrawal: use the user's own mobile number
+            elif tx.transaction_type == "withdrawal":
+                recipient_sim = SIMCard.query.filter_by(user_id=tx.user_id).first()
+                recipient_mobile = recipient_sim.mobile_number if recipient_sim else "N/A"
+
+            # Fallback
             else:
                 recipient_mobile = "Self"
 
+
             transaction_list.append({
+                "transaction_id": tx.id,  # ✅ Key fix her
                 "amount": tx.amount,
                 "transaction_type": tx.transaction_type,
+                "status": tx.status,
                 "timestamp": tx.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 "recipient_mobile": recipient_mobile
             })
+
         except Exception as e:
-            print(f"❌ Error processing transaction metadata: {e}")
-            continue  # Skip the transaction if there's a parsing error
+            print(f"❌ Error processing transaction ID {tx.id}: {e}")
+            continue
 
     return jsonify({"transactions": transaction_list}), 200
+
 
 # ✅ API: Fetch Agent Wallet Info
 @agent_bp.route("/agent/wallet", methods=["GET"])
@@ -519,26 +540,38 @@ def get_pending_withdrawals():
     
 
 # ✅ AGENT APPROVES WITHDRAWAL
+WITHDRAWAL_EXPIRY_MINUTES = 10  # 💡 You can adjust this as needed
 @agent_bp.route("/agent/approve-withdrawal/<int:transaction_id>", methods=["POST"])
 @jwt_required()
 @role_required(["agent"])
 def approve_user_withdrawal(transaction_id):
-    agent_id = get_jwt_identity()
-
-    # ✅ Fetch transaction
+    agent_id = int(get_jwt_identity())
     transaction = Transaction.query.get(transaction_id)
+
+    # ❌ Invalid or already processed
     if not transaction or transaction.transaction_type != "withdrawal" or transaction.status != "pending":
         return jsonify({"error": "Invalid or already processed withdrawal request"}), 400
 
     # ✅ Load and check metadata
     metadata = json.loads(transaction.transaction_metadata or "{}")
-    assigned_agent_id = metadata.get("assigned_agent_id")
+    assigned_agent_id = int(metadata.get("assigned_agent_id", -1))
 
-    # 🔐 Ensure this agent is authorized to approve this withdrawal
+    # 🔐 Ensure this agent is authorized
     if assigned_agent_id != agent_id:
         return jsonify({"error": "You are not authorized to approve this withdrawal"}), 403
 
-    # ✅ Deduct funds from user's wallet
+    # ⏳ Check expiration window
+    now = datetime.utcnow()
+    if transaction.timestamp and now - transaction.timestamp > timedelta(minutes=WITHDRAWAL_EXPIRY_MINUTES):
+        transaction.status = "expired"
+        db.session.commit()
+        print("🔎 Now (UTC):", datetime.utcnow())
+        print("📦 TX Timestamp:", transaction.timestamp)
+        print("⏰ Time since TX:", datetime.utcnow() - transaction.timestamp)
+
+        return jsonify({"error": "⏳ This withdrawal request has expired and can no longer be approved."}), 403
+
+    # ✅ Deduct from user wallet
     user_wallet = Wallet.query.filter_by(user_id=transaction.user_id).first()
     if not user_wallet:
         return jsonify({"error": "User wallet not found"}), 404
@@ -552,6 +585,7 @@ def approve_user_withdrawal(transaction_id):
     # ✅ Update metadata
     metadata["approved_by_agent"] = True
     metadata["approved_by"] = agent_id
+    metadata["approved_at"] = now.isoformat()
     transaction.transaction_metadata = json.dumps(metadata)
 
     db.session.commit()
@@ -563,5 +597,7 @@ def approve_user_withdrawal(transaction_id):
         "updated_balance": user_wallet.balance,
         "approved_by": agent_id
     }), 200
+
+
 
 

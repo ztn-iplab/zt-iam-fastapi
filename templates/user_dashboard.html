@@ -23,23 +23,31 @@
     </div>
   </section>
 
-  <!-- Transactions Section -->
+ <!-- Transactions Section -->
 <section id="content-transactions" class="content-section" style="display: none;">
   <div class="widgets">
     <div class="widget transactions-widget" style="flex: 1 1 100%;">
       <h2>Transactions</h2>
       <form id="transaction-form" class="transaction-form" method="POST">
         <input type="number" name="amount" placeholder="Amount" class="input-field" step="0.01" required />
-        
+
         <select name="transaction_type" id="transaction-type" class="input-field" required>
           <option value="">Select Transaction Type</option>
           <option value="deposit">Deposit</option>
           <option value="withdrawal">Withdrawal</option>
           <option value="transfer">Transfer</option>
         </select>
-        
-        <input type="text" name="recipient_mobile" id="recipient-mobile" placeholder="Recipient Mobile" class="input-field" style="display:none;" />
-        
+
+        <!-- ✅ Recipient Mobile (for transfers only) -->
+        <div id="recipient-mobile-group" style="display: none;">
+          <input type="text" name="recipient_mobile" placeholder="Recipient Mobile" class="input-field" />
+        </div>
+
+        <!-- ✅ Agent Mobile (for withdrawals only) -->
+        <div id="agent-mobile-group" style="display: none;">
+          <input type="text" name="agent_mobile" placeholder="Agent Mobile Number" class="input-field" />
+        </div>
+
         <button type="submit" class="btn btn-primary">Submit Transaction</button>
       </form>
       
@@ -50,7 +58,7 @@
             <th>Date</th>
             <th>Type</th>
             <th>Amount</th>
-            <th>Recipient</th>
+            <th>Action Status</th>
           </tr>
         </thead>
         <tbody>

@@ -727,6 +727,12 @@ td.action-buttons {
   margin-right: 8px;
 }
 
+/* ✅ Ensure relative context so dropdown appears correctly */
+.transaction-table td.action-buttons {
+  position: relative;
+}
+
+
 
 /* ✅ Fix SIM Details Modal - Remove Extra Space */
 /* ✅ Fix SIM Details Modal - Now with Dark Blue */

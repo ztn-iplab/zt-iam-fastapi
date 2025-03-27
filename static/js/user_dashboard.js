@@ -163,7 +163,7 @@ function fetchTransactions() {
         <td>${new Date(tx.timestamp).toLocaleDateString()}</td>
         <td>${tx.transaction_type.toUpperCase()}</td>
         <td>${tx.amount}</td>
-        <td>${tx.label || 'N/A'}</td>
+        <td class="${tx.status_class || ''}">${tx.label || 'N/A'}</td>
       `;
       historyTable.appendChild(row);
     });
@@ -260,72 +260,97 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
-  // ✅ Form submission logic
-  if (transactionForm) {
-    transactionForm.addEventListener('submit', async function (e) {
-      e.preventDefault();
+  // ✅ Transaction Form Submission with Confirmation Modal
+if (transactionForm) {
+  transactionForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
 
-      const amount = transactionForm.querySelector('[name="amount"]').value;
-      const transactionType = transactionForm.querySelector('[name="transaction_type"]').value;
-      const recipientMobileInput = transactionForm.querySelector('[name="recipient_mobile"]');
-      const agentMobileInput = transactionForm.querySelector('[name="agent_mobile"]');
-      let recipient_mobile = recipientMobileInput ? recipientMobileInput.value : null;
-      let agent_mobile = agentMobileInput ? agentMobileInput.value : null;
+    const amount = transactionForm.querySelector('[name="amount"]').value;
+    const transactionType = transactionForm.querySelector('[name="transaction_type"]').value;
+    const recipientMobileInput = transactionForm.querySelector('[name="recipient_mobile"]');
+    const agentMobileInput = transactionForm.querySelector('[name="agent_mobile"]');
+    let recipient_mobile = recipientMobileInput ? recipientMobileInput.value : null;
+    let agent_mobile = agentMobileInput ? agentMobileInput.value : null;
 
-      const device_info = getDeviceInfo();
-      const location = await getLocation();
+    const device_info = getDeviceInfo();
+    const location = await getLocation();
 
-      const payload = {
-        amount: amount,
-        transaction_type: transactionType,
-        device_info: device_info,
-        location: location
-      };
+    const payload = {
+      amount: amount,
+      transaction_type: transactionType,
+      device_info: device_info,
+      location: location
+    };
 
-      if (transactionType === 'transfer') {
-        if (!recipient_mobile) {
-          alert("Please provide a recipient mobile number for transfers.");
+    // ✅ Handle Transfers
+    if (transactionType === 'transfer') {
+      if (!recipient_mobile) {
+        alert("Please provide a recipient mobile number for transfers.");
+        return;
+      }
+
+      try {
+        const res = await fetch(`/user-info/${recipient_mobile}`, { credentials: 'include' });
+        const userInfo = await res.json();
+
+        if (!res.ok || !userInfo || !userInfo.name) {
+          alert("Recipient not found or invalid response.");
           return;
         }
+
+        const confirmTransfer = confirm(`Are you sure you want to transfer ${amount} RWF to ${userInfo.name} (${recipient_mobile})?`);
+        if (!confirmTransfer) return;
+
         payload.recipient_mobile = recipient_mobile;
+      } catch (err) {
+        alert("Failed to verify recipient information.");
+        return;
+      }
+    }
+
+    // ✅ Handle Withdrawals
+    if (transactionType === 'withdrawal') {
+      if (!agent_mobile) {
+        alert("Please provide the agent's mobile number for withdrawals.");
+        return;
       }
 
-      if (transactionType === 'withdrawal') {
-        if (!agent_mobile) {
-          alert("Please provide the agent's mobile number for withdrawals.");
-          return;
-        }
-        payload.agent_mobile = agent_mobile;
-      }
+      const confirmWithdraw = confirm(`Are you sure you want to request a ${amount} RWF withdrawal from agent ${agent_mobile}?`);
+      if (!confirmWithdraw) return;
 
-      fetch('/api/transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(payload)
-      })
-      .then(async response => {
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error("Transaction error data:", errorData);
-          throw new Error(errorData.error || "Transaction failed");
-        }
-        return response.json();
-      })
-      .then(data => {
-        alert("Transaction successful! Updated balance: " + data.updated_balance);
-        transactionForm.reset();
-        recipientGroup.style.display = "none";
-        agentGroup.style.display = "none";
-        fetchTransactions();
-        fetchWalletInfo();
-      })
-      .catch(err => {
-        alert("Transaction error: " + err.message);
-        console.error("Transaction error:", err);
-      });
+      payload.agent_mobile = agent_mobile;
+    }
+
+    // ✅ Submit the transaction
+    fetch('/api/transactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload)
+    })
+    .then(async response => {
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Transaction error data:", errorData);
+        throw new Error(errorData.error || "Transaction failed");
+      }
+      return response.json();
+    })
+    .then(data => {
+      alert(data.message || "✅ Transaction successful.");
+      transactionForm.reset();
+      recipientGroup.style.display = "none";
+      agentGroup.style.display = "none";
+      fetchTransactions();
+      fetchWalletInfo();
+    })
+    .catch(err => {
+      alert("Transaction error: " + err.message);
+      console.error("Transaction error:", err);
     });
-  }
+  });
+}
+
 });
 
 // ============================

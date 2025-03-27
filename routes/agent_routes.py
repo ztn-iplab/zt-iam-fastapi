@@ -27,6 +27,30 @@ def generate_unique_iccid():
         existing_iccid = SIMCard.query.filter_by(iccid=new_iccid).first()
         if not existing_iccid:
             return new_iccid
+
+
+#✅ Function to control transaction life time
+WITHDRAWAL_EXPIRY_MINUTES = 5  # Make sure it's the same as the one used in approval route
+
+def expire_pending_withdrawals():
+    now = datetime.utcnow()
+    expired_count = 0
+
+    pending = Transaction.query.filter_by(
+        transaction_type="withdrawal",
+        status="pending"
+    ).all()
+
+    for tx in pending:
+        if tx.timestamp and now - tx.timestamp > timedelta(minutes=WITHDRAWAL_EXPIRY_MINUTES):
+            tx.status = "expired"
+            expired_count += 1
+
+    if expired_count > 0:
+        db.session.commit()
+    return expired_count
+
+# ✅ Function to generate a new sim card
 @agent_bp.route("/agent/generate_sim", methods=["POST"])
 @jwt_required()
 def generate_sim():
@@ -105,6 +129,7 @@ def register_sim():
 
 
 # ✅ API: Fetch SIM Registration History
+# ✅ API: Fetch SIM Registration History
 @agent_bp.route("/agent/sim-registrations", methods=["GET"])
 @jwt_required()
 def fetch_sim_registration_history():
@@ -113,19 +138,28 @@ def fetch_sim_registration_history():
     # ✅ Fetch only SIMs registered by the agent
     sims = SIMCard.query.filter_by(registered_by=agent_id).order_by(SIMCard.registration_date.desc()).all()
 
-    sim_list = [
-        {
+    sim_list = []
+    for sim in sims:
+        # ✅ Determine status color class
+        if sim.status == "active":
+            status_class = "text-success"
+        elif sim.status == "suspended":
+            status_class = "text-danger"
+        else:
+            status_class = "text-muted"  # unregistered or unknown
+
+        sim_list.append({
             "iccid": sim.iccid,
             "mobile_number": sim.mobile_number,
             "network_provider": sim.network_provider,
             "status": sim.status,
+            "status_class": status_class,
             "timestamp": sim.registration_date.strftime("%Y-%m-%d %H:%M:%S"),
             "registered_user": f"{sim.user.first_name} {sim.user.last_name}" if sim.user else "Not Linked"
-        }
-        for sim in sims
-    ]
+        })
 
     return jsonify({"sims": sim_list}), 200
+
 
 
 # ✅ Agent Dashboard (HTML Page)
@@ -142,13 +176,12 @@ def agent_dashboard():
 
     return render_template("agent_dashboard.html", user=user)
 
-
 # ✅ Agent Transaction
 @agent_bp.route("/agent/transaction", methods=["POST"])
 @jwt_required()
 @role_required(["agent"])
 def process_agent_transaction():
-    """Handle agent transactions: Deposits, Withdrawals, Transfers"""
+    """Handle agent transactions: Deposits, Withdrawals, Transfers with validation."""
     user_id = get_jwt_identity()
     data = request.get_json()
 
@@ -177,7 +210,7 @@ def process_agent_transaction():
 
     transaction_metadata = {}  # ✅ Store additional details
 
-    # ✅ Handle Deposits (Agent can deposit into user accounts, NOT their own)
+    # ✅ Handle Deposits
     if transaction_type == "deposit":
         if not recipient_mobile:
             return jsonify({"error": "Recipient mobile is required for deposits"}), 400
@@ -195,18 +228,21 @@ def process_agent_transaction():
             return jsonify({"error": "Recipient wallet not found"}), 404
 
         if recipient.id == agent.id:
-            return jsonify({"error": "Agents cannot deposit into their own accounts"}), 403  # ❌ Prevent self-deposits
+            return jsonify({"error": "Agents cannot deposit into their own accounts"}), 403
 
-        # ✅ Process deposit: Reduce agent balance, increase recipient balance
         if agent_wallet.balance < amount:
             return jsonify({"error": "Insufficient balance for deposit"}), 400
+
+        # ✅ Confirm transaction
+        print(f"✅ Confirming deposit of {amount} RWF to {recipient.first_name} ({recipient_mobile})")
+
         agent_wallet.balance -= amount
         recipient_wallet.balance += amount
 
-        # ✅ Store metadata with recipient details
         transaction_metadata = {
-            "deposited_by_mobile": agent.sim_cards[0].mobile_number,  # ✅ Agent's mobile number
-            "recipient_mobile": recipient_mobile
+            "deposited_by_mobile": agent.sim_cards[0].mobile_number,
+            "recipient_mobile": recipient_mobile,
+            "recipient_name": f"{recipient.first_name} {recipient.last_name}"
         }
 
     # ✅ Handle Transfers
@@ -229,20 +265,26 @@ def process_agent_transaction():
         if agent_wallet.balance < amount:
             return jsonify({"error": "Insufficient funds"}), 400
 
+        # ✅ Confirm transaction
+        print(f"✅ Confirming transfer of {amount} RWF to {recipient.first_name} ({recipient_mobile})")
+
         agent_wallet.balance -= amount
         recipient_wallet.balance += amount
 
         transaction_metadata = {
             "transfer_by": "Agent",
-            "recipient_mobile": recipient_mobile
+            "recipient_mobile": recipient_mobile,
+            "recipient_name": f"{recipient.first_name} {recipient.last_name}"
         }
 
     # ✅ Handle Withdrawals
     elif transaction_type == "withdrawal":
         if agent_wallet.balance < amount:
             return jsonify({"error": "Insufficient balance"}), 400
-        agent_wallet.balance -= amount
 
+        print(f"✅ Confirming agent withdrawal of {amount} RWF")
+
+        agent_wallet.balance -= amount
         transaction_metadata = {
             "withdrawal_method": "Agent Processed"
         }
@@ -250,9 +292,8 @@ def process_agent_transaction():
     else:
         return jsonify({"error": "Invalid transaction type"}), 400
 
-    # ✅ Save Transaction
     new_transaction = Transaction(
-        user_id=agent.id if transaction_type != "deposit" else recipient.id,  # Deposits belong to recipient
+        user_id=agent.id if transaction_type != "deposit" else recipient.id,
         amount=amount,
         transaction_type=transaction_type,
         status="completed",
@@ -263,8 +304,11 @@ def process_agent_transaction():
 
     return jsonify({
         "message": f"{transaction_type.capitalize()} successful",
-        "updated_balance": agent_wallet.balance if transaction_type != "deposit" else recipient_wallet.balance
+        "updated_balance": agent_wallet.balance if transaction_type != "deposit" else recipient_wallet.balance,
+        "recipient_mobile": recipient_mobile if transaction_type != "withdrawal" else None,
+        "recipient_name": transaction_metadata.get("recipient_name", "N/A")
     }), 200
+
 
 
 
@@ -289,7 +333,9 @@ def agent_transactions():
             elif metadata.get("assigned_agent_id") and int(metadata.get("assigned_agent_id")) == agent_id:
                 involved = True
             # ✅ Agent did the deposit (mobile match)
-            elif metadata.get("deposited_by_mobile") and metadata.get("deposited_by_mobile") in [sim.mobile_number for sim in SIMCard.query.filter_by(user_id=agent_id).all()]:
+            elif metadata.get("deposited_by_mobile") and metadata.get("deposited_by_mobile") in [
+                sim.mobile_number for sim in SIMCard.query.filter_by(user_id=agent_id).all()
+            ]:
                 involved = True
             else:
                 involved = False
@@ -298,25 +344,31 @@ def agent_transactions():
                 continue
 
             # ✅ Handle recipient display
-            # 🔁 Transfer or Deposit: use metadata
             if tx.transaction_type in ["deposit", "transfer"]:
                 recipient_mobile = metadata.get("recipient_mobile", "N/A")
-
-            # 🏧 Withdrawal: use the user's own mobile number
             elif tx.transaction_type == "withdrawal":
                 recipient_sim = SIMCard.query.filter_by(user_id=tx.user_id).first()
                 recipient_mobile = recipient_sim.mobile_number if recipient_sim else "N/A"
-
-            # Fallback
             else:
                 recipient_mobile = "Self"
 
+            # ✅ Status class mapping
+            status_class = ""
+            if tx.status == "rejected":
+                status_class = "text-danger"
+            elif tx.status == "pending":
+                status_class = "text-warning"
+            elif tx.status == "completed":
+                status_class = "text-success"
+            elif tx.status == "expired":
+                status_class = "text-muted"
 
             transaction_list.append({
-                "transaction_id": tx.id,  # ✅ Key fix her
+                "transaction_id": tx.id,
                 "amount": tx.amount,
                 "transaction_type": tx.transaction_type,
                 "status": tx.status,
+                "status_class": status_class,
                 "timestamp": tx.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 "recipient_mobile": recipient_mobile
             })
@@ -540,7 +592,6 @@ def get_pending_withdrawals():
     
 
 # ✅ AGENT APPROVES WITHDRAWAL
-WITHDRAWAL_EXPIRY_MINUTES = 10  # 💡 You can adjust this as needed
 @agent_bp.route("/agent/approve-withdrawal/<int:transaction_id>", methods=["POST"])
 @jwt_required()
 @role_required(["agent"])
@@ -598,6 +649,38 @@ def approve_user_withdrawal(transaction_id):
         "approved_by": agent_id
     }), 200
 
+
+# ✅ AGENT Rejects WITHDRAWAL
+@agent_bp.route("/agent/reject-withdrawal/<int:transaction_id>", methods=["POST"])
+@jwt_required()
+@role_required(["agent"])
+def reject_user_withdrawal(transaction_id):
+    agent_id = int(get_jwt_identity())
+    transaction = Transaction.query.get(transaction_id)
+
+    if not transaction or transaction.transaction_type != "withdrawal" or transaction.status != "pending":
+        return jsonify({"error": "Invalid or already processed withdrawal request"}), 400
+
+    metadata = json.loads(transaction.transaction_metadata or "{}")
+    assigned_agent_id = int(metadata.get("assigned_agent_id", -1))
+
+    if assigned_agent_id != agent_id:
+        return jsonify({"error": "You are not authorized to reject this withdrawal"}), 403
+
+    # ✅ Update status to rejected
+    transaction.status = "rejected"
+    metadata["rejected_by_agent"] = True
+    metadata["rejected_by"] = agent_id
+    metadata["rejected_at"] = datetime.utcnow().isoformat()
+    transaction.transaction_metadata = json.dumps(metadata)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "❌ Withdrawal rejected successfully.",
+        "transaction_id": transaction.id,
+        "status": "rejected"
+    }), 200
 
 
 

@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.models import db, User,UserAccessControl, UserRole
+from models.models import db, User,UserAccessControl, UserRole, SIMCard
 from utils.decorators import role_required
 
 
@@ -153,4 +153,19 @@ def request_deletion():
     return jsonify({"message": "Your account deletion request has been submitted. An administrator will review your request shortly."}), 200
 
 
+    # ✅ API: Fetch Basic User Info by Mobile Number
+@user_bp.route('/user-info/<string:mobile_number>', methods=['GET'])
+@jwt_required()
+def get_user_info(mobile_number):
+    sim = SIMCard.query.filter_by(mobile_number=mobile_number).first()
     
+    if not sim or not sim.user:
+        return jsonify({"error": "User not found for this mobile number."}), 404
+
+    user = sim.user
+    
+    return jsonify({
+        "id": user.id,
+        "mobile_number": sim.mobile_number,
+        "name": f"{user.first_name} {user.last_name}".strip() or "Unknown"
+    }), 200

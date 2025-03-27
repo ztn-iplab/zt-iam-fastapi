@@ -113,7 +113,7 @@ document.addEventListener("DOMContentLoaded", function () {
             <td>${tx.transaction_type.toUpperCase()}</td>
             <td>${tx.amount}</td>
             <td>${tx.recipient_mobile || 'N/A'}</td>
-            <td>${tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}</td>
+            <td class="${tx.status_class || ''}">${tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}</td>
             <td class="action-buttons">${dropdownActions}</td>
           `;
           historyTable.appendChild(row);
@@ -126,7 +126,6 @@ document.addEventListener("DOMContentLoaded", function () {
   }
   
   // ✅ Function to approve withdrwals
-// ✅ Make this globally accessible
 window.approveWithdrawal = function(transactionId) {
   if (!confirm("Are you sure you want to approve this withdrawal?")) return;
 
@@ -155,9 +154,32 @@ window.approveWithdrawal = function(transactionId) {
   });
 };
 
+ // ✅ Function to reject withdrwals
 window.rejectWithdrawal = function(transactionId) {
-  alert("Reject functionality not implemented yet.");
+  if (!confirm("Are you sure you want to reject this withdrawal?")) return;
+
+  fetch(`/agent/reject-withdrawal/${transactionId}`, {
+    method: "POST",
+    credentials: "include"
+  })
+  .then(async (res) => {
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.error || "❌ Something went wrong.");
+      return;
+    }
+
+    alert(data.message || "❌ Withdrawal rejected.");
+    fetchTransactionHistory(); // Refresh table
+    if (typeof fetchWalletInfo === "function") fetchWalletInfo(); // Optional
+  })
+  .catch((err) => {
+    alert("❌ Network or server error.");
+    console.error(err);
+  });
 };
+
 
 // ✅ Function to Get User Location
   function getLocation() {
@@ -179,7 +201,7 @@ window.rejectWithdrawal = function(transactionId) {
     });
   }
 
-  // ✅ Submit Transaction (Show Backend Validation Messages)
+// ✅ Submit Agent Transaction with Confirmation
 async function submitTransaction(event) {
   event.preventDefault();
 
@@ -201,15 +223,8 @@ async function submitTransaction(event) {
     return;
   }
 
-  // ✅ Ensure deposits require a recipient (Agents cannot deposit to themselves)
-  if (transactionType === "deposit" && !recipientMobile) {
-    alert("❌ Error: Deposits must have a recipient mobile number.");
-    return;
-  }
-
-  // ✅ Ensure transfers have a recipient
-  if (transactionType === "transfer" && !recipientMobile) {
-    alert("❌ Error: Transfers require a recipient mobile number.");
+  if ((transactionType === "deposit" || transactionType === "transfer") && !recipientMobile) {
+    alert(`❌ Error: ${transactionType.charAt(0).toUpperCase() + transactionType.slice(1)}s require a recipient mobile number.`);
     return;
   }
 
@@ -217,17 +232,30 @@ async function submitTransaction(event) {
   const location = await getLocation();
 
   try {
+    const payload = {
+      amount,
+      transaction_type: transactionType,
+      recipient_mobile: recipientMobile,
+      device_info,
+      location
+    };
+
+    // ✅ Confirmation
+    const confirmMsg = transactionType === 'deposit'
+      ? `Are you sure you want to deposit ${amount} RWF into ${recipientMobile}'s account?`
+      : transactionType === 'transfer'
+      ? `Are you sure you want to transfer ${amount} RWF to ${recipientMobile}?`
+      : `Are you sure you want to withdraw ${amount} RWF from your agent account?`;
+
+    const confirmed = confirm(confirmMsg);
+    if (!confirmed) return;
+
+    // ✅ Submit the transaction
     const response = await fetch("/agent/transaction", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({
-        amount,
-        transaction_type: transactionType,
-        recipient_mobile: recipientMobile,
-        device_info,
-        location
-      })
+      body: JSON.stringify(payload)
     });
 
     const data = await response.json();
@@ -237,8 +265,10 @@ async function submitTransaction(event) {
     }
 
     alert(`✅ Success: ${data.message}`);
-    fetchWalletInfo(); // ✅ Refresh wallet balance
-    fetchTransactionHistory(); // ✅ Refresh transaction history
+    event.target.reset(); // ✅ Fixed reset
+    fetchWalletInfo();
+    fetchTransactionHistory();
+
   } catch (error) {
     alert(`❌ Error: ${error.message}`);
     console.error("Transaction error:", error);
@@ -449,7 +479,7 @@ function fetchSimRegistrationHistory() {
             <td>${sim.iccid}</td>
             <td>${sim.mobile_number}</td>
             <td>${sim.network_provider}</td>
-            <td>${sim.status}</td>
+            <td class="${sim.status_class}">${sim.status}</td>
             <td>${new Date(sim.timestamp).toLocaleDateString()}</td>
             <td class="action-buttons">
                 <div class="dropdown dropup">

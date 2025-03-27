@@ -1,9 +1,12 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.models import db, Transaction, Wallet, User
+from models.models import db, Transaction, Wallet, User, SIMCard
 import json
 import threading
 import time
+import threading
+import json
+
 
 transaction_bp = Blueprint('transaction', __name__)
 
@@ -19,22 +22,8 @@ def update_transaction_status(app, transaction_id, new_status):
             transaction.status = new_status
             db.session.commit()
 
-import threading
-import json
-from flask import Blueprint, request, jsonify, current_app
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.models import db, User, Wallet, Transaction, SIMCard
 
-transaction_bp = Blueprint("transaction", __name__)
-
-import threading
-import json
-from flask import Blueprint, request, jsonify, current_app
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.models import db, User, Wallet, Transaction, SIMCard
-
-transaction_bp = Blueprint("transaction", __name__)
-
+ 
 @transaction_bp.route('/transactions', methods=['POST'])
 @jwt_required()
 def create_transaction():
@@ -90,7 +79,8 @@ def create_transaction():
             "initiated_by": "user",
             "approved_by_agent": False,
             "assigned_agent_id": assigned_agent.id,
-            "assigned_agent_mobile": agent_mobile
+            "assigned_agent_mobile": agent_mobile,
+            "assigned_agent_name": f"{assigned_agent.first_name} {assigned_agent.last_name}".strip()
         }
 
         transaction_metadata_str = json.dumps(transaction_metadata)
@@ -109,15 +99,12 @@ def create_transaction():
 
         db.session.add(transaction)
         db.session.commit()
-        
-        # After user submits a withdrawal, print for verification
-        print("✅ Withdrawal metadata:", json.dumps(transaction_metadata, indent=2))
 
         return jsonify({
-            "message": f"✅ Withdrawal request submitted. Awaiting approval from agent {agent_mobile}.",
+            "message": f"✅ Withdrawal request submitted. Awaiting approval from agent {assigned_agent.first_name} {assigned_agent.last_name} ({agent_mobile}).",
             "transaction_id": transaction.id,
             "status": transaction.status,
-            "assigned_agent": agent_mobile,
+            "assigned_agent": f"{assigned_agent.first_name} {assigned_agent.last_name} ({agent_mobile})",
             "timestamp": transaction.timestamp.isoformat() if transaction.timestamp else None,
             "amount": transaction.amount,
             "transaction_type": transaction.transaction_type,
@@ -127,7 +114,6 @@ def create_transaction():
             "fraud_flag": transaction.fraud_flag,
             "risk_score": transaction.risk_score
         }), 200
-
 
     # ✅ Handle transfers
     elif transaction_type == "transfer":
@@ -162,7 +148,9 @@ def create_transaction():
         # ✅ Store metadata for transfer
         transaction_metadata = {
             "recipient_mobile": recipient_mobile,
-            "recipient_id": recipient_user.id
+            "recipient_id": recipient_user.id,
+            "recipient_name": f"{recipient_user.first_name} {recipient_user.last_name}".strip(),
+            "sender_id": logged_in_user
         }
 
         transaction_metadata_str = json.dumps(transaction_metadata)
@@ -188,7 +176,7 @@ def create_transaction():
         threading.Thread(target=update_transaction_status, args=(app, transaction.id, "completed")).start()
 
         return jsonify({
-            "message": "✅ Transfer request submitted.",
+            "message": f"✅ {amount} RWF transferred to {recipient_user.first_name} {recipient_user.last_name} ({recipient_mobile}).",
             "transaction_id": transaction.id,
             "status": transaction.status,
             "timestamp": transaction.timestamp.isoformat() if transaction.timestamp else None,
@@ -203,15 +191,13 @@ def create_transaction():
 
     else:
         return jsonify({"error": "Invalid transaction type"}), 400
-
-
+     
 # The Transactions history
 @transaction_bp.route('/transactions', methods=['GET'])
 @jwt_required()
 def get_transactions():
     logged_in_user = int(get_jwt_identity())
 
-    # ✅ Fetch transactions where the user is involved (sender or recipient)
     transactions = Transaction.query.filter(
         (Transaction.user_id == logged_in_user) |
         (Transaction.transaction_metadata.contains(f'"recipient_id": {logged_in_user}'))
@@ -223,25 +209,49 @@ def get_transactions():
             metadata = json.loads(tx.transaction_metadata) if tx.transaction_metadata else {}
 
             recipient_mobile = metadata.get("recipient_mobile", "N/A")
+            recipient_id = metadata.get("recipient_id")
             agent_mobile = metadata.get("assigned_agent_mobile") or metadata.get("deposited_by_mobile", "N/A")
             initiated_by = metadata.get("initiated_by", None)
             approved_by_agent = metadata.get("approved_by_agent", None)
+
+            # ✅ Fetch sender mobile number (for transfer receiver label)
+            sender_sim = SIMCard.query.filter_by(user_id=tx.user_id).first()
+            sender_mobile = sender_sim.mobile_number if sender_sim else "Unknown"
 
             # ✅ Labeling logic based on transaction type
             if tx.transaction_type == "deposit":
                 label = f"Deposit from Agent {agent_mobile}"
 
             elif tx.transaction_type == "transfer":
-                label = f"Transfer to {recipient_mobile}"
+                if tx.user_id == logged_in_user:
+                    label = f"Transfered to {recipient_mobile}"
+                elif recipient_id == logged_in_user:
+                    label = f"Received from {sender_mobile}"
+                else:
+                    label = "Transfer"
 
             elif tx.transaction_type == "withdrawal":
                 if tx.status == "pending":
                     label = f"Withdrawal (Pending Agent Approval - {agent_mobile})"
+                elif tx.status == "rejected":
+                    label = f"Withdrawal (❌ Rejected by Agent {agent_mobile})"
+                elif tx.status == "expired":
+                    label = f"Withdrawal (⏳ Expired - Not Approved in Time)"
                 else:
-                    label = f"Withdrawal (Approved by Agent {agent_mobile})"
-
+                    label = f"Withdrawal (✅ Approved by Agent {agent_mobile})"
             else:
                 label = tx.transaction_type.capitalize()
+
+            # ✅ Optional: style class based on status
+            status_class = ""
+            if tx.status == "rejected":
+                status_class = "text-danger"
+            elif tx.status == "pending":
+                status_class = "text-warning"
+            elif tx.status == "completed":
+                status_class = "text-success"
+            elif tx.status == "expired":
+                status_class = "text-muted"
 
             transaction_list.append({
                 "transaction_id": tx.id,
@@ -249,6 +259,7 @@ def get_transactions():
                 "transaction_type": tx.transaction_type,
                 "label": label,
                 "status": tx.status,
+                "status_class": status_class,
                 "timestamp": tx.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 "details": metadata
             })

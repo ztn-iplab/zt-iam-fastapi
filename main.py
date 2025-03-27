@@ -14,6 +14,8 @@ from routes.roles_routes import roles_bp
 from routes.admin_routes import admin_bp
 from utils.decorators import role_required
 from routes.agent_routes import agent_bp
+import os
+
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -43,6 +45,7 @@ app.register_blueprint(settings_bp, url_prefix='/api')
 app.register_blueprint(roles_bp, url_prefix='/api')
 app.register_blueprint(admin_bp)
 app.register_blueprint(agent_bp)
+
 
 db.init_app(app)
 migrate = Migrate(app, db)

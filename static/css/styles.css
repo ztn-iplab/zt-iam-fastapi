@@ -732,6 +732,40 @@ td.action-buttons {
   position: relative;
 }
 
+/* ✅ Ensure action cell height matches table row */
+.transaction-table td.action-buttons {
+  vertical-align: middle;
+  position: relative;
+  height: 100%; /* Ensures it fills the row */
+  padding: 0 10px; /* Optional: controls spacing inside the cell */
+}
+
+/* ✅ Optional: force dropdown menu to stay within table layout */
+.transaction-table .dropdown-menu {
+  left: auto;
+  right: 0;
+}
+
+.transaction-table td.action-buttons .dropdown-toggle {
+  text-decoration: none !important;
+}
+
+/* Transactions text messafe colorning */
+.text-danger {
+  color: #e74c3c; /* Red */
+}
+
+.text-warning {
+  color: #f39c12; /* Orange/Yellow */
+}
+
+.text-success {
+  color: #2ecc71; /* Green */
+}
+
+.text-muted {
+  color: #95a5a6; /* Gray */
+}
 
 
 /* ✅ Fix SIM Details Modal - Remove Extra Space */

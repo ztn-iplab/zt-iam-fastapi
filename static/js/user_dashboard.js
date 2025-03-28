@@ -261,96 +261,163 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   // ✅ Transaction Form Submission with Confirmation Modal
-if (transactionForm) {
-  transactionForm.addEventListener('submit', async function (e) {
-    e.preventDefault();
-
-    const amount = transactionForm.querySelector('[name="amount"]').value;
-    const transactionType = transactionForm.querySelector('[name="transaction_type"]').value;
-    const recipientMobileInput = transactionForm.querySelector('[name="recipient_mobile"]');
-    const agentMobileInput = transactionForm.querySelector('[name="agent_mobile"]');
-    let recipient_mobile = recipientMobileInput ? recipientMobileInput.value : null;
-    let agent_mobile = agentMobileInput ? agentMobileInput.value : null;
-
-    const device_info = getDeviceInfo();
-    const location = await getLocation();
-
-    const payload = {
-      amount: amount,
-      transaction_type: transactionType,
-      device_info: device_info,
-      location: location
-    };
-
-    // ✅ Handle Transfers
-    if (transactionType === 'transfer') {
-      if (!recipient_mobile) {
-        alert("Please provide a recipient mobile number for transfers.");
+  if (transactionForm) {
+    transactionForm.addEventListener('submit', async function (e) {
+      e.preventDefault();
+  
+      const amountInput = transactionForm.querySelector('[name="amount"]');
+      const transactionTypeInput = transactionForm.querySelector('[name="transaction_type"]');
+      const recipientMobileInput = transactionForm.querySelector('[name="recipient_mobile"]');
+      const agentMobileInput = transactionForm.querySelector('[name="agent_mobile"]');
+  
+      const amount = parseFloat(amountInput.value);
+      const transactionType = transactionTypeInput.value;
+      const recipient_mobile = recipientMobileInput?.value.trim();
+      const agent_mobile = agentMobileInput?.value.trim();
+  
+      const device_info = getDeviceInfo();
+      const location = await getLocation();
+  
+      // ✅ Block invalid amounts immediately
+      if (isNaN(amount) || amount <= 0) {
+        Toastify({
+          text: "❌ Invalid amount. Please enter a value greater than 0 RWF.",
+          style: { background: "#d32f2f" },
+          duration: 4000
+        }).showToast();
         return;
       }
-
-      try {
-        const res = await fetch(`/user-info/${recipient_mobile}`, { credentials: 'include' });
-        const userInfo = await res.json();
-
-        if (!res.ok || !userInfo || !userInfo.name) {
-          alert("Recipient not found or invalid response.");
+  
+      // ✅ Block missing transaction type
+      if (!transactionType) {
+        Toastify({
+          text: "❌ Please select a transaction type.",
+          style: { background: "#d32f2f" },
+          duration: 4000
+        }).showToast();
+        return;
+      }
+  
+      const payload = {
+        amount,
+        transaction_type: transactionType,
+        device_info,
+        location
+      };
+  
+      // ✅ Handle Transfers
+      if (transactionType === 'transfer') {
+        if (!recipient_mobile) {
+          Toastify({
+            text: "❌ Please provide a recipient mobile number for transfers.",
+            style: { background: "#d32f2f" },
+            duration: 4000
+          }).showToast();
           return;
         }
-
-        const confirmTransfer = confirm(`Are you sure you want to transfer ${amount} RWF to ${userInfo.name} (${recipient_mobile})?`);
-        if (!confirmTransfer) return;
-
-        payload.recipient_mobile = recipient_mobile;
-      } catch (err) {
-        alert("Failed to verify recipient information.");
-        return;
+  
+        try {
+          const res = await fetch(`/user-info/${recipient_mobile}`, { credentials: 'include' });
+          const userInfo = await res.json();
+  
+          if (!res.ok || !userInfo?.name) {
+            Toastify({
+              text: "❌ Recipient not found.",
+              style: { background: "#d32f2f" },
+              duration: 4000
+            }).showToast();
+            return;
+          }
+  
+          const confirmTransfer = confirm(
+            `Are you sure you want to transfer ${amount} RWF to ${userInfo.name} (${recipient_mobile})?`
+          );
+          if (!confirmTransfer) return;
+  
+          payload.recipient_mobile = recipient_mobile;
+        } catch (err) {
+          Toastify({
+            text: "❌ Failed to verify recipient info.",
+            style: { background: "#d32f2f" },
+            duration: 4000
+          }).showToast();
+          return;
+        }
       }
-    }
-
-    // ✅ Handle Withdrawals
-    if (transactionType === 'withdrawal') {
-      if (!agent_mobile) {
-        alert("Please provide the agent's mobile number for withdrawals.");
-        return;
+  
+      // ✅ Handle Withdrawals
+      if (transactionType === 'withdrawal') {
+        if (!agent_mobile) {
+          Toastify({
+            text: "❌ Please provide the agent's mobile number for withdrawals.",
+            style: { background: "#d32f2f" },
+            duration: 4000
+          }).showToast();
+          return;
+        }
+  
+        try {
+          const res = await fetch(`/user-info/${agent_mobile}`, { credentials: 'include' });
+          const agentInfo = await res.json();
+  
+          if (!res.ok || !agentInfo?.name) {
+            Toastify({
+              text: "❌ Agent not found.",
+              style: { background: "#d32f2f" },
+              duration: 4000
+            }).showToast();
+            return;
+          }
+  
+          const confirmWithdraw = confirm(
+            `Are you sure you want to request a ${amount} RWF withdrawal from ${agentInfo.name} (${agent_mobile})?`
+          );
+          if (!confirmWithdraw) return;
+  
+          payload.agent_mobile = agent_mobile;
+        } catch (err) {
+          Toastify({
+            text: "❌ Failed to verify agent info.",
+            style: { background: "#d32f2f" },
+            duration: 4000
+          }).showToast();
+          return;
+        }
       }
-
-      const confirmWithdraw = confirm(`Are you sure you want to request a ${amount} RWF withdrawal from agent ${agent_mobile}?`);
-      if (!confirmWithdraw) return;
-
-      payload.agent_mobile = agent_mobile;
-    }
-
-    // ✅ Submit the transaction
-    fetch('/api/transactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify(payload)
-    })
-    .then(async response => {
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Transaction error data:", errorData);
-        throw new Error(errorData.error || "Transaction failed");
-      }
-      return response.json();
-    })
-    .then(data => {
-      alert(data.message || "✅ Transaction successful.");
-      transactionForm.reset();
-      recipientGroup.style.display = "none";
-      agentGroup.style.display = "none";
-      fetchTransactions();
-      fetchWalletInfo();
-    })
-    .catch(err => {
-      alert("Transaction error: " + err.message);
-      console.error("Transaction error:", err);
+  
+      // ✅ Submit transaction
+      fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload)
+      })
+        .then(async response => {
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "Transaction failed");
+  
+          Toastify({
+            text: result.message || "✅ Transaction successful.",
+            style: { background: "#27ae60" },
+            duration: 4000
+          }).showToast();
+  
+          transactionForm.reset();
+          recipientGroup.style.display = "none";
+          agentGroup.style.display = "none";
+          fetchTransactions();
+          fetchWalletInfo();
+        })
+        .catch(err => {
+          Toastify({
+            text: "❌ Transaction error: " + err.message,
+            style: { background: "#d32f2f" },
+            duration: 4000
+          }).showToast();
+          console.error("Transaction error:", err);
+        });
     });
-  });
-}
-
+  }
 });
 
 // ============================

@@ -22,7 +22,6 @@ def update_transaction_status(app, transaction_id, new_status):
             transaction.status = new_status
             db.session.commit()
 
-
  
 @transaction_bp.route('/transactions', methods=['POST'])
 @jwt_required()
@@ -191,6 +190,54 @@ def create_transaction():
 
     else:
         return jsonify({"error": "Invalid transaction type"}), 400
+
+
+
+# Verifying the OTP for Transactions Validation
+@transaction_bp.route('/transactions/verify-otp', methods=['POST'])
+@jwt_required()
+def verify_transaction_otp():
+    data = request.get_json()
+    user_id = int(get_jwt_identity())
+    transaction_id = data.get('transaction_id')
+    otp_input = data.get('otp')
+
+    # ✅ Validate OTP
+    otp = OTPCode.query.filter_by(user_id=user_id, code=otp_input, is_used=False).first()
+    if not otp or otp.expires_at < datetime.utcnow():
+        return jsonify({"error": "Invalid or expired OTP"}), 401
+
+    otp.is_used = True
+    db.session.commit()
+
+    # ✅ Mark transaction as verified or completed
+    transaction = Transaction.query.get(transaction_id)
+    if not transaction or transaction.user_id != user_id:
+        return jsonify({"error": "Transaction not found"}), 404
+
+    if transaction.transaction_type == "withdrawal":
+        transaction.status = "pending"  # Still needs agent approval
+    else:
+        transaction.status = "completed"
+
+        # Transfer funds (if not done yet)
+        metadata = json.loads(transaction.transaction_metadata)
+        if transaction.transaction_type == "transfer":
+            sender_wallet = Wallet.query.filter_by(user_id=user_id).first()
+            recipient_wallet = Wallet.query.filter_by(user_id=metadata['recipient_id']).first()
+            amount = transaction.amount
+
+            sender_wallet.balance -= amount
+            recipient_wallet.balance += amount
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "✅ Transaction verified and processed.",
+        "transaction_id": transaction.id,
+        "status": transaction.status
+    }), 200
+
      
 # The Transactions history
 @transaction_bp.route('/transactions', methods=['GET'])

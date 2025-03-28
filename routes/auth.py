@@ -6,8 +6,11 @@ from flask_jwt_extended import (
     get_jwt_identity,
     unset_jwt_cookies,
 )
+from datetime import datetime
 from werkzeug.security import check_password_hash, generate_password_hash
-from models.models import User, Wallet, db, UserRole, UserAccessControl,SIMCard
+from models.models import User, Wallet, db, UserRole, UserAccessControl,SIMCard, OTPCode
+from utils.otp import generate_otp_code  # Import your OTP logic
+
 
 
 
@@ -25,38 +28,34 @@ def login_form():
 
 @auth_bp.route('/login', methods=['POST'])
 def login_route():
-    """Handles user login using mobile number and redirects to the correct dashboard"""
+    """Handles user login using mobile number or email and redirects to the correct dashboard"""
 
     data = request.get_json()
-    if not data or 'mobile_number' not in data or 'password' not in data:
-        return jsonify({"error": "Mobile number and password are required"}), 400
+    if not data or 'identifier' not in data or 'password' not in data:
+        return jsonify({"error": "Mobile number or email and password are required"}), 400
 
-    mobile_number = data.get('mobile_number')
+    login_input = data.get('identifier')
     password = data.get('password')
 
-    # ✅ Find the SIM card by mobile number
-    sim_card = SIMCard.query.filter_by(mobile_number=mobile_number, status="active").first()
-    if not sim_card:
-        print(f"Debug: No active SIM found for {mobile_number}")
-        return jsonify({"error": "Invalid mobile number or inactive SIM card"}), 401
+    user = None
+    sim_card = None
 
-    # ✅ Debug: Print SIM card details
-    print(f"Debug: Found SIM {sim_card.iccid} linked to user_id {sim_card.user_id}")
+    # Try as email
+    user = User.query.filter_by(email=login_input).first()
 
-    # ✅ Get the linked user from the SIM card
-    user = sim_card.user
+    if user:
+        sim_card = SIMCard.query.filter_by(user_id=user.id, status='active').first()
+    else:
+        # Try as mobile number
+        sim_card = SIMCard.query.filter_by(mobile_number=login_input, status='active').first()
+        if sim_card:
+            user = sim_card.user
+
     if not user:
-        print(f"Debug: No user found linked to SIM {sim_card.iccid}")
-        return jsonify({"error": "User not found for this mobile number"}), 404
+        return jsonify({"error": "User not found or SIM inactive"}), 404
 
-    print(f"Debug: Found User {user.email} linked to mobile {sim_card.mobile_number}")
-
-    # ✅ Validate password
     if not user.check_password(password):
-        print("Debug: Password does NOT match")
         return jsonify({"error": "Invalid credentials"}), 401
-
-    print("Debug: Password MATCHED!")
 
     # ✅ Check User Role
     user_access = UserAccessControl.query.filter_by(user_id=user.id).first()
@@ -69,31 +68,17 @@ def login_route():
 
     role_name = user_role.role_name
 
-    access_token = create_access_token(identity=str(user.id))
+    # ✅ Generate OTP and send via email
+    generate_otp_code(user)
 
-    # ✅ Define dashboard URLs based on roles
-    dashboard_urls = {
-        "admin": url_for("admin.admin_dashboard", _external=True),
-        "agent": url_for("agent.agent_dashboard", _external=True),
-        "user": url_for("user.user_dashboard", _external=True)
-    }
-
-    dashboard_url = dashboard_urls.get(role_name, url_for("user.user_dashboard", _external=True))
-
-    response = jsonify({
-        "access_token": access_token,
-        "user_id": user.id,
-        "mobile_number": sim_card.mobile_number,
-        "iccid": sim_card.iccid,
-        "role": role_name,
-        "dashboard_url": dashboard_url
-    })
-
-    set_access_cookies(response, access_token)  # ✅ Store token securely in HTTP-Only Cookie
-
-    return response, 200
+    return jsonify({
+        "message": "OTP sent to your email. Please verify to complete login.",
+        "otp_required": True,
+        "user_id": user.id
+    }), 200
 
 
+# ✅ Registering new user accounts
 @auth_bp.route('/register', methods=['POST'])
 def register():
     try:
@@ -190,6 +175,65 @@ def register():
     response.set_cookie('auth_token', access_token, httponly=True, secure=True, samesite='Strict')
 
     return response, 201
+
+# ✅ Getting the OTP
+@auth_bp.route('/verify-otp', methods=['GET'])
+def verify_otp_page():
+    return render_template('verify_otp.html')
+
+
+
+# ✅ Verifying the OTP
+@auth_bp.route('/verify-otp', methods=['POST'])
+def verify_otp():
+    data = request.get_json()
+    user_id = data.get('user_id')
+    otp_input = data.get('otp')
+
+    if not user_id or not otp_input:
+        return jsonify({"error": "User ID and OTP are required"}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    otp = OTPCode.query.filter_by(user_id=user.id, code=otp_input, is_used=False).first()
+    if not otp:
+        return jsonify({"error": "Invalid OTP"}), 401
+
+    if otp.expires_at < datetime.utcnow():
+        return jsonify({"error": "OTP expired"}), 401
+
+    # ✅ Mark OTP as used
+    otp.is_used = True
+    db.session.commit()
+
+    # ✅ Continue login process (issue JWT, return dashboard)
+    user_access = UserAccessControl.query.filter_by(user_id=user.id).first()
+    user_role = db.session.get(UserRole, user_access.role_id)
+    role_name = user_role.role_name
+
+    sim_card = SIMCard.query.filter_by(user_id=user.id, status='active').first()
+
+    access_token = create_access_token(identity=str(user.id))
+    dashboard_urls = {
+        "admin": url_for("admin.admin_dashboard", _external=True),
+        "agent": url_for("agent.agent_dashboard", _external=True),
+        "user": url_for("user.user_dashboard", _external=True)
+    }
+    dashboard_url = dashboard_urls.get(role_name, url_for("user.user_dashboard", _external=True))
+
+    response = jsonify({
+        "access_token": access_token,
+        "user_id": user.id,
+        "mobile_number": sim_card.mobile_number,
+        "iccid": sim_card.iccid,
+        "role": role_name,
+        "dashboard_url": dashboard_url
+    })
+
+    set_access_cookies(response, access_token)
+    return response, 200
 
 
 # Refres the access token

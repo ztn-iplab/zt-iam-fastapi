@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Verify OTP{% endblock %}
+
+{% block body_class %}auth-page{% endblock %}
+
+{% block body %}
+
+<div class="home-link-container">
+  <a href="{{ url_for('index') }}" class="home-link">&larr; Back to Home</a>
+</div>
+
+<div class="auth-container">
+  <h1>OTP Verification</h1>
+  
+  <p class="auth-note" style="color: rgb(24, 96, 211); font-weight: 500;">
+    We’ve sent a one-time password (OTP) to your registered email address.
+    Please enter it below to complete login.
+  </p>
+  
+  <div id="otp-error" style="color: red;"></div>
+
+  <form id="otp-form" class="auth-form">
+    <input 
+      type="text" 
+      id="otp" 
+      name="otp" 
+      placeholder="Enter 6-digit OTP" 
+      class="input-field"
+      required
+    />
+    <button type="submit" class="btn btn-primary">Verify</button>
+  </form>
+</div>
+
+<script>
+    // Extract user_id from URL query string
+    const urlParams = new URLSearchParams(window.location.search);
+    const user_id = urlParams.get('user_id');
+  
+    const otpForm = document.getElementById('otp-form');
+    const errorDiv = document.getElementById('otp-error');
+  
+    otpForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+  
+      const otp = document.getElementById('otp').value;
+  
+      if (!user_id) {
+        errorDiv.textContent = 'Session expired or invalid. Please log in again.';
+        return;
+      }
+  
+      fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',  // include cookies
+        body: JSON.stringify({ otp, user_id })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.access_token && data.dashboard_url) {
+          window.location.href = data.dashboard_url;
+        } else {
+          errorDiv.textContent = data.error || 'OTP verification failed.';
+        }
+      })
+      .catch(() => {
+        errorDiv.textContent = 'Something went wrong. Please try again.';
+      });
+    });
+  </script>
+  
+{% endblock %}

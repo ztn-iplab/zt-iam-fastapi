@@ -99,8 +99,6 @@ class Transaction(db.Model):
     transaction_metadata = db.Column(db.Text, nullable=True)  # Store JSON-like metadata
 
 
-
-
 # 📌 Role-Based Access Control (RBAC)
 class UserRole(db.Model):
     __tablename__ = 'user_roles'
@@ -126,3 +124,15 @@ class RealTimeLog(db.Model):
     device_info = db.Column(db.String(200))
     location = db.Column(db.String(100))
     risk_alert = db.Column(db.Boolean, default=False)  # Flagged risky actions
+
+# 📌 One time passowrd for the security purpose
+class OTPCode(db.Model):
+    __tablename__ = 'otp_codes'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    code = db.Column(db.String(6), nullable=False)
+    is_used = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+
+    user = db.relationship('User', backref='otp_codes')

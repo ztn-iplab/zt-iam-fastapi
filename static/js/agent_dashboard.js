@@ -201,7 +201,7 @@ window.rejectWithdrawal = function(transactionId) {
     });
   }
 
-// ✅ Submit Agent Transaction with Confirmation
+// // ✅ Submit Agent Transaction with Confirmation
 async function submitTransaction(event) {
   event.preventDefault();
 
@@ -214,17 +214,17 @@ async function submitTransaction(event) {
   const recipientMobile = recipientMobileInput && recipientMobileInput.value.trim() ? recipientMobileInput.value.trim() : null;
 
   if (isNaN(amount) || amount <= 0) {
-    alert("❌ Error: Please enter a valid amount greater than zero.");
+    Toastify({ text: "❌ Please enter a valid amount.", style: { background: "#d32f2f" } }).showToast();
     return;
   }
 
   if (!transactionType) {
-    alert("❌ Error: Please select a transaction type.");
+    Toastify({ text: "❌ Please select a transaction type.", style: { background: "#d32f2f" } }).showToast();
     return;
   }
 
   if ((transactionType === "deposit" || transactionType === "transfer") && !recipientMobile) {
-    alert(`❌ Error: ${transactionType.charAt(0).toUpperCase() + transactionType.slice(1)}s require a recipient mobile number.`);
+    Toastify({ text: `❌ ${transactionType.toUpperCase()} requires a recipient mobile number.`, style: { background: "#d32f2f" } }).showToast();
     return;
   }
 
@@ -240,12 +240,22 @@ async function submitTransaction(event) {
       location
     };
 
-    // ✅ Confirmation
-    const confirmMsg = transactionType === 'deposit'
-      ? `Are you sure you want to deposit ${amount} RWF into ${recipientMobile}'s account?`
-      : transactionType === 'transfer'
-      ? `Are you sure you want to transfer ${amount} RWF to ${recipientMobile}?`
-      : `Are you sure you want to withdraw ${amount} RWF from your agent account?`;
+    let confirmMsg = "";
+    if (transactionType === 'deposit' || transactionType === 'transfer') {
+      // ✅ Fetch user name using shared endpoint
+      const res = await fetch(`/user-info/${recipientMobile}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include"
+      });
+      const userData = await res.json();
+      const recipientName = userData.name || "Unknown User";
+      confirmMsg = transactionType === 'deposit'
+        ? `Are you sure you want to deposit ${amount} RWF into ${recipientName} (${recipientMobile})'s account?`
+        : `Are you sure you want to transfer ${amount} RWF to ${recipientName} (${recipientMobile})?`;
+    } else {
+      confirmMsg = `Are you sure you want to withdraw ${amount} RWF from your agent account?`;
+    }
 
     const confirmed = confirm(confirmMsg);
     if (!confirmed) return;
@@ -264,16 +274,24 @@ async function submitTransaction(event) {
       throw new Error(data.error || "Transaction failed");
     }
 
-    alert(`✅ Success: ${data.message}`);
-    event.target.reset(); // ✅ Fixed reset
-    fetchWalletInfo();
-    fetchTransactionHistory();
+    Toastify({ text: `✅ ${data.message}`, style: { background: "#27ae60" } }).showToast();
+    event.target.reset(); // ✅ Reset the form
+    fetchWalletInfo(); // 🔄 Refresh balance
+    fetchTransactionHistory(); // 🔄 Refresh history
 
   } catch (error) {
-    alert(`❌ Error: ${error.message}`);
     console.error("Transaction error:", error);
+    Toastify({ text: `❌ ${error.message}`, style: { background: "#d32f2f" } }).showToast();
   }
 }
+
+// ✅ Attach Event Listener
+document.addEventListener("DOMContentLoaded", function () {
+  const transactionForm = document.getElementById("transaction-form");
+  if (transactionForm) {
+    transactionForm.addEventListener("submit", submitTransaction);
+  }
+});
 
 // ✅ Attach Event Listener for Transactions
 document.addEventListener("DOMContentLoaded", function () {
@@ -282,6 +300,7 @@ document.addEventListener("DOMContentLoaded", function () {
     transactionForm.addEventListener("submit", submitTransaction);
   }
 });
+
 
 // ✅ Render Transaction Chart
 function renderTransactionChart(transactions) {

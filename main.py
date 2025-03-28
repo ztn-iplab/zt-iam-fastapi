@@ -14,6 +14,9 @@ from routes.roles_routes import roles_bp
 from routes.admin_routes import admin_bp
 from utils.decorators import role_required
 from routes.agent_routes import agent_bp
+
+from flask_mail import Message
+from extensions import mail
 import os
 
 
@@ -21,6 +24,7 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 jwt = JWTManager(app)
+mail.init_app(app) 
 
 @jwt.expired_token_loader
 def expired_token_callback(jwt_header, jwt_payload):
@@ -71,6 +75,17 @@ def unauthorized_error(error):
 def not_found_error(error):
     return jsonify({"error": "Resource not found."}), 404
 
+# flask Mail
+@app.route('/send-test-email')
+def send_test_email():
+    msg = Message(subject="🚀 Flask Mail Test",
+                  recipients=["pathos2m@gmail.com"],
+                  body="Hey buddy! This is a test email from your Flask app.")
+    mail.send(msg)
+    return jsonify({"message": "Test email sent successfully!"})
+
+
+# App Main Function
 if __name__ == '__main__':
     with app.app_context():
         try:

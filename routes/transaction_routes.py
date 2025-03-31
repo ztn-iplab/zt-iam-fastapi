@@ -1,6 +1,8 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models.models import db, Transaction, Wallet, User, SIMCard
+from utils.totp import verify_totp_code
+from datetime import datetime
 import json
 import threading
 import time
@@ -26,14 +28,13 @@ def update_transaction_status(app, transaction_id, new_status):
 @transaction_bp.route('/transactions', methods=['POST'])
 @jwt_required()
 def create_transaction():
-    logged_in_user = int(get_jwt_identity())  # Get the logged-in user's ID
+    logged_in_user = int(get_jwt_identity())
     data = request.get_json()
 
-    # ✅ Validate required fields
+    # ✅ Basic validation
     if not data.get('amount') or not data.get('transaction_type'):
         return jsonify({"error": "Amount and transaction type are required"}), 400
 
-    # ✅ Validate amount (should be a positive number)
     try:
         amount = float(data['amount'])
         if amount <= 0:
@@ -41,29 +42,38 @@ def create_transaction():
     except ValueError:
         return jsonify({"error": "Invalid amount format"}), 400
 
-    transaction_type = data['transaction_type'].lower()  # Normalize transaction type
-
-    # ✅ Fetch the sender's wallet
+    transaction_type = data['transaction_type'].lower()
     sender_wallet = Wallet.query.filter_by(user_id=logged_in_user).first()
     if not sender_wallet:
         return jsonify({"error": "Wallet not found"}), 404
 
-    transaction_metadata = {}  # ✅ Initialize metadata
+    transaction_metadata = {}
 
-    # ❌ Block deposit for users
+    # ✅ Prevent deposit
     if transaction_type == "deposit":
         return jsonify({"error": "Deposits are not allowed for regular users"}), 403
 
-    # ✅ Handle withdrawals (user-initiated, agent must approve)
-    elif transaction_type == "withdrawal":
+    # ✅ TOTP validation block (for both withdrawal and transfer)
+    totp_code = data.get('totp')
+    if not totp_code:
+        return jsonify({"error": "TOTP code is required"}), 400
+
+    user = User.query.get(logged_in_user)
+    if not user or not user.otp_secret:
+        return jsonify({"error": "TOTP secret not configured for user"}), 403
+
+    if not verify_totp_code(user.otp_secret, totp_code):
+        return jsonify({"error": "Invalid or expired TOTP code"}), 401
+
+    # ✅ Withdrawal
+    if transaction_type == "withdrawal":
         if sender_wallet.balance < amount:
             return jsonify({"error": "Insufficient funds"}), 400
 
         agent_mobile = data.get("agent_mobile")
         if not agent_mobile:
-            return jsonify({"error": "Agent mobile number is required to process withdrawal"}), 400
+            return jsonify({"error": "Agent mobile number is required"}), 400
 
-        # ✅ Find the agent by mobile
         agent_sim = SIMCard.query.filter_by(mobile_number=agent_mobile).first()
         if not agent_sim:
             return jsonify({"error": "Agent not found"}), 404
@@ -72,7 +82,6 @@ def create_transaction():
         if not assigned_agent:
             return jsonify({"error": "Agent user not found"}), 404
 
-        # ✅ Store metadata
         status = "pending"
         transaction_metadata = {
             "initiated_by": "user",
@@ -82,8 +91,6 @@ def create_transaction():
             "assigned_agent_name": f"{assigned_agent.first_name} {assigned_agent.last_name}".strip()
         }
 
-        transaction_metadata_str = json.dumps(transaction_metadata)
-
         transaction = Transaction(
             user_id=logged_in_user,
             amount=amount,
@@ -91,7 +98,7 @@ def create_transaction():
             status=status,
             location=data.get('location'),
             device_info=data.get('device_info'),
-            transaction_metadata=transaction_metadata_str,
+            transaction_metadata=json.dumps(transaction_metadata),
             fraud_flag=data.get('fraud_flag', False),
             risk_score=data.get('risk_score', 0)
         )
@@ -100,11 +107,11 @@ def create_transaction():
         db.session.commit()
 
         return jsonify({
-            "message": f"✅ Withdrawal request submitted. Awaiting approval from agent {assigned_agent.first_name} {assigned_agent.last_name} ({agent_mobile}).",
+            "message": f"✅ Withdrawal request submitted. Awaiting agent approval.",
             "transaction_id": transaction.id,
             "status": transaction.status,
-            "assigned_agent": f"{assigned_agent.first_name} {assigned_agent.last_name} ({agent_mobile})",
             "timestamp": transaction.timestamp.isoformat() if transaction.timestamp else None,
+            "assigned_agent": f"{assigned_agent.first_name} {assigned_agent.last_name} ({agent_mobile})",
             "amount": transaction.amount,
             "transaction_type": transaction.transaction_type,
             "updated_balance": sender_wallet.balance,
@@ -114,37 +121,30 @@ def create_transaction():
             "risk_score": transaction.risk_score
         }), 200
 
-    # ✅ Handle transfers
+    # ✅ Transfer
     elif transaction_type == "transfer":
         recipient_mobile = data.get('recipient_mobile')
         if not recipient_mobile:
             return jsonify({"error": "Recipient mobile number is required for transfers"}), 400
 
-        # ✅ Find recipient SIM card
         recipient_sim = SIMCard.query.filter_by(mobile_number=recipient_mobile).first()
         if not recipient_sim:
             return jsonify({"error": "Recipient not found"}), 404
 
-        # ✅ Fetch recipient user using SIM card
         recipient_user = User.query.get(recipient_sim.user_id)
         if not recipient_user:
             return jsonify({"error": "Recipient user not found"}), 404
 
-        # ✅ Fetch recipient's wallet
         recipient_wallet = Wallet.query.filter_by(user_id=recipient_user.id).first()
         if not recipient_wallet:
             return jsonify({"error": "Recipient wallet not found"}), 404
 
-        # ✅ Ensure the sender has enough funds
         if sender_wallet.balance < amount:
             return jsonify({"error": "Insufficient funds"}), 400
 
-        # ✅ Deduct from sender and credit recipient
         sender_wallet.balance -= amount
         recipient_wallet.balance += amount
-        status = "pending"  # Transfers start as "pending"
 
-        # ✅ Store metadata for transfer
         transaction_metadata = {
             "recipient_mobile": recipient_mobile,
             "recipient_id": recipient_user.id,
@@ -152,17 +152,14 @@ def create_transaction():
             "sender_id": logged_in_user
         }
 
-        transaction_metadata_str = json.dumps(transaction_metadata)
-
-        # ✅ Create transaction record
         transaction = Transaction(
             user_id=logged_in_user,
             amount=amount,
             transaction_type=transaction_type,
-            status=status,
+            status="pending",  # set to pending, completed shortly after
             location=data.get('location'),
             device_info=data.get('device_info'),
-            transaction_metadata=transaction_metadata_str,
+            transaction_metadata=json.dumps(transaction_metadata),
             fraud_flag=data.get('fraud_flag', False),
             risk_score=data.get('risk_score', 0)
         )
@@ -170,7 +167,7 @@ def create_transaction():
         db.session.add(transaction)
         db.session.commit()
 
-        # ✅ For transfers, simulate async verification
+        # ✅ Mark as completed shortly after
         app = current_app._get_current_object()
         threading.Thread(target=update_transaction_status, args=(app, transaction.id, "completed")).start()
 
@@ -192,53 +189,7 @@ def create_transaction():
         return jsonify({"error": "Invalid transaction type"}), 400
 
 
-
-# Verifying the OTP for Transactions Validation
-@transaction_bp.route('/transactions/verify-otp', methods=['POST'])
-@jwt_required()
-def verify_transaction_otp():
-    data = request.get_json()
-    user_id = int(get_jwt_identity())
-    transaction_id = data.get('transaction_id')
-    otp_input = data.get('otp')
-
-    # ✅ Validate OTP
-    otp = OTPCode.query.filter_by(user_id=user_id, code=otp_input, is_used=False).first()
-    if not otp or otp.expires_at < datetime.utcnow():
-        return jsonify({"error": "Invalid or expired OTP"}), 401
-
-    otp.is_used = True
-    db.session.commit()
-
-    # ✅ Mark transaction as verified or completed
-    transaction = Transaction.query.get(transaction_id)
-    if not transaction or transaction.user_id != user_id:
-        return jsonify({"error": "Transaction not found"}), 404
-
-    if transaction.transaction_type == "withdrawal":
-        transaction.status = "pending"  # Still needs agent approval
-    else:
-        transaction.status = "completed"
-
-        # Transfer funds (if not done yet)
-        metadata = json.loads(transaction.transaction_metadata)
-        if transaction.transaction_type == "transfer":
-            sender_wallet = Wallet.query.filter_by(user_id=user_id).first()
-            recipient_wallet = Wallet.query.filter_by(user_id=metadata['recipient_id']).first()
-            amount = transaction.amount
-
-            sender_wallet.balance -= amount
-            recipient_wallet.balance += amount
-
-    db.session.commit()
-
-    return jsonify({
-        "message": "✅ Transaction verified and processed.",
-        "transaction_id": transaction.id,
-        "status": transaction.status
-    }), 200
-
-     
+ 
 # The Transactions history
 @transaction_bp.route('/transactions', methods=['GET'])
 @jwt_required()
@@ -395,3 +346,25 @@ def user_initiate_withdrawal():
         "message": "Withdrawal request submitted. Awaiting agent approval.",
         "transaction_id": withdrawal_request.id
     }), 200
+
+
+@transaction_bp.route('/verify-transaction-otp', methods=['POST'])
+@jwt_required()
+def verify_transaction_otp():
+    data = request.get_json()
+    otp_input = data.get('otp')
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+
+    if not user.otp_secret:
+        return jsonify({"error": "TOTP not set up"}), 403
+
+    totp = pyotp.TOTP(user.otp_secret)
+    if not totp.verify(otp_input, valid_window=1):
+        return jsonify({"error": "Invalid or expired OTP"}), 401
+
+    # ✅ OTP is valid — proceed to finalize the transaction
+    # You can re-use the `transaction_data` from earlier or include it in this request
+
+    # Example placeholder:
+    return jsonify({"message": "✅ Transaction authorized!"}), 200

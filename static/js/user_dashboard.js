@@ -274,6 +274,9 @@ document.addEventListener('DOMContentLoaded', function () {
       const transactionType = transactionTypeInput.value;
       const recipient_mobile = recipientMobileInput?.value.trim();
       const agent_mobile = agentMobileInput?.value.trim();
+      const totpInput = document.getElementById("totp-input");
+      const totp = totpInput?.value.trim();
+
   
       const device_info = getDeviceInfo();
       const location = await getLocation();
@@ -297,12 +300,22 @@ document.addEventListener('DOMContentLoaded', function () {
         }).showToast();
         return;
       }
-  
+      
+      if (!totp || totp.length < 6) {
+        Toastify({
+          text: "❌ Please enter a valid TOTP code.",
+          style: { background: "#d32f2f" },
+          duration: 4000
+        }).showToast();
+        return;
+      }
+      
       const payload = {
         amount,
         transaction_type: transactionType,
         device_info,
-        location
+        location,
+        totp
       };
   
       // ✅ Handle Transfers

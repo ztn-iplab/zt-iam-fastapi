@@ -14,6 +14,8 @@ class Config:
     JWT_COOKIE_CSRF_PROTECT = False  # Disable CSRF protection
     JWT_REFRESH_TOKEN_EXPIRES = 30 * 60  # 30 minutes
 
+    SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "fallback-in-dev")
+
     # Flask-Mail Settings
     MAIL_SERVER = 'smtp.gmail.com'
     MAIL_PORT = 587

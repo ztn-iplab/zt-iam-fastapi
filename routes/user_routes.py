@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models.models import db, User,UserAccessControl, UserRole, SIMCard
 from utils.decorators import role_required
+from utils.decorators import require_totp_setup
+
 
 
 user_bp = Blueprint('user', __name__)
@@ -9,6 +11,7 @@ user_bp = Blueprint('user', __name__)
 #User Dashboard
 @user_bp.route("/user/dashboard")
 @jwt_required()
+@require_totp_setup
 def user_dashboard():  # ✅ Function name must be "user_dashboard"
     """User dashboard view"""
     user_id = get_jwt_identity()
@@ -169,3 +172,9 @@ def get_user_info(mobile_number):
         "mobile_number": sim.mobile_number,
         "name": f"{user.first_name} {user.last_name}".strip() or "Unknown"
     }), 200
+
+# set up the TOTP for transactions
+@user_bp.route('/setup-totp')
+@jwt_required()
+def show_totp_setup():
+    return render_template('setup_totp.html')

@@ -2,6 +2,7 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from .import db
 from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy.dialects.postgresql import BYTEA 
 
 
 #db = SQLAlchemy()
@@ -20,7 +21,8 @@ class User(db.Model):
     last_login = db.Column(db.DateTime, nullable=True, default=db.func.current_timestamp())
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     password_hash = db.Column(db.String(255), nullable=False)
-    
+    otp_secret = db.Column(db.String(32), nullable=True)
+
     # Account Status
     is_active = db.Column(db.Boolean, default=True)      
     deletion_requested = db.Column(db.Boolean, default=False)  
@@ -98,6 +100,15 @@ class Transaction(db.Model):
     risk_score = db.Column(db.Float, default=0.0)  # Score for fraud detection
     transaction_metadata = db.Column(db.Text, nullable=True)  # Store JSON-like metadata
 
+class PendingTransaction(db.Model):
+    __tablename__ = 'pending_transactions'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    transaction_data = db.Column(db.Text, nullable=False)  # JSON blob
+    transaction_type = db.Column(db.String(20), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    is_used = db.Column(db.Boolean, default=False)
 
 # 📌 Role-Based Access Control (RBAC)
 class UserRole(db.Model):

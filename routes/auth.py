@@ -10,6 +10,11 @@ from datetime import datetime
 from werkzeug.security import check_password_hash, generate_password_hash
 from models.models import User, Wallet, db, UserRole, UserAccessControl,SIMCard, OTPCode
 from utils.otp import generate_otp_code  # Import your OTP logic
+import pyotp
+import qrcode
+import io
+import base64
+from flask import current_app
 
 
 
@@ -252,3 +257,64 @@ def logout():
     resp = make_response(redirect(url_for('auth.login_form')))
     unset_jwt_cookies(resp)
     return resp
+
+# Set up Token_OTP for Transactions 
+@auth_bp.route('/setup-totp', methods=['GET'])
+@jwt_required()
+def setup_transaction_totp():
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+
+    if user.otp_secret:
+        return jsonify({"message": "TOTP already configured."}), 200
+
+    secret = pyotp.random_base32()
+    user.otp_secret = secret
+    db.session.commit()
+
+    totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(
+        name=user.email,
+        issuer_name="ZTN MobileMoney"
+    )
+
+    qr = qrcode.make(totp_uri)
+    buffer = io.BytesIO()
+    qr.save(buffer, format='PNG')
+    buffer.seek(0)
+    img_base64 = base64.b64encode(buffer.read()).decode()
+
+    return jsonify({
+        "message": "Scan this QR Code with Google/Microsoft Authenticator",
+        "qr_code": f"data:image/png;base64,{img_base64}",
+        "manual_key": secret
+    }), 200
+
+
+# Whoami 
+@auth_bp.route('/whoami', methods=['GET'])
+@jwt_required()
+def whoami():
+    user = User.query.get(get_jwt_identity())
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    user_access = UserAccessControl.query.filter_by(user_id=user.id).first()
+    role = UserRole.query.get(user_access.role_id).role_name if user_access else "unknown"
+
+    return jsonify({
+        "role": role.lower()  # e.g., "admin", "agent", "user"
+    })
+
+# Verfy your TOTP
+@auth_bp.route('/verify-totp', methods=['POST'])
+@jwt_required()
+def verify_transaction_totp():
+    user = User.query.get(get_jwt_identity())
+    data = request.get_json()
+    if not data.get("code"):
+        return jsonify({"error": "TOTP code is required"}), 400
+
+    if verify_totp_code(user.otp_secret, data['code']):
+        return jsonify({"message": "✅ TOTP is valid"}), 200
+    else:
+        return jsonify({"error": "Invalid TOTP"}), 401

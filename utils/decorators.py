@@ -1,5 +1,5 @@
 from functools import wraps
-from flask import jsonify, redirect, url_for, request
+from flask import jsonify, redirect, url_for, request, flash
 from flask_jwt_extended import get_jwt_identity
 from models.models import db, User, UserAccessControl, UserRole
 
@@ -40,3 +40,14 @@ def role_required(required_roles, json_response=True):
             return func(*args, **kwargs)
         return wrapper
     return decorator
+
+# ✅ TOTP Setup Enforcement
+def require_totp_setup(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        user = User.query.get(get_jwt_identity())
+        if not user or not user.otp_secret:
+            flash("🔐 Please set up your TOTP to continue.")
+            return redirect(url_for('user.show_totp_setup'))
+        return view_func(*args, **kwargs)
+    return wrapped

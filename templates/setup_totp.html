@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Set Up Transaction TOTP{% endblock %}
+
+{% block body %}
+<div class="totp-setup-wrapper">
+  <div class="totp-card">
+    <h2>🔐 Secure Your Transactions</h2>
+    <p class="totp-instructions">
+      Scan this QR Code using <strong>Google Authenticator</strong> or <strong>Microsoft Authenticator</strong>.
+    </p>
+
+    <div id="totp-setup-container" class="qr-container">Loading QR Code...</div>
+
+    <p class="manual-label">If you can't scan the QR, use this manual key:</p>
+    <code id="manual-key" class="manual-key">Loading...</code>
+
+    <p class="totp-footer-note">You will be redirected to your dashboard shortly after setup.</p>
+  </div>
+</div>
+
+<style>
+.totp-setup-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 85vh;
+  background: #f7f9fc;
+}
+
+.totp-card {
+  background: #fff;
+  padding: 2rem 2.5rem;
+  border-radius: 16px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.08);
+  text-align: center;
+  max-width: 500px;
+  width: 100%;
+}
+
+.totp-card h2 {
+  color: #2c3e50;
+  margin-bottom: 1rem;
+}
+
+.totp-instructions {
+  color: #34495e;
+  margin-bottom: 1.5rem;
+}
+
+.qr-container img {
+  width: 200px;
+  height: 200px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 8px;
+  background: #fafafa;
+}
+
+.manual-label {
+  margin-top: 1.5rem;
+  font-weight: 500;
+  color: #444;
+}
+
+.manual-key {
+  display: inline-block;
+  font-size: 1.1rem;
+  background: #f3f3f3;
+  padding: 6px 12px;
+  border-radius: 6px;
+  margin-top: 0.5rem;
+  letter-spacing: 0.1em;
+  color: #2c3e50;
+}
+
+.totp-footer-note {
+  font-size: 0.85rem;
+  color: #888;
+  margin-top: 1.5rem;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const container = document.getElementById('totp-setup-container');
+  const manualKey = document.getElementById('manual-key');
+
+  const dashboardMap = {
+    "admin": "/admin/dashboard",
+    "agent": "/agent/dashboard",
+    "user": "/user/dashboard"
+  };
+
+  fetch('/api/auth/setup-totp', {
+    method: 'GET',
+    credentials: 'include'
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.qr_code) {
+      const img = document.createElement('img');
+      img.src = data.qr_code;
+      img.alt = "TOTP QR Code";
+      container.innerHTML = '';
+      container.appendChild(img);
+      manualKey.innerText = data.manual_key;
+    } else {
+      container.innerHTML = `<p>${data.message || "TOTP already configured."}</p>`;
+      manualKey.innerText = "-";
+    }
+
+    // Then determine the user's role and redirect
+    fetch('/api/auth/whoami', {
+      method: 'GET',
+      credentials: 'include'
+    })
+    .then(res => res.json())
+    .then(userData => {
+      const redirectTo = dashboardMap[userData.role] || "/";
+      setTimeout(() => {
+        window.location.href = redirectTo;
+      }, 5000);
+    });
+  })
+  .catch(err => {
+    container.innerHTML = `<p style="color: red;">Failed to load TOTP setup. Please try again.</p>`;
+    console.error("TOTP Setup Error:", err);
+  });
+});
+</script>
+{% endblock %}

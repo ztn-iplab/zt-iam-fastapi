@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Set Up Transaction TOTP{% endblock %}
+{% block title %}Set Up TOTP{% endblock %}
 
 {% block body %}
-<div class="totp-setup-wrapper">
+<div class="main-container">
   <div class="totp-card">
     <h2>🔐 Secure Your Transactions</h2>
     <p class="totp-instructions">
@@ -14,22 +14,25 @@
     <p class="manual-label">If you can't scan the QR, use this manual key:</p>
     <code id="manual-key" class="manual-key">Loading...</code>
 
-    <p class="totp-footer-note">You will be redirected to your dashboard shortly after setup.</p>
+    <button id="continue-btn" class="btn-primary" style="margin-top: 2rem; display: none;">
+      ✅ I've set up my TOTP — Continue
+    </button>
+
+    <p class="totp-footer-note">Need to scan it later? You can always come back to this page.</p>
   </div>
 </div>
 
 <style>
-.totp-setup-wrapper {
+.main-container {
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 85vh;
-  background: #f7f9fc;
 }
 
 .totp-card {
   background: #fff;
-  padding: 2rem 2.5rem;
+  padding: 2.5rem;
   border-radius: 16px;
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.08);
   text-align: center;
@@ -73,6 +76,16 @@
   color: #2c3e50;
 }
 
+.btn-primary {
+  background-color: #1e88e5;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
 .totp-footer-note {
   font-size: 0.85rem;
   color: #888;
@@ -84,6 +97,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById('totp-setup-container');
   const manualKey = document.getElementById('manual-key');
+  const continueBtn = document.getElementById('continue-btn');
 
   const dashboardMap = {
     "admin": "/admin/dashboard",
@@ -104,12 +118,20 @@ document.addEventListener('DOMContentLoaded', () => {
       container.innerHTML = '';
       container.appendChild(img);
       manualKey.innerText = data.manual_key;
+      continueBtn.style.display = 'inline-block';  // ✅ Only show after setup
     } else {
       container.innerHTML = `<p>${data.message || "TOTP already configured."}</p>`;
       manualKey.innerText = "-";
+      continueBtn.style.display = 'inline-block';
     }
+  })
+  .catch(err => {
+    container.innerHTML = `<p style="color: red;">Failed to load TOTP setup. Please try again.</p>`;
+    console.error("TOTP Setup Error:", err);
+  });
 
-    // Then determine the user's role and redirect
+  // ✅ Handle redirect on confirmation
+  continueBtn.addEventListener('click', () => {
     fetch('/api/auth/whoami', {
       method: 'GET',
       credentials: 'include'
@@ -117,14 +139,8 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(res => res.json())
     .then(userData => {
       const redirectTo = dashboardMap[userData.role] || "/";
-      setTimeout(() => {
-        window.location.href = redirectTo;
-      }, 5000);
+      window.location.href = redirectTo;
     });
-  })
-  .catch(err => {
-    container.innerHTML = `<p style="color: red;">Failed to load TOTP setup. Please try again.</p>`;
-    console.error("TOTP Setup Error:", err);
   });
 });
 </script>

@@ -94,8 +94,8 @@ class Transaction(db.Model):
     transaction_type = db.Column(db.String(50), nullable=False)  # deposit, withdrawal, transfer
     status = db.Column(db.String(20))  # pending, completed, failed
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    location = db.Column(db.String(100))
-    device_info = db.Column(db.String(200))
+    location = db.Column(db.Text)
+    device_info = db.Column(db.Text)
     fraud_flag = db.Column(db.Boolean, default=False)
     risk_score = db.Column(db.Float, default=0.0)  # Score for fraud detection
     transaction_metadata = db.Column(db.Text, nullable=True)  # Store JSON-like metadata
@@ -147,3 +147,7 @@ class OTPCode(db.Model):
     expires_at = db.Column(db.DateTime, nullable=False)
 
     user = db.relationship('User', backref='otp_codes')
+
+class HeadquartersWallet(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    balance = db.Column(db.Float, default=0.0)

@@ -33,7 +33,7 @@
 
         <select name="transaction_type" id="transaction-type" class="input-field" required>
           <option value="">Select Transaction Type</option>
-          <option value="deposit">Deposit</option>
+          <!-- <option value="deposit">Deposit</option> -->
           <option value="withdrawal">Withdrawal</option>
           <option value="transfer">Transfer</option>
         </select>
@@ -49,7 +49,10 @@
         </div>
         
         <!-- ✅ TOTP Input -->
-        <input type="text" id="totp-input" name="totp" placeholder="Enter TOTP Code" class="input-field" required />
+        <div id="totp-group" style="display: none;">
+          <input type="text" id="totp-input" name="totp" placeholder="Enter TOTP Code" class="input-field" />
+        </div>
+
 
         <button type="submit" class="btn btn-primary">Submit Transaction</button>
       </form>

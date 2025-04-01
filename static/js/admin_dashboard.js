@@ -19,7 +19,141 @@ setInterval(() => {
     }
 }, 60000);
 
-// ✅ Function to fetch and display users in Admin Dashboard
+// ---------------------------
+// Admin Section Toggle
+// ---------------------------
+document.addEventListener("DOMContentLoaded", function () {
+  const sectionMap = {
+    "show-user-management": "user-management",
+    "show-flagged-transactions": "flagged-transactions-section",
+    "show-real-time-logs": "real-time-logs",
+    "show-user-auth-logs": "user-auth-logs",
+    "show-fund-agent": "fund-agent-section"
+  };
+
+  Object.entries(sectionMap).forEach(([menuId, sectionId]) => {
+    document.getElementById(menuId)?.addEventListener("click", () => {
+      document.querySelectorAll(".admin-section").forEach(s => s.style.display = "none");
+      document.getElementById(sectionId).style.display = "block";
+
+      if (sectionId === "fund-agent-section") {
+        fetchHqBalance();
+        fetchFloatHistory();
+        bindFundAgentForm();
+      }
+    });
+  });
+
+  document.querySelectorAll(".admin-section").forEach(s => s.style.display = "none");
+  document.getElementById("admin-welcome").style.display = "block";
+});
+
+function fetchHqBalance() {
+  fetch('/admin/hq-balance', { credentials: 'include' })
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById('hq-balance').innerText = data.balance?.toLocaleString() || '0';
+    });
+}
+
+function fetchFloatHistory() {
+  fetch('/admin/float-history', { credentials: 'include' })
+    .then(res => res.json())
+    .then(data => {
+      const tbody = document.getElementById('float-transfer-history');
+      tbody.innerHTML = '';
+      if (data.transfers?.length) {
+        data.transfers.forEach(tx => {
+          const row = `<tr>
+            <td>${new Date(tx.timestamp).toLocaleString()}</td>
+            <td>${tx.agent_name}</td>
+            <td>${tx.agent_mobile}</td>
+            <td>${parseFloat(tx.amount).toLocaleString()} RWF</td>
+          </tr>`;
+          tbody.innerHTML += row;
+        });
+      } else {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center">No transfers yet.</td></tr>';
+      }
+    });
+}
+
+function bindFundAgentForm() {
+  const fundForm = document.getElementById("fund-agent-form");
+  if (fundForm && !fundForm.dataset.bound) {
+    fundForm.dataset.bound = "true";
+
+    fundForm.addEventListener("submit", async function (e) {
+      e.preventDefault();
+
+      const mobile = document.getElementById("agent-mobile").value.trim();
+      const amount = parseFloat(document.getElementById("float-amount").value);
+      const device_info = getDeviceInfo();
+      const location = await getLocation();
+
+      if (!mobile || isNaN(amount) || amount <= 0) {
+        document.getElementById("fund-result").innerHTML = '<p class="text-danger">❌ Invalid input.</p>';
+        return;
+      }
+
+      fetch("/admin/fund-agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ agent_mobile: mobile, amount, device_info, location })
+      })
+        .then(async res => {
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`Server error: ${text}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          document.getElementById("fund-result").innerHTML = data.message
+            ? `<p class='text-success'>${data.message}</p>`
+            : `<p class='text-danger'>${data.error || "Funding failed."}</p>`;
+          setTimeout(() => window.location.reload(), 2500);
+        })
+        .catch(err => {
+          console.error(err);
+          document.getElementById("fund-result").innerHTML = `<p class="text-danger">❌ ${err.message}</p>`;
+        });
+    });
+  }
+}
+
+// ✅ Device Info Function
+function getDeviceInfo() {
+  return {
+    platform: navigator.platform,
+    userAgent: navigator.userAgent,
+    screen: {
+      width: window.screen.width,
+      height: window.screen.height
+    }
+  };
+}
+
+// ✅ Location Info Function
+async function getLocation() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      return resolve("Location not supported");
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        resolve({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+      },
+      () => resolve("Location denied")
+    );
+  });
+}
+
 // ✅ Function to fetch and display users in Admin Dashboard
 function fetchUsersForAdmin() {
   const userList = document.querySelector("#admin-user-list tbody");
@@ -479,9 +613,12 @@ document.addEventListener("DOMContentLoaded", function(){
   // ---------------------------
 // 🎯 Handle Manual SIM Refresh
 // ---------------------------
-document.getElementById("generate-mobile-btn").addEventListener("click", function() {
-  fetchGeneratedSIM(); // ✅ Call the function to get new SIM details
-});
+const genBtn = document.getElementById("generate-mobile-btn");
+if (genBtn) {
+  genBtn.addEventListener("click", function () {
+    fetchGeneratedSIM();
+  });
+}
 
   // ---------------------------
 // 🎯 Fetch Auto-Generated SIM Details & Update Input Fields
@@ -511,8 +648,6 @@ function fetchGeneratedSIM() {
       alert("❌ Unexpected error occurred while generating SIM.");
     });
 }
-
-
 
   // ---------------------------
 // Admin: Add New User Form Submission (Modal)
@@ -547,7 +682,6 @@ if (addUserForm) {
       iccid: iccid  // ✅ Now using displayed input value
     };
 
-    console.log("📡 Sending registration payload:", payload); // Debugging step
 
     // ✅ Step 3: Send registration request
     const registerResponse = await fetch("/api/auth/register", {
@@ -573,6 +707,7 @@ if (addUserForm) {
     }
   });
 }
+
 
   // ---------------------------
   // Logout Functionality

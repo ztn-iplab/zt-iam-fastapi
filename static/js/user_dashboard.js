@@ -244,19 +244,24 @@ document.addEventListener('DOMContentLoaded', function () {
   const transactionTypeSelect = transactionForm.querySelector('[name="transaction_type"]');
   const recipientGroup = document.getElementById("recipient-mobile-group");
   const agentGroup = document.getElementById("agent-mobile-group");
+  const totpGroup = document.getElementById("totp-group");
 
   // 🔄 Show/hide inputs dynamically
   transactionTypeSelect.addEventListener("change", function () {
     const selectedType = transactionTypeSelect.value;
+
     if (selectedType === "transfer") {
       recipientGroup.style.display = "block";
       agentGroup.style.display = "none";
+      totpGroup.style.display = "block";
     } else if (selectedType === "withdrawal") {
       agentGroup.style.display = "block";
       recipientGroup.style.display = "none";
+      totpGroup.style.display = "block";
     } else {
       recipientGroup.style.display = "none";
       agentGroup.style.display = "none";
+      totpGroup.style.display = "none";
     }
   });
 
@@ -264,24 +269,23 @@ document.addEventListener('DOMContentLoaded', function () {
   if (transactionForm) {
     transactionForm.addEventListener('submit', async function (e) {
       e.preventDefault();
-  
+
       const amountInput = transactionForm.querySelector('[name="amount"]');
       const transactionTypeInput = transactionForm.querySelector('[name="transaction_type"]');
       const recipientMobileInput = transactionForm.querySelector('[name="recipient_mobile"]');
       const agentMobileInput = transactionForm.querySelector('[name="agent_mobile"]');
-  
+      const totpInput = document.getElementById("totp-input");
+
       const amount = parseFloat(amountInput.value);
       const transactionType = transactionTypeInput.value;
       const recipient_mobile = recipientMobileInput?.value.trim();
       const agent_mobile = agentMobileInput?.value.trim();
-      const totpInput = document.getElementById("totp-input");
       const totp = totpInput?.value.trim();
 
-  
       const device_info = getDeviceInfo();
       const location = await getLocation();
-  
-      // ✅ Block invalid amounts immediately
+
+      // ✅ Validate amount
       if (isNaN(amount) || amount <= 0) {
         Toastify({
           text: "❌ Invalid amount. Please enter a value greater than 0 RWF.",
@@ -290,8 +294,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }).showToast();
         return;
       }
-  
-      // ✅ Block missing transaction type
+
+      // ✅ Validate transaction type
       if (!transactionType) {
         Toastify({
           text: "❌ Please select a transaction type.",
@@ -300,7 +304,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }).showToast();
         return;
       }
-      
+
+      // ✅ Validate TOTP
       if (!totp || totp.length < 6) {
         Toastify({
           text: "❌ Please enter a valid TOTP code.",
@@ -309,7 +314,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }).showToast();
         return;
       }
-      
+
       const payload = {
         amount,
         transaction_type: transactionType,
@@ -317,8 +322,8 @@ document.addEventListener('DOMContentLoaded', function () {
         location,
         totp
       };
-  
-      // ✅ Handle Transfers
+
+      // ✅ Handle Transfer
       if (transactionType === 'transfer') {
         if (!recipient_mobile) {
           Toastify({
@@ -328,11 +333,11 @@ document.addEventListener('DOMContentLoaded', function () {
           }).showToast();
           return;
         }
-  
+
         try {
           const res = await fetch(`/user-info/${recipient_mobile}`, { credentials: 'include' });
           const userInfo = await res.json();
-  
+
           if (!res.ok || !userInfo?.name) {
             Toastify({
               text: "❌ Recipient not found.",
@@ -341,12 +346,12 @@ document.addEventListener('DOMContentLoaded', function () {
             }).showToast();
             return;
           }
-  
+
           const confirmTransfer = confirm(
             `Are you sure you want to transfer ${amount} RWF to ${userInfo.name} (${recipient_mobile})?`
           );
           if (!confirmTransfer) return;
-  
+
           payload.recipient_mobile = recipient_mobile;
         } catch (err) {
           Toastify({
@@ -357,8 +362,8 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
       }
-  
-      // ✅ Handle Withdrawals
+
+      // ✅ Handle Withdrawal
       if (transactionType === 'withdrawal') {
         if (!agent_mobile) {
           Toastify({
@@ -368,11 +373,11 @@ document.addEventListener('DOMContentLoaded', function () {
           }).showToast();
           return;
         }
-  
+
         try {
           const res = await fetch(`/user-info/${agent_mobile}`, { credentials: 'include' });
           const agentInfo = await res.json();
-  
+
           if (!res.ok || !agentInfo?.name) {
             Toastify({
               text: "❌ Agent not found.",
@@ -381,12 +386,12 @@ document.addEventListener('DOMContentLoaded', function () {
             }).showToast();
             return;
           }
-  
+
           const confirmWithdraw = confirm(
             `Are you sure you want to request a ${amount} RWF withdrawal from ${agentInfo.name} (${agent_mobile})?`
           );
           if (!confirmWithdraw) return;
-  
+
           payload.agent_mobile = agent_mobile;
         } catch (err) {
           Toastify({
@@ -397,7 +402,7 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
       }
-  
+
       // ✅ Submit transaction
       fetch('/api/transactions', {
         method: 'POST',
@@ -408,16 +413,17 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(async response => {
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || "Transaction failed");
-  
+
           Toastify({
             text: result.message || "✅ Transaction successful.",
             style: { background: "#27ae60" },
             duration: 4000
           }).showToast();
-  
+
           transactionForm.reset();
           recipientGroup.style.display = "none";
           agentGroup.style.display = "none";
+          totpGroup.style.display = "none";
           fetchTransactions();
           fetchWalletInfo();
         })

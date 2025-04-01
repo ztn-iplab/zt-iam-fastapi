@@ -274,7 +274,7 @@ def setup_transaction_totp():
 
     totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(
         name=user.email,
-        issuer_name="ZTN MobileMoney"
+        issuer_name="ZTN_MoMo_SIM"
     )
 
     qr = qrcode.make(totp_uri)

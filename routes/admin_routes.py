@@ -1,8 +1,10 @@
 from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.decorators import role_required
-from models.models import db, User, UserAccessControl, UserRole, Wallet, Transaction, UserAuthLog, SIMCard, RealTimeLog
+from models.models import db, User, UserAccessControl, UserRole, Wallet, Transaction, UserAuthLog, SIMCard, RealTimeLog, HeadquartersWallet
 import random
+import json
+
 admin_bp = Blueprint("admin", __name__)
 
 #Admin Dashboard
@@ -99,21 +101,25 @@ def assign_role():
 @role_required(["admin"])
 def suspend_user(user_id):
     """Suspend a user by setting is_active=False and marking for deletion."""
-    
+
+    current_user_id = get_jwt_identity()
+
+    # 🚫 Prevent self-suspension
+    if current_user_id == user_id:
+        return jsonify({"error": "Admins are not allowed to suspend their own accounts."}), 403
+
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # Mark user as inactive and set deletion_requested to True
+    # 🔒 Suspend user and flag for deletion
     user.is_active = False
     user.deletion_requested = True
     db.session.commit()
 
     return jsonify({"message": "User has been suspended and marked for deletion."}), 200
 
-
-
-    
+   
 # verify or restore the user account
 @admin_bp.route("/admin/verify_user/<int:user_id>", methods=["PUT"])
 @jwt_required()
@@ -139,7 +145,13 @@ def verify_user(user_id):
 @role_required(["admin"])
 def delete_user(user_id):
     """Permanently delete a user and all associated records after a deletion request."""
-    
+
+    current_user_id = get_jwt_identity()
+
+    # 🚫 Prevent self-deletion
+    if current_user_id == user_id:
+        return jsonify({"error": "Admins are not allowed to delete their own accounts."}), 403
+
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
@@ -151,11 +163,11 @@ def delete_user(user_id):
     user_sim = SIMCard.query.filter_by(user_id=user.id).first()
     mobile_number = user_sim.mobile_number if user_sim else "N/A"
 
-    # Delete related records first to maintain database integrity
+    # Delete related records to maintain database integrity
     Wallet.query.filter_by(user_id=user_id).delete()
     Transaction.query.filter_by(user_id=user_id).delete()
     UserAuthLog.query.filter_by(user_id=user_id).delete()
-    SIMCard.query.filter_by(user_id=user_id).delete()  # ✅ Changed from `SIMRegistration`
+    SIMCard.query.filter_by(user_id=user_id).delete()
     UserAccessControl.query.filter_by(user_id=user_id).delete()
     RealTimeLog.query.filter_by(user_id=user_id).delete()
 
@@ -291,3 +303,101 @@ def view_user(user_id):
     }
 
     return jsonify(user_details), 200
+
+# Sending froats to agents
+@admin_bp.route('/admin/fund-agent', methods=['POST'])
+@jwt_required()
+@role_required(['admin'])
+def fund_agent():
+    data = request.get_json()
+    admin_id = get_jwt_identity()
+
+    agent_mobile = data.get('agent_mobile')
+    amount = data.get('amount')
+    device_info = data.get('device_info')
+    location = data.get('location')
+
+    if not agent_mobile or not amount:
+        return jsonify({"error": "Missing agent mobile or amount."}), 400
+
+    try:
+        amount = float(amount)
+        if amount <= 0:
+            return jsonify({"error": "Invalid amount."}), 400
+    except:
+        return jsonify({"error": "Amount must be a number."}), 400
+
+    # ✅ Use HeadquartersWallet instead of admin's personal wallet
+    hq_wallet = HeadquartersWallet.query.first()
+    if not hq_wallet or hq_wallet.balance < amount:
+        return jsonify({"error": "Insufficient HQ funds"}), 400
+
+    # ✅ Find the agent and their wallet
+    agent_sim = SIMCard.query.filter_by(mobile_number=agent_mobile).first()
+    if not agent_sim or not agent_sim.user_id:
+        return jsonify({"error": "Agent SIM is not assigned to any user."}), 400
+
+    agent = User.query.get(agent_sim.user_id)
+    if not agent:
+        return jsonify({"error": "Agent user not found."}), 404
+
+
+    agent = User.query.get(agent_sim.user_id)
+    agent_wallet = Wallet.query.filter_by(user_id=agent.id).first()
+    if not agent_wallet:
+        return jsonify({"error": "Agent wallet not found"}), 404
+
+    # 💸 Perform the transfer
+    hq_wallet.balance -= amount
+    agent_wallet.balance += amount
+
+    # 🧾 Record the transaction
+    float_tx = Transaction(
+    user_id=agent.id,
+    amount=amount,
+    transaction_type="float_received",
+    status="completed",
+    location=json.dumps(location),         # ✅ serialized
+    device_info=json.dumps(device_info),   # ✅ serialized
+    transaction_metadata=json.dumps({
+        "from_admin": admin_id,
+        "approved_by": "admin",
+        "float_source": "HQ Wallet"
+    }),
+    fraud_flag=False,
+    risk_score=0.0
+)
+    db.session.add(float_tx)
+    db.session.commit()
+
+    return jsonify({
+        "message": f"✅ {amount} RWF successfully sent to {agent.first_name} ({agent_mobile})"
+    }), 200
+
+# HeadQuater's Balance
+@admin_bp.route('/admin/hq-balance', methods=['GET'])
+@jwt_required()
+@role_required(['admin'])
+def get_hq_balance():
+    hq_wallet = HeadquartersWallet.query.first()
+    if not hq_wallet:
+        return jsonify({"error": "HQ Wallet not found"}), 404
+
+    return jsonify({"balance": round(hq_wallet.balance, 2)}), 200
+
+@admin_bp.route('/admin/float-history', methods=['GET'])
+@jwt_required()
+@role_required(['admin'])
+def float_history():
+    transactions = Transaction.query.filter_by(transaction_type='float_received').order_by(Transaction.timestamp.desc()).limit(20).all()
+    result = []
+    for tx in transactions:
+        agent = User.query.get(tx.user_id)
+        sim = SIMCard.query.filter_by(user_id=agent.id).first()
+        result.append({
+            "timestamp": tx.timestamp,
+            "amount": tx.amount,
+            "agent_name": f"{agent.first_name} {agent.last_name}",
+            "agent_mobile": sim.mobile_number if sim else "N/A"
+        })
+    return jsonify({"transfers": result}), 200

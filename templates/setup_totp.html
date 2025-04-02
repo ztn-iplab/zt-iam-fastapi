@@ -21,6 +21,7 @@
     <p class="totp-footer-note">Need to scan it later? You can always come back to this page.</p>
   </div>
 </div>
+<script src="{{ url_for('static', filename='js/setup_totp.js') }}"></script>
 
 <style>
 .main-container {
@@ -93,55 +94,4 @@
 }
 </style>
 
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  const container = document.getElementById('totp-setup-container');
-  const manualKey = document.getElementById('manual-key');
-  const continueBtn = document.getElementById('continue-btn');
-
-  const dashboardMap = {
-    "admin": "/admin/dashboard",
-    "agent": "/agent/dashboard",
-    "user": "/user/dashboard"
-  };
-
-  fetch('/api/auth/setup-totp', {
-    method: 'GET',
-    credentials: 'include'
-  })
-  .then(res => res.json())
-  .then(data => {
-    if (data.qr_code) {
-      const img = document.createElement('img');
-      img.src = data.qr_code;
-      img.alt = "TOTP QR Code";
-      container.innerHTML = '';
-      container.appendChild(img);
-      manualKey.innerText = data.manual_key;
-      continueBtn.style.display = 'inline-block';  // ✅ Only show after setup
-    } else {
-      container.innerHTML = `<p>${data.message || "TOTP already configured."}</p>`;
-      manualKey.innerText = "-";
-      continueBtn.style.display = 'inline-block';
-    }
-  })
-  .catch(err => {
-    container.innerHTML = `<p style="color: red;">Failed to load TOTP setup. Please try again.</p>`;
-    console.error("TOTP Setup Error:", err);
-  });
-
-  // ✅ Handle redirect on confirmation
-  continueBtn.addEventListener('click', () => {
-    fetch('/api/auth/whoami', {
-      method: 'GET',
-      credentials: 'include'
-    })
-    .then(res => res.json())
-    .then(userData => {
-      const redirectTo = dashboardMap[userData.role] || "/";
-      window.location.href = redirectTo;
-    });
-  });
-});
-</script>
 {% endblock %}

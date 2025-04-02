@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Verify TOTP{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block body %}
+<div class="home-link-container">
+  <a href="{{ url_for('index') }}" class="home-link">&larr; Back to Home</a>
+</div>
+
+<div class="auth-container">
+  <h1>TOTP Verification</h1>
+  
+  <p class="auth-note" style="color: rgb(24, 96, 211); font-weight: 500;">
+    Open your Authenticator app and enter the 6-digit code below to complete your login.
+  </p>
+  
+  <div id="totp-error" style="color: red;"></div>
+
+  <form id="totp-form" class="auth-form">
+    <input 
+      type="text" 
+      id="totp-code" 
+      name="totp" 
+      placeholder="Enter TOTP Code" 
+      class="input-field"
+      required
+    />
+    <button type="submit" class="btn btn-primary">Verify</button>
+  </form>
+</div>
+
+<script src="{{ url_for('static', filename='js/verify_totp.js') }}"></script>
+{% endblock %}

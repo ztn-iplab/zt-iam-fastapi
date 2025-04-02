@@ -33,7 +33,7 @@ def login_form():
 
 @auth_bp.route('/login', methods=['POST'])
 def login_route():
-    """Handles user login using mobile number or email and redirects to the correct dashboard"""
+    """Handles user login using mobile number or email and triggers TOTP verification if configured"""
 
     data = request.get_json()
     if not data or 'identifier' not in data or 'password' not in data:
@@ -62,25 +62,19 @@ def login_route():
     if not user.check_password(password):
         return jsonify({"error": "Invalid credentials"}), 401
 
-    # ✅ Check User Role
-    user_access = UserAccessControl.query.filter_by(user_id=user.id).first()
-    if not user_access:
-        return jsonify({"error": "User has no assigned role"}), 403
-
-    user_role = db.session.get(UserRole, user_access.role_id)
-    if not user_role:
-        return jsonify({"error": "User role not found"}), 403
-
-    role_name = user_role.role_name
-
-    # ✅ Generate OTP and send via email
-    generate_otp_code(user)
+    if not user.otp_secret:
+        return jsonify({
+            "message": "TOTP is not configured. Redirecting to setup.",
+            "require_totp_setup": True,
+            "user_id": user.id
+        }), 200
 
     return jsonify({
-        "message": "OTP sent to your email. Please verify to complete login.",
-        "otp_required": True,
+        "message": "Password verified. Enter your TOTP code to complete login.",
+        "require_totp": True,
         "user_id": user.id
     }), 200
+
 
 
 # ✅ Registering new user accounts
@@ -181,46 +175,42 @@ def register():
 
     return response, 201
 
-# ✅ Getting the OTP
-@auth_bp.route('/verify-otp', methods=['GET'])
-def verify_otp_page():
-    return render_template('verify_otp.html')
+# ✅ Setting the OTP
+@auth_bp.route('/setup-totp')
+def show_setup_totp():
+    print("✅ Reached /setup-totp route")
+    return render_template('setup_totp.html')
 
+# ✅ Getting the OTP
+@auth_bp.route('/verify-totp', methods=['GET'])
+def verify_totp_page():
+    return render_template('verify_totp.html')
 
 
 # ✅ Verifying the OTP
-@auth_bp.route('/verify-otp', methods=['POST'])
-def verify_otp():
+@auth_bp.route('/verify-totp-login', methods=['POST'])
+def verify_totp_login():
     data = request.get_json()
     user_id = data.get('user_id')
-    otp_input = data.get('otp')
+    totp_code = data.get('totp')
 
-    if not user_id or not otp_input:
-        return jsonify({"error": "User ID and OTP are required"}), 400
+    if not user_id or not totp_code:
+        return jsonify({"error": "User ID and TOTP code are required"}), 400
 
     user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+    if not user or not user.otp_secret:
+        return jsonify({"error": "Invalid user or TOTP not configured"}), 403
 
-    otp = OTPCode.query.filter_by(user_id=user.id, code=otp_input, is_used=False).first()
-    if not otp:
-        return jsonify({"error": "Invalid OTP"}), 401
+    from utils.totp import verify_totp_code
+    if not verify_totp_code(user.otp_secret, totp_code):
+        return jsonify({"error": "Invalid or expired TOTP code"}), 401
 
-    if otp.expires_at < datetime.utcnow():
-        return jsonify({"error": "OTP expired"}), 401
-
-    # ✅ Mark OTP as used
-    otp.is_used = True
-    db.session.commit()
-
-    # ✅ Continue login process (issue JWT, return dashboard)
+    # Fetch role and wallet info
     user_access = UserAccessControl.query.filter_by(user_id=user.id).first()
     user_role = db.session.get(UserRole, user_access.role_id)
-    role_name = user_role.role_name
+    role_name = user_role.role_name.lower()
 
     sim_card = SIMCard.query.filter_by(user_id=user.id, status='active').first()
-
-    access_token = create_access_token(identity=str(user.id))
     dashboard_urls = {
         "admin": url_for("admin.admin_dashboard", _external=True),
         "agent": url_for("agent.agent_dashboard", _external=True),
@@ -228,46 +218,36 @@ def verify_otp():
     }
     dashboard_url = dashboard_urls.get(role_name, url_for("user.user_dashboard", _external=True))
 
+    access_token = create_access_token(identity=str(user.id))
     response = jsonify({
+        "message": "Login successful",
         "access_token": access_token,
         "user_id": user.id,
-        "mobile_number": sim_card.mobile_number,
-        "iccid": sim_card.iccid,
+        "mobile_number": sim_card.mobile_number if sim_card else None,
+        "iccid": sim_card.iccid if sim_card else None,
         "role": role_name,
         "dashboard_url": dashboard_url
     })
-
     set_access_cookies(response, access_token)
     return response, 200
 
 
-# Refres the access token
-@auth_bp.route('/refresh', methods=['POST'])
-@jwt_required(refresh=True)
-def refresh():
-    current_user = get_jwt_identity()
-    new_access_token = create_access_token(identity=current_user)
-    resp = jsonify({"access_token": new_access_token})
-    set_access_cookies(resp, new_access_token)
-    return resp, 200
 
-#Logout
-@auth_bp.route('/logout', methods=['GET'])
-def logout():
-    resp = make_response(redirect(url_for('auth.login_form')))
-    unset_jwt_cookies(resp)
-    return resp
-
-# Set up Token_OTP for Transactions 
+ 
+# ✅ Set up Token_OTP
 @auth_bp.route('/setup-totp', methods=['GET'])
 @jwt_required()
 def setup_transaction_totp():
-    user_id = int(get_jwt_identity())
+    user_id = get_jwt_identity()
     user = User.query.get(user_id)
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
 
     if user.otp_secret:
         return jsonify({"message": "TOTP already configured."}), 200
 
+    # Generate a new secret key for TOTP
     secret = pyotp.random_base32()
     user.otp_secret = secret
     db.session.commit()
@@ -277,6 +257,7 @@ def setup_transaction_totp():
         issuer_name="ZTN_MoMo_SIM"
     )
 
+    # Generate QR code for TOTP
     qr = qrcode.make(totp_uri)
     buffer = io.BytesIO()
     qr.save(buffer, format='PNG')
@@ -284,7 +265,6 @@ def setup_transaction_totp():
     img_base64 = base64.b64encode(buffer.read()).decode()
 
     return jsonify({
-        "message": "Scan this QR Code with Google/Microsoft Authenticator",
         "qr_code": f"data:image/png;base64,{img_base64}",
         "manual_key": secret
     }), 200
@@ -318,3 +298,21 @@ def verify_transaction_totp():
         return jsonify({"message": "✅ TOTP is valid"}), 200
     else:
         return jsonify({"error": "Invalid TOTP"}), 401
+
+
+# Refres the access token
+@auth_bp.route('/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    current_user = get_jwt_identity()
+    new_access_token = create_access_token(identity=current_user)
+    resp = jsonify({"access_token": new_access_token})
+    set_access_cookies(resp, new_access_token)
+    return resp, 200
+
+#Logout
+@auth_bp.route('/logout', methods=['GET'])
+def logout():
+    resp = make_response(redirect(url_for('auth.login_form')))
+    unset_jwt_cookies(resp)
+    return resp

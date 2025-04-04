@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-
 {% block title %}Verify TOTP{% endblock %}
 {% block body_class %}auth-page{% endblock %}
 
@@ -10,25 +9,93 @@
 
 <div class="auth-container">
   <h1>TOTP Verification</h1>
-  
-  <p class="auth-note" style="color: rgb(24, 96, 211); font-weight: 500;">
-    Open your Authenticator app and enter the 6-digit code below to complete your login.
-  </p>
-  
-  <div id="totp-error" style="color: red;"></div>
 
-  <form id="totp-form" class="auth-form">
+  <p class="auth-note">
+    Open your Authenticator app and enter the 6-digit code to complete your login.
+  </p>
+
+  <div id="totp-error" class="error-message" style="display: none;"></div>
+
+  <form id="totp-form" class="auth-form" autocomplete="off">
     <input 
-      type="text" 
-      id="totp-code" 
-      name="totp" 
-      placeholder="Enter TOTP Code" 
+      type="text"
+      id="totp-code"
+      name="totp"
+      inputmode="numeric"
+      pattern="\d{6}"
+      maxlength="6"
+      placeholder="Enter 6-digit code"
       class="input-field"
       required
+      autofocus
     />
-    <button type="submit" class="btn btn-primary">Verify</button>
+
+    <button type="submit" class="btn btn-primary" id="verify-btn">Verify</button>
+
+    <div id="totp-spinner" style="display: none; margin-top: 1rem;">
+      <p>⏳ Verifying TOTP code...</p>
+    </div>
   </form>
 </div>
 
 <script src="{{ url_for('static', filename='js/verify_totp.js') }}"></script>
+
+<style>
+.auth-container {
+  max-width: 400px;
+  margin: 3rem auto;
+  padding: 2rem;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.05);
+  text-align: center;
+}
+
+.input-field {
+  width: 100%;
+  padding: 0.75rem;
+  margin: 1rem 0;
+  font-size: 1rem;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+}
+
+.btn-primary {
+  background-color: #1e88e5;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-note {
+  font-size: 0.95rem;
+  color: #333;
+  margin-bottom: 1.5rem;
+}
+
+.error-message {
+  color: red;
+  font-size: 0.95rem;
+  margin-bottom: 1rem;
+}
+
+.home-link-container {
+  text-align: center;
+  margin-top: 1rem;
+}
+
+.home-link {
+  text-decoration: none;
+  color: #1e88e5;
+  font-weight: bold;
+}
+</style>
 {% endblock %}

@@ -1,50 +1,89 @@
-console.log("Login JS loaded");
+console.log("🔐 Login JS loaded");
 
-const loginForm = document.getElementById('login-form');
+document.addEventListener('DOMContentLoaded', () => {
+  const loginForm = document.getElementById('login-form');
+  if (!loginForm) return;
 
-if (loginForm) {
-  loginForm.addEventListener('submit', function (e) {
-    e.preventDefault();  // Prevent form from submitting in the default way
+  const mobileInput = document.getElementById('mobile-number');
+  const passwordInput = document.getElementById('password');
+  const errorDiv = document.getElementById('login-error');
+  const submitBtn = loginForm.querySelector('button[type="submit"]');
 
-    const mobile = document.getElementById('mobile-number').value;  // Get mobile number/email from form
-    const password = document.getElementById('password').value;  // Get password from form
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearError();
+    setLoading(true);
 
-    // Send login request to backend
-    fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier: mobile, password: password }),  // Send credentials as JSON
-      credentials: 'include'  // Include cookies (if any)
-    })
-    .then(async res => {
-      const data = await res.json();  // Parse JSON response
+    const mobile = mobileInput?.value.trim();
+    const password = passwordInput?.value;
 
-      // TOTP setup is required (TOTP not configured)
-      if (data.require_totp_setup && data.user_id) {
-        // Redirect to TOTP setup page
-        window.location.href = `/setup-totp?user_id=${data.user_id}`;
-        return;  // Stop further execution
+    if (!mobile || !password) {
+      showError("Please enter both mobile number and password.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: mobile, password: password }),
+        credentials: 'include' // Send cookie
+      });
+
+      let data;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        const rawText = await res.text();
+        console.error("❌ Failed to parse JSON:", jsonErr, "\nRaw:", rawText);
+        throw new Error("Unexpected server response. Please try again.");
       }
 
-      // Handle login errors (invalid credentials, etc.)
       if (!res.ok) {
-        throw new Error(data.error || "Login failed");
+        throw new Error(data.error || "Login failed. Please check your credentials.");
       }
 
-      // If TOTP is configured, redirect to TOTP verification page
-      if (data.require_totp && data.user_id) {
-        window.location.href = `/api/auth/verify-totp?user_id=${data.user_id}`;
-      } else {
-        // Fully authenticated, redirect to the appropriate dashboard
-        window.location.href = data.dashboard_url;
-      }
-    })
-    .catch(err => {
-      console.error("Login error:", err);
-      const errorDiv = document.getElementById('login-error');
-      if (errorDiv) {
-        errorDiv.textContent = "Login error: " + (err.message || "Unexpected error");
-      }
-    });
+      console.log("✅ Login successful:", data);
+
+      // Allow cookie storage time
+      setTimeout(() => {
+        if (data.require_totp_setup) {
+          console.log("➡️ Redirecting to /setup-totp");
+          window.location.href = '/setup-totp';
+        } else if (data.require_totp) {
+          console.log("➡️ Redirecting to /verify-totp");
+          window.location.href = '/api/auth/verify-totp';
+        } else {
+          console.log("✅ Fully authenticated — redirecting to dashboard...");
+          window.location.href = data.dashboard_url || '/';
+        }
+      }, 500);
+
+    } catch (err) {
+      console.error("⚠️ Login error:", err.message || err);
+      showError(err.message || "Login failed. Please try again.");
+      setLoading(false);
+    }
   });
-}
+
+  function showError(msg) {
+    if (errorDiv) {
+      errorDiv.textContent = msg;
+      errorDiv.style.display = 'block';
+    }
+  }
+
+  function clearError() {
+    if (errorDiv) {
+      errorDiv.textContent = '';
+      errorDiv.style.display = 'none';
+    }
+  }
+
+  function setLoading(isLoading) {
+    if (!submitBtn) return;
+    submitBtn.disabled = isLoading;
+    submitBtn.innerHTML = isLoading ? 'Logging in...' : 'Login';
+  }
+});

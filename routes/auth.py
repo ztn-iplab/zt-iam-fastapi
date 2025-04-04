@@ -5,6 +5,7 @@ from flask_jwt_extended import (
     jwt_required,  # use this with refresh=True for refresh endpoints
     get_jwt_identity,
     unset_jwt_cookies,
+    verify_jwt_in_request,
 )
 from datetime import datetime
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -33,8 +34,6 @@ def login_form():
 
 @auth_bp.route('/login', methods=['POST'])
 def login_route():
-    """Handles user login using mobile number or email and triggers TOTP verification if configured"""
-
     data = request.get_json()
     if not data or 'identifier' not in data or 'password' not in data:
         return jsonify({"error": "Mobile number or email and password are required"}), 400
@@ -45,13 +44,13 @@ def login_route():
     user = None
     sim_card = None
 
-    # Try as email
+    # Try email first
     user = User.query.filter_by(email=login_input).first()
 
     if user:
         sim_card = SIMCard.query.filter_by(user_id=user.id, status='active').first()
     else:
-        # Try as mobile number
+        # Try mobile number
         sim_card = SIMCard.query.filter_by(mobile_number=login_input, status='active').first()
         if sim_card:
             user = sim_card.user
@@ -62,18 +61,21 @@ def login_route():
     if not user.check_password(password):
         return jsonify({"error": "Invalid credentials"}), 401
 
-    if not user.otp_secret:
-        return jsonify({
-            "message": "TOTP is not configured. Redirecting to setup.",
-            "require_totp_setup": True,
-            "user_id": user.id
-        }), 200
+    # ✅ Create and set JWT cookie for ALL users (regardless of TOTP setup)
+    access_token = create_access_token(identity=str(user.id))  # ✅ convert to string!
+    response = jsonify({
+        "message": "Login successful",
+        "user_id": user.id,
+        "require_totp_setup": not user.otp_secret,
+        "require_totp": user.otp_secret is not None,
+        "message": "Login successful"
+    })
+    print("✅ JWT being created for user:", user.id)
+    print("🔑 Access token:", access_token)
 
-    return jsonify({
-        "message": "Password verified. Enter your TOTP code to complete login.",
-        "require_totp": True,
-        "user_id": user.id
-    }), 200
+    set_access_cookies(response, access_token)  # 🔐 Set JWT in secure cookie
+
+    return response, 200
 
 
 
@@ -175,27 +177,55 @@ def register():
 
     return response, 201
 
-# ✅ Setting the OTP
-@auth_bp.route('/setup-totp')
-def show_setup_totp():
-    print("✅ Reached /setup-totp route")
-    return render_template('setup_totp.html')
+# # ✅ Setting the OTP
+# @auth_bp.route('/setup-totp', methods=['GET'])
+# def show_setup_totp():
+#     try:
+#         verify_jwt_in_request(locations=["cookies"])  # ✅ Important!
+#         user_id = get_jwt_identity()
+#         print("✅ Reached setup-totp route")
+#         print("🎯 Extracted user_id from JWT:", user_id)
+#     except Exception as e:
+#         print("❌ Token error on /setup-totp page:", e)
+#         return redirect(url_for('auth.login_page'))
+
+#     return render_template('setup_totp.html')
+
 
 # ✅ Getting the OTP
 @auth_bp.route('/verify-totp', methods=['GET'])
 def verify_totp_page():
+    try:
+        verify_jwt_in_request(locations=["cookies"])
+        user_id = get_jwt_identity()
+        print("✅ Accessed /verify-totp page")
+        print("🎯 Extracted user_id from JWT:", user_id)
+    except Exception as e:
+        print("❌ Token error on /verify-totp page:", e)
+        return redirect(url_for('auth.login_page'))
+
     return render_template('verify_totp.html')
 
 
 # ✅ Verifying the OTP
 @auth_bp.route('/verify-totp-login', methods=['POST'])
 def verify_totp_login():
+    
+    try:
+        print("🍪 Cookies seen:", dict(request.cookies))  # Log cookies
+        verify_jwt_in_request(locations=["cookies"])  # 🔐 Force it to check cookies
+        user_id = get_jwt_identity()
+        print(f"✅ JWT verified for user ID: {user_id}")
+    except NoAuthorizationError as e:
+        print("❌ JWT verification failed:", e)
+        return jsonify({"error": "Invalid or missing token"}), 401
+
+    # Continue with the TOTP logic
     data = request.get_json()
-    user_id = data.get('user_id')
     totp_code = data.get('totp')
 
-    if not user_id or not totp_code:
-        return jsonify({"error": "User ID and TOTP code are required"}), 400
+    if not totp_code:
+        return jsonify({"error": "TOTP code is required"}), 400
 
     user = User.query.get(user_id)
     if not user or not user.otp_secret:
@@ -205,59 +235,54 @@ def verify_totp_login():
     if not verify_totp_code(user.otp_secret, totp_code):
         return jsonify({"error": "Invalid or expired TOTP code"}), 401
 
-    # Fetch role and wallet info
-    user_access = UserAccessControl.query.filter_by(user_id=user.id).first()
-    user_role = db.session.get(UserRole, user_access.role_id)
-    role_name = user_role.role_name.lower()
+    # 🎯 Fetch role info for redirect
+    access = UserAccessControl.query.filter_by(user_id=user.id).first()
+    role = db.session.get(UserRole, access.role_id).role_name.lower() if access else "user"
 
-    sim_card = SIMCard.query.filter_by(user_id=user.id, status='active').first()
-    dashboard_urls = {
+    urls = {
         "admin": url_for("admin.admin_dashboard", _external=True),
         "agent": url_for("agent.agent_dashboard", _external=True),
         "user": url_for("user.user_dashboard", _external=True)
     }
-    dashboard_url = dashboard_urls.get(role_name, url_for("user.user_dashboard", _external=True))
 
-    access_token = create_access_token(identity=str(user.id))
     response = jsonify({
-        "message": "Login successful",
-        "access_token": access_token,
-        "user_id": user.id,
-        "mobile_number": sim_card.mobile_number if sim_card else None,
-        "iccid": sim_card.iccid if sim_card else None,
-        "role": role_name,
-        "dashboard_url": dashboard_url
+        "message": "TOTP verified successfully",
+        "dashboard_url": urls.get(role, url_for("user.user_dashboard", _external=True))
     })
-    set_access_cookies(response, access_token)
     return response, 200
 
 
 
- 
 # ✅ Set up Token_OTP
 @auth_bp.route('/setup-totp', methods=['GET'])
-@jwt_required()
-def setup_transaction_totp():
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
+def setup_totp():
 
+    try:
+        verify_jwt_in_request(locations=["cookies"])
+        user_id = get_jwt_identity()
+        print("✅ API: JWT verified for setup-totp:", user_id)
+    except Exception as e:
+        print("❌ API: JWT error in /setup-totp:", e)
+        print("Cookies seen:", dict(request.cookies))
+        return jsonify({"error": "Invalid or missing token"}), 401
+
+    # Now continue your normal logic:
+    user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 
     if user.otp_secret:
         return jsonify({"message": "TOTP already configured."}), 200
 
-    # Generate a new secret key for TOTP
     secret = pyotp.random_base32()
     user.otp_secret = secret
     db.session.commit()
 
-    totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(
+    totp_uri = pyotp.TOTP(secret).provisioning_uri(
         name=user.email,
         issuer_name="ZTN_MoMo_SIM"
     )
 
-    # Generate QR code for TOTP
     qr = qrcode.make(totp_uri)
     buffer = io.BytesIO()
     qr.save(buffer, format='PNG')
@@ -268,6 +293,7 @@ def setup_transaction_totp():
         "qr_code": f"data:image/png;base64,{img_base64}",
         "manual_key": secret
     }), 200
+
 
 
 # Whoami 
@@ -316,3 +342,15 @@ def logout():
     resp = make_response(redirect(url_for('auth.login_form')))
     unset_jwt_cookies(resp)
     return resp
+
+# Debugging cookies
+@auth_bp.route('/debug-cookie')
+def debug_cookie():
+    from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
+    try:
+        verify_jwt_in_request(locations=["cookies"])
+        user_id = get_jwt_identity()
+        return f"✅ JWT verified! User ID: {user_id}"
+    except Exception as e:
+        print("❌ JWT Debug error:", e)
+        return "❌ Invalid token", 401

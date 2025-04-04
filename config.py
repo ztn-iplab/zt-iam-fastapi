@@ -7,12 +7,17 @@ class Config:
     SQLALCHEMY_DATABASE_URI = "postgresql://ztn:ztn%40sim@localhost:5432/ztn_db"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+    JWT_ACCESS_COOKIE_NAME= 'access_token_cookie'
     JWT_TOKEN_LOCATION = ['cookies']
     JWT_ACCESS_COOKIE_PATH = '/'
     JWT_REFRESH_COOKIE_PATH = '/api/auth/refresh'
     JWT_COOKIE_SECURE = False  # For testing on HTTP
     JWT_COOKIE_CSRF_PROTECT = False  # Disable CSRF protection
+    JWT_CSRF_IN_COOKIES = False  
+
     JWT_REFRESH_TOKEN_EXPIRES = 30 * 60  # 30 minutes
+    JWT_COOKIE_SAMESITE = "Lax"  # or "Strict", but Lax is ideal for login flows
+
 
     SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "fallback-in-dev")
 

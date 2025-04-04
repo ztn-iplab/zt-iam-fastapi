@@ -1,32 +1,71 @@
-console.log("TOTP Verification JS loaded");
+console.log("🔐 TOTP Verification JS loaded");
 
-const urlParams = new URLSearchParams(window.location.search);
-const user_id = urlParams.get('user_id');
-const totpForm = document.getElementById('totp-form');
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.getElementById('totp-form');
+  const input = document.getElementById('totp-code');
+  const errorDiv = document.getElementById('totp-error');
+  const verifyBtn = document.getElementById('verify-btn');
+  const spinner = document.getElementById('totp-spinner');
 
-if (totpForm && user_id) {
-  totpForm.addEventListener('submit', function (e) {
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    clearError();
 
-    const totpCode = document.getElementById('totp-code').value;
+    const code = input.value.trim();
+    if (!/^\d{6}$/.test(code)) {
+      return showError("Please enter a valid 6-digit TOTP code.");
+    }
 
-    fetch('/api/auth/verify-totp-login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ user_id, totp: totpCode })
-    })
-    .then(async res => {
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/verify-totp-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ totp: code }) // ⛔ No user_id in body — use JWT!
+      });
+
       const data = await res.json();
+
       if (!res.ok) {
-        throw new Error(data.error || "TOTP verification failed");
+        throw new Error(data.error || "TOTP verification failed.");
       }
 
-      window.location.href = data.dashboard_url;
-    })
-    .catch(err => {
-      const errorDiv = document.getElementById('totp-error');
-      errorDiv.textContent = "TOTP error: " + err.message;
-    });
+      console.log("✅ TOTP verified. Redirecting to:", data.dashboard_url);
+      window.location.href = data.dashboard_url || '/';
+
+    } catch (err) {
+      console.error("❌ TOTP error:", err);
+      showError(err.message || "Verification failed.");
+    } finally {
+      setLoading(false);
+    }
   });
-}
+
+  function showError(msg) {
+    if (errorDiv) {
+      errorDiv.textContent = msg;
+      errorDiv.style.display = 'block';
+    }
+  }
+
+  function clearError() {
+    if (errorDiv) {
+      errorDiv.textContent = '';
+      errorDiv.style.display = 'none';
+    }
+  }
+
+  function setLoading(isLoading) {
+    if (verifyBtn) {
+      verifyBtn.disabled = isLoading;
+      verifyBtn.innerHTML = isLoading ? 'Verifying...' : 'Verify';
+    }
+    if (spinner) {
+      spinner.style.display = isLoading ? 'block' : 'none';
+    }
+  }
+});

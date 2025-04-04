@@ -28,17 +28,15 @@ mail.init_app(app)
 
 @jwt.expired_token_loader
 def expired_token_callback(jwt_header, jwt_payload):
-    # Optionally clear any authentication cookies or localStorage via client-side code
-    return redirect(url_for('auth.login_form'))
+    return jsonify({"error": "Token has expired"}), 401
 
 @jwt.invalid_token_loader
 def invalid_token_callback(error):
-    return redirect(url_for('auth.login_form'))
+    return jsonify({"error": "Invalid token"}), 422
 
 @jwt.unauthorized_loader
 def missing_token_callback(error):
-    return redirect(url_for('auth.login_form'))
-
+    return jsonify({"error": "Missing access token"}), 401
 
 # Register Blueprints
 app.register_blueprint(auth_bp, url_prefix='/api/auth')
@@ -83,6 +81,11 @@ def send_test_email():
                   body="Hey buddy! This is a test email from your Flask app.")
     mail.send(msg)
     return jsonify({"message": "Test email sent successfully!"})
+
+@app.route('/debug-jwt')
+def debug_jwt():
+    print("🍪 Cookies in request:", request.cookies)
+    return "Check your terminal!"
 
 
 # App Main Function

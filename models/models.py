@@ -22,6 +22,8 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     password_hash = db.Column(db.String(255), nullable=False)
     otp_secret = db.Column(db.String(32), nullable=True)
+    otp_email_label = db.Column(db.String(120), nullable=True)
+
 
     # Account Status
     is_active = db.Column(db.Boolean, default=True)      

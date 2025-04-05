@@ -181,7 +181,7 @@ def agent_dashboard():
 @jwt_required()
 @role_required(["agent"])
 def process_agent_transaction():
-    """Handle agent transactions: Deposits, Withdrawals, Transfers with validation."""
+    """Handle agent transactions: Deposits, Withdrawals, Transfers with validation and TOTP."""
     user_id = get_jwt_identity()
     data = request.get_json()
 
@@ -208,7 +208,19 @@ def process_agent_transaction():
     if not agent_wallet:
         return jsonify({"error": "Agent wallet not found"}), 404
 
-    transaction_metadata = {}  # ✅ Store additional details
+    # ✅ TOTP Validation
+    from utils.totp import verify_totp_code
+    totp_code = data.get("totp")
+    if not totp_code:
+        return jsonify({"error": "TOTP code is required"}), 400
+
+    if not agent.otp_secret:
+        return jsonify({"error": "TOTP not configured for this agent"}), 403
+
+    if not verify_totp_code(agent.otp_secret, totp_code):
+        return jsonify({"error": "Invalid or expired TOTP code"}), 401
+
+    transaction_metadata = {}
 
     # ✅ Handle Deposits
     if transaction_type == "deposit":
@@ -233,17 +245,23 @@ def process_agent_transaction():
         if agent_wallet.balance < amount:
             return jsonify({"error": "Insufficient balance for deposit"}), 400
 
-        # ✅ Confirm transaction
-        print(f"✅ Confirming deposit of {amount} RWF to {recipient.first_name} ({recipient_mobile})")
-
+        print(f"✅ Agent deposit: {amount} RWF to {recipient.first_name} ({recipient_mobile})")
         agent_wallet.balance -= amount
         recipient_wallet.balance += amount
 
         transaction_metadata = {
-            "deposited_by_mobile": agent.sim_cards[0].mobile_number,
+            "deposited_by_mobile": agent.sim_cards[0].mobile_number if agent.sim_cards else "N/A",
             "recipient_mobile": recipient_mobile,
             "recipient_name": f"{recipient.first_name} {recipient.last_name}"
         }
+
+        new_transaction = Transaction(
+            user_id=recipient.id,
+            amount=amount,
+            transaction_type=transaction_type,
+            status="completed",
+            transaction_metadata=json.dumps(transaction_metadata)
+        )
 
     # ✅ Handle Transfers
     elif transaction_type == "transfer":
@@ -265,9 +283,7 @@ def process_agent_transaction():
         if agent_wallet.balance < amount:
             return jsonify({"error": "Insufficient funds"}), 400
 
-        # ✅ Confirm transaction
-        print(f"✅ Confirming transfer of {amount} RWF to {recipient.first_name} ({recipient_mobile})")
-
+        print(f"✅ Agent transfer: {amount} RWF to {recipient.first_name} ({recipient_mobile})")
         agent_wallet.balance -= amount
         recipient_wallet.balance += amount
 
@@ -277,62 +293,74 @@ def process_agent_transaction():
             "recipient_name": f"{recipient.first_name} {recipient.last_name}"
         }
 
+        new_transaction = Transaction(
+            user_id=agent.id,
+            amount=amount,
+            transaction_type=transaction_type,
+            status="completed",
+            transaction_metadata=json.dumps(transaction_metadata)
+        )
+
     # ✅ Handle Withdrawals
     elif transaction_type == "withdrawal":
         if agent_wallet.balance < amount:
             return jsonify({"error": "Insufficient balance"}), 400
 
-        print(f"✅ Confirming agent withdrawal of {amount} RWF")
-
+        print(f"✅ Agent withdrawal: {amount} RWF")
         agent_wallet.balance -= amount
+
         transaction_metadata = {
             "withdrawal_method": "Agent Processed"
         }
 
+        new_transaction = Transaction(
+            user_id=agent.id,
+            amount=amount,
+            transaction_type=transaction_type,
+            status="completed",
+            transaction_metadata=json.dumps(transaction_metadata)
+        )
+
     else:
         return jsonify({"error": "Invalid transaction type"}), 400
 
-    new_transaction = Transaction(
-        user_id=agent.id if transaction_type != "deposit" else recipient.id,
-        amount=amount,
-        transaction_type=transaction_type,
-        status="completed",
-        transaction_metadata=json.dumps(transaction_metadata)
-    )
+    # ✅ Commit and respond
     db.session.add(new_transaction)
     db.session.commit()
 
     return jsonify({
         "message": f"{transaction_type.capitalize()} successful",
-        "updated_balance": agent_wallet.balance if transaction_type != "deposit" else recipient_wallet.balance,
+        "updated_balance": (
+            agent_wallet.balance if transaction_type != "deposit" else recipient_wallet.balance
+        ),
         "recipient_mobile": recipient_mobile if transaction_type != "withdrawal" else None,
         "recipient_name": transaction_metadata.get("recipient_name", "N/A")
     }), 200
 
 
-
-
 # ✅ API: Fetch Agent's Transaction History
-@agent_bp.route("/agent/transactions", methods=["GET"])
+@agent_bp.route('/agent/transactions', methods=['GET'])
 @jwt_required()
-@role_required(["agent"])
-def agent_transactions():
-    """Return agent's transaction history including deposits & withdrawals assigned to them."""
+@role_required(['agent'])
+def get_agent_transactions():
     agent_id = int(get_jwt_identity())
-    transactions = Transaction.query.order_by(Transaction.timestamp.desc()).all()
+
+    # ✅ Include agent's own transactions AND user withdrawals needing their approval
+    transactions = Transaction.query.filter(
+        (Transaction.user_id == agent_id) |
+        (Transaction.transaction_metadata.contains(f'"assigned_agent_id": {agent_id}'))
+    ).order_by(Transaction.timestamp.desc()).all()
 
     transaction_list = []
     for tx in transactions:
         try:
             metadata = json.loads(tx.transaction_metadata or "{}")
 
-            # ✅ Agent is the initiator (for their own transfers/withdrawals)
+            # ✅ Agent involvement logic — DO NOT CHANGE
             if tx.user_id == agent_id:
                 involved = True
-            # ✅ Agent was assigned to approve withdrawal
             elif metadata.get("assigned_agent_id") and int(metadata.get("assigned_agent_id")) == agent_id:
                 involved = True
-            # ✅ Agent did the deposit (mobile match)
             elif metadata.get("deposited_by_mobile") and metadata.get("deposited_by_mobile") in [
                 sim.mobile_number for sim in SIMCard.query.filter_by(user_id=agent_id).all()
             ]:
@@ -343,7 +371,7 @@ def agent_transactions():
             if not involved:
                 continue
 
-            # ✅ Handle recipient display
+            # ✅ Recipient logic — KEEP AS IS
             if tx.transaction_type in ["deposit", "transfer"]:
                 recipient_mobile = metadata.get("recipient_mobile", "N/A")
             elif tx.transaction_type == "withdrawal":
@@ -352,7 +380,29 @@ def agent_transactions():
             else:
                 recipient_mobile = "Self"
 
-            # ✅ Status class mapping
+            # ✅ Add human-readable label
+            admin_msg = metadata.get("admin_message")
+            if tx.transaction_type == "withdrawal":
+                if tx.status == "pending":
+                    label = "User Withdrawal Pending Approval"
+                elif tx.status == "rejected":
+                    label = "User Withdrawal Rejected"
+                elif tx.status == "expired":
+                    label = "User Withdrawal Expired"
+                else:
+                    label = "User Withdrawal Approved"
+            elif tx.transaction_type == "float":
+                label = f"Float from Admin: {admin_msg}" if admin_msg else "Float from Admin"
+            elif tx.transaction_type == "transfer" and tx.user_id == agent_id:
+                label = f"Transfer to {recipient_mobile}"
+            elif tx.transaction_type == "transfer":
+                label = f"Transfer from {recipient_mobile}"
+            elif tx.transaction_type == "deposit":
+                label = f"Deposit to {recipient_mobile}"
+            else:
+                label = tx.transaction_type.capitalize()
+
+            # ✅ Status class
             status_class = ""
             if tx.status == "rejected":
                 status_class = "text-danger"
@@ -363,10 +413,12 @@ def agent_transactions():
             elif tx.status == "expired":
                 status_class = "text-muted"
 
+            # ✅ Final result
             transaction_list.append({
                 "transaction_id": tx.id,
                 "amount": tx.amount,
                 "transaction_type": tx.transaction_type,
+                "label": label,
                 "status": tx.status,
                 "status_class": status_class,
                 "timestamp": tx.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
@@ -376,6 +428,7 @@ def agent_transactions():
         except Exception as e:
             print(f"❌ Error processing transaction ID {tx.id}: {e}")
             continue
+
 
     return jsonify({"transactions": transaction_list}), 200
 

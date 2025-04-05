@@ -5,6 +5,10 @@
 <div class="main-container">
   <div class="totp-card">
     <h2>🔐 Secure Your Transactions</h2>
+    
+    <!-- ✅ Slot for showing reason why user is here -->
+    <p id="totp-reason-message" class="text-info fw-semibold" style="margin-bottom: 1rem;"></p>
+
     <p class="totp-instructions">
       Scan this QR Code using <strong>Google Authenticator</strong> or <strong>Microsoft Authenticator</strong>.
     </p>
@@ -21,6 +25,7 @@
     <p class="totp-footer-note">Need to scan it later? You can always come back to this page.</p>
   </div>
 </div>
+
 <script src="{{ url_for('static', filename='js/setup_totp.js') }}"></script>
 
 <style>
@@ -93,5 +98,4 @@
   margin-top: 1.5rem;
 }
 </style>
-
 {% endblock %}

@@ -7,6 +7,7 @@ from flask_jwt_extended import (
     unset_jwt_cookies,
     verify_jwt_in_request,
 )
+from flask_jwt_extended.exceptions import NoAuthorizationError
 from datetime import datetime
 from werkzeug.security import check_password_hash, generate_password_hash
 from models.models import User, Wallet, db, UserRole, UserAccessControl,SIMCard, OTPCode
@@ -61,23 +62,31 @@ def login_route():
     if not user.check_password(password):
         return jsonify({"error": "Invalid credentials"}), 401
 
-    # ✅ Create and set JWT cookie for ALL users (regardless of TOTP setup)
-    access_token = create_access_token(identity=str(user.id))  # ✅ convert to string!
-    response = jsonify({
-        "message": "Login successful",
-        "user_id": user.id,
-        "require_totp_setup": not user.otp_secret,
-        "require_totp": user.otp_secret is not None,
-        "message": "Login successful"
-    })
+    # ✅ Create and set JWT cookie
+    access_token = create_access_token(identity=str(user.id))
+    set_access_cookies(response := jsonify({}), access_token)
+
     print("✅ JWT being created for user:", user.id)
     print("🔑 Access token:", access_token)
 
-    set_access_cookies(response, access_token)  # 🔐 Set JWT in secure cookie
+    # ✅ Determine TOTP logic
+    require_totp_setup = user.otp_secret is None
+    require_totp_reset = (
+        user.otp_secret is not None and user.otp_email_label != user.email
+    )
+    require_totp = user.otp_secret is not None
 
+    # ✅ Build full login response
+    response = jsonify({
+        "message": "Login successful",
+        "user_id": user.id,
+        "require_totp": require_totp,
+        "require_totp_setup": require_totp_setup,
+        "require_totp_reset": require_totp_reset
+    })
+
+    set_access_cookies(response, access_token)
     return response, 200
-
-
 
 # ✅ Registering new user accounts
 @auth_bp.route('/register', methods=['POST'])
@@ -202,9 +211,65 @@ def verify_totp_page():
         print("🎯 Extracted user_id from JWT:", user_id)
     except Exception as e:
         print("❌ Token error on /verify-totp page:", e)
-        return redirect(url_for('auth.login_page'))
+        return redirect(url_for('auth.login_form'))
 
     return render_template('verify_totp.html')
+
+
+# ✅ Set up Token_OTP
+@auth_bp.route('/setup-totp', methods=['GET'])
+def setup_totp():
+    try:
+        verify_jwt_in_request(locations=["cookies"])
+        user_id = get_jwt_identity()
+        print("✅ API: JWT verified for setup-totp:", user_id)
+    except Exception as e:
+        print("❌ API: JWT error in /setup-totp:", e)
+        print("Cookies seen:", dict(request.cookies))
+        return jsonify({"error": "Invalid or missing token"}), 401
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # ✅ Determine if setup or reset is needed
+    reset_required = (
+        user.otp_secret is None or
+        (user.otp_secret and user.otp_email_label != user.email)
+    )
+
+    print("📡 Email label:", user.otp_email_label)
+    print("📡 Current email:", user.email)
+    print("📡 Has TOTP secret:", bool(user.otp_secret))
+    print("📡 Reset required?", reset_required)
+
+    if reset_required:
+        secret = pyotp.random_base32()
+        user.otp_secret = secret
+        user.otp_email_label = user.email  # ✅ Track email used
+        db.session.commit()
+
+        totp_uri = pyotp.TOTP(secret).provisioning_uri(
+            name=user.email,
+            issuer_name="ZTN_MoMo_SIM"
+        )
+
+        qr = qrcode.make(totp_uri)
+        buffer = io.BytesIO()
+        qr.save(buffer, format='PNG')
+        buffer.seek(0)
+        img_base64 = base64.b64encode(buffer.read()).decode()
+
+        return jsonify({
+            "qr_code": f"data:image/png;base64,{img_base64}",
+            "manual_key": secret,
+            "reset_required": True
+        }), 200
+
+    # ✅ Already configured and no email mismatch
+    return jsonify({
+        "message": "TOTP already configured."
+    }), 200
 
 
 # ✅ Verifying the OTP
@@ -250,51 +315,6 @@ def verify_totp_login():
         "dashboard_url": urls.get(role, url_for("user.user_dashboard", _external=True))
     })
     return response, 200
-
-
-
-# ✅ Set up Token_OTP
-@auth_bp.route('/setup-totp', methods=['GET'])
-def setup_totp():
-
-    try:
-        verify_jwt_in_request(locations=["cookies"])
-        user_id = get_jwt_identity()
-        print("✅ API: JWT verified for setup-totp:", user_id)
-    except Exception as e:
-        print("❌ API: JWT error in /setup-totp:", e)
-        print("Cookies seen:", dict(request.cookies))
-        return jsonify({"error": "Invalid or missing token"}), 401
-
-    # Now continue your normal logic:
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    if user.otp_secret:
-        return jsonify({"message": "TOTP already configured."}), 200
-
-    secret = pyotp.random_base32()
-    user.otp_secret = secret
-    db.session.commit()
-
-    totp_uri = pyotp.TOTP(secret).provisioning_uri(
-        name=user.email,
-        issuer_name="ZTN_MoMo_SIM"
-    )
-
-    qr = qrcode.make(totp_uri)
-    buffer = io.BytesIO()
-    qr.save(buffer, format='PNG')
-    buffer.seek(0)
-    img_base64 = base64.b64encode(buffer.read()).decode()
-
-    return jsonify({
-        "qr_code": f"data:image/png;base64,{img_base64}",
-        "manual_key": secret
-    }), 200
-
-
 
 # Whoami 
 @auth_bp.route('/whoami', methods=['GET'])

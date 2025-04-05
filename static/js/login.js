@@ -48,17 +48,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Allow cookie storage time
       setTimeout(() => {
-        if (data.require_totp_setup) {
-          console.log("➡️ Redirecting to /setup-totp");
-          window.location.href = '/setup-totp';
-        } else if (data.require_totp) {
-          console.log("➡️ Redirecting to /verify-totp");
-          window.location.href = '/api/auth/verify-totp';
+        if (data.require_totp_setup || data.require_totp_reset) {
+          const reason = data.require_totp_reset ? 'reset' : 'setup';
+          console.log(`➡️ Redirecting to TOTP ${reason}...`);
+          window.location.href = `/setup-totp?reason=${reason}`;
+        } else if (data.require_totp && data.user_id) {
+          console.log("➡️ Redirecting to TOTP verification...");
+          window.location.href = `/api/auth/verify-totp`;
         } else {
           console.log("✅ Fully authenticated — redirecting to dashboard...");
           window.location.href = data.dashboard_url || '/';
         }
-      }, 500);
+      }, 500);      
 
     } catch (err) {
       console.error("⚠️ Login error:", err.message || err);

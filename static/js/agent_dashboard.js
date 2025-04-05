@@ -119,10 +119,10 @@ document.addEventListener("DOMContentLoaded", function () {
           historyTable.appendChild(row);
         });
       
-      // ✅ Render transaction chart only if data exists
-      renderTransactionChart(data.transactions);
-    })
-    .catch(error => console.error("Error fetching transactions:", error));
+  
+        renderTransactionChart(data.transactions);
+      })
+      .catch(error => console.error("❌ Error fetching transactions:", error));
   }
   
   // ✅ Function to approve withdrwals
@@ -208,10 +208,18 @@ async function submitTransaction(event) {
   const amountInput = document.querySelector('[name="amount"]');
   const transactionTypeInput = document.querySelector('[name="transaction_type"]');
   const recipientMobileInput = document.querySelector('[name="recipient_mobile"]');
+  const totpInput = document.querySelector('[name="agent_totp"]');
 
   const amount = parseFloat(amountInput.value);
   const transactionType = transactionTypeInput.value;
   const recipientMobile = recipientMobileInput && recipientMobileInput.value.trim() ? recipientMobileInput.value.trim() : null;
+  const totp = totpInput && totpInput.value.trim() ? totpInput.value.trim() : null;
+
+if (!totp) {
+  Toastify({ text: "❌ TOTP verification is required.", style: { background: "#d32f2f" } }).showToast();
+  return;
+}
+
 
   if (isNaN(amount) || amount <= 0) {
     Toastify({ text: "❌ Please enter a valid amount.", style: { background: "#d32f2f" } }).showToast();
@@ -236,9 +244,11 @@ async function submitTransaction(event) {
       amount,
       transaction_type: transactionType,
       recipient_mobile: recipientMobile,
+      totp: totp,
       device_info,
       location
     };
+    
 
     let confirmMsg = "";
     if (transactionType === 'deposit' || transactionType === 'transfer') {
@@ -275,9 +285,18 @@ async function submitTransaction(event) {
     }
 
     Toastify({ text: `✅ ${data.message}`, style: { background: "#27ae60" } }).showToast();
-    event.target.reset(); // ✅ Reset the form
-    fetchWalletInfo(); // 🔄 Refresh balance
-    fetchTransactionHistory(); // 🔄 Refresh history
+
+    // ✅ Reset the form
+    event.target.reset();
+
+    // ✅ Reset transaction type dropdown to placeholder and trigger change
+    const transactionTypeSelect = document.getElementById("transaction-type");
+    transactionTypeSelect.value = ""; // Go back to "Select Transaction Type"
+    transactionTypeSelect.dispatchEvent(new Event("change")); // Hide TOTP & recipient fields
+
+    // ✅ Refresh data
+    fetchWalletInfo();
+    fetchTransactionHistory();
 
   } catch (error) {
     console.error("Transaction error:", error);
@@ -285,13 +304,6 @@ async function submitTransaction(event) {
   }
 }
 
-// ✅ Attach Event Listener
-document.addEventListener("DOMContentLoaded", function () {
-  const transactionForm = document.getElementById("transaction-form");
-  if (transactionForm) {
-    transactionForm.addEventListener("submit", submitTransaction);
-  }
-});
 
 // ✅ Attach Event Listener for Transactions
 document.addEventListener("DOMContentLoaded", function () {
@@ -300,6 +312,28 @@ document.addEventListener("DOMContentLoaded", function () {
     transactionForm.addEventListener("submit", submitTransaction);
   }
 });
+
+// ✅ Show Mobile Input for Transfer & Deposit Transactions
+document.getElementById("transaction-type").addEventListener("change", function () {
+  const type = this.value;
+  const recipientMobileField = document.getElementById("recipient-mobile");
+  const totpField = document.getElementById("agent-totp");
+
+  // Show/hide recipient mobile (only for deposit or transfer)
+  if (type === "transfer" || type === "deposit") {
+    recipientMobileField.style.display = "block";
+    recipientMobileField.setAttribute("required", "true");
+  } else {
+    recipientMobileField.style.display = "none";
+    recipientMobileField.removeAttribute("required");
+  }
+
+  // ✅ TOTP is required for ALL transaction types
+  totpField.style.display = "block";
+  totpField.setAttribute("required", "true");
+});
+
+
 
 
 // ✅ Render Transaction Chart
@@ -349,18 +383,6 @@ function renderTransactionChart(transactions) {
 }
 
 
-// ✅ Show Mobile Input for Transfer & Deposit Transactions
-document.getElementById("transaction-type").addEventListener("change", function () {
-  const recipientMobileField = document.getElementById("recipient-mobile");
-  
-  if (this.value === "transfer" || this.value === "deposit") {
-    recipientMobileField.style.display = "block"; // ✅ Show input field
-    recipientMobileField.setAttribute("required", "true"); // ✅ Make it required
-  } else {
-    recipientMobileField.style.display = "none"; // ✅ Hide input field
-    recipientMobileField.removeAttribute("required"); // ✅ Remove required for other transactions
-  }
-});
 
 // ✅ New simcard generation
 function generateNewSIM() {

@@ -1,14 +1,16 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.models import db, Transaction, Wallet, User, SIMCard
-from utils.totp import verify_totp_code
+from models.models import db, Transaction, Wallet, User, SIMCard, RealTimeLog
+from utils.totp import verify_totp_code # Import your OTP logic
+from utils.location import get_ip_location  
+import pyotp
 from datetime import datetime
 import json
 import threading
 import time
 import threading
 import json
-
+from utils.fraud_engine import calculate_risk_score
 
 transaction_bp = Blueprint('transaction', __name__)
 
@@ -24,14 +26,13 @@ def update_transaction_status(app, transaction_id, new_status):
             transaction.status = new_status
             db.session.commit()
 
- 
+
 @transaction_bp.route('/transactions', methods=['POST'])
 @jwt_required()
 def create_transaction():
     logged_in_user = int(get_jwt_identity())
     data = request.get_json()
 
-    # ✅ Basic validation
     if not data.get('amount') or not data.get('transaction_type'):
         return jsonify({"error": "Amount and transaction type are required"}), 400
 
@@ -49,11 +50,9 @@ def create_transaction():
 
     transaction_metadata = {}
 
-    # ✅ Prevent deposit
     if transaction_type == "deposit":
         return jsonify({"error": "Deposits are not allowed for regular users"}), 403
 
-    # ✅ TOTP validation block (for both withdrawal and transfer)
     totp_code = data.get('totp')
     if not totp_code:
         return jsonify({"error": "TOTP code is required"}), 400
@@ -64,6 +63,10 @@ def create_transaction():
 
     if not verify_totp_code(user.otp_secret, totp_code):
         return jsonify({"error": "Invalid or expired TOTP code"}), 401
+
+    ip_address = request.remote_addr or data.get('ip_address')
+    risk_score = calculate_risk_score(user, amount, data.get('location'), data.get('device_info'), ip_address)
+    fraud_flag = risk_score >= 0.7
 
     # ✅ Withdrawal
     if transaction_type == "withdrawal":
@@ -99,15 +102,31 @@ def create_transaction():
             location=data.get('location'),
             device_info=data.get('device_info'),
             transaction_metadata=json.dumps(transaction_metadata),
-            fraud_flag=data.get('fraud_flag', False),
-            risk_score=data.get('risk_score', 0)
+            fraud_flag=fraud_flag,
+            risk_score=risk_score
         )
 
         db.session.add(transaction)
+
+        # ✅ Real-time log
+        log_msg = f"{transaction_type.title()} of {amount} RWF"
+        if fraud_flag:
+            log_msg = f"⚠️ Suspicious {log_msg} flagged"
+
+        rt_log = RealTimeLog(
+            user_id=user.id,
+            action=log_msg,
+            ip_address=ip_address,
+            device_info=data.get('device_info'),
+            location=data.get('location', 'Unknown'),
+            risk_alert=fraud_flag
+        )
+        db.session.add(rt_log)
+
         db.session.commit()
 
         return jsonify({
-            "message": f"✅ Withdrawal request submitted. Awaiting agent approval.",
+            "message": "✅ Withdrawal request submitted. Awaiting agent approval.",
             "transaction_id": transaction.id,
             "status": transaction.status,
             "timestamp": transaction.timestamp.isoformat() if transaction.timestamp else None,
@@ -156,18 +175,33 @@ def create_transaction():
             user_id=logged_in_user,
             amount=amount,
             transaction_type=transaction_type,
-            status="pending",  # set to pending, completed shortly after
+            status="pending",
             location=data.get('location'),
             device_info=data.get('device_info'),
             transaction_metadata=json.dumps(transaction_metadata),
-            fraud_flag=data.get('fraud_flag', False),
-            risk_score=data.get('risk_score', 0)
+            fraud_flag=fraud_flag,
+            risk_score=risk_score
         )
 
         db.session.add(transaction)
+
+        # ✅ Real-time log
+        log_msg = f"{transaction_type.title()} of {amount} RWF"
+        if fraud_flag:
+            log_msg = f"⚠️ Suspicious {log_msg} flagged"
+
+        rt_log = RealTimeLog(
+            user_id=user.id,
+            action=log_msg,
+            ip_address=ip_address,
+            device_info=data.get('device_info'),
+            location=data.get('location', 'Unknown'),
+            risk_alert=fraud_flag
+        )
+        db.session.add(rt_log)
+
         db.session.commit()
 
-        # ✅ Mark as completed shortly after
         app = current_app._get_current_object()
         threading.Thread(target=update_transaction_status, args=(app, transaction.id, "completed")).start()
 
@@ -187,6 +221,7 @@ def create_transaction():
 
     else:
         return jsonify({"error": "Invalid transaction type"}), 400
+
 
 
  

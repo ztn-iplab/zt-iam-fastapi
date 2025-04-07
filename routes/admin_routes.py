@@ -4,6 +4,8 @@ from utils.decorators import role_required
 from models.models import db, User, UserAccessControl, UserRole, Wallet, Transaction, UserAuthLog, SIMCard, RealTimeLog, HeadquartersWallet
 import random
 import json
+from datetime import datetime
+
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -38,29 +40,33 @@ def admin_dashboard():
 def get_all_users():
     """Only admins can view all users"""
     try:
-        users = User.query.all()  # Fetch all users
+        users = User.query.all()
         users_list = []
 
         for u in users:
-            # Fetch the SIM Card associated with the user
             primary_sim = SIMCard.query.filter_by(user_id=u.id, status="active").first()
 
-            # Safely get the user's role (check if user_access_control exists)
             user_role = UserRole.query.get(u.user_access_control.role_id) if u.user_access_control else None
             role_name = user_role.role_name if user_role else "N/A"
+
+            # ✅ Check if user is locked
+            is_locked = u.locked_until is not None and u.locked_until > datetime.utcnow()
 
             users_list.append({
                 "id": u.id,
                 "name": f"{u.first_name} {u.last_name or ''}".strip(),
-                "mobile_number": primary_sim.mobile_number if primary_sim else "N/A",  # Get the assigned number
+                "mobile_number": primary_sim.mobile_number if primary_sim else "N/A",
                 "email": u.email,
-                "role": role_name  # Safely fetch the role name
+                "role": role_name,
+                "is_locked": u.locked_until is not None and u.locked_until > datetime.utcnow(),
+                "locked_until": u.locked_until.isoformat() if u.locked_until else None  # ✅ NEW
             })
 
         return jsonify(users_list), 200
 
     except Exception as e:
         return jsonify({"error": "Failed to fetch users", "details": str(e)}), 500
+
 
 # ✅ Assign Role to User (Fixed for New Approach)
 @admin_bp.route("/admin/assign_role", methods=["POST"])
@@ -401,3 +407,79 @@ def float_history():
             "agent_mobile": sim.mobile_number if sim else "N/A"
         })
     return jsonify({"transfers": result}), 200
+
+
+# FLagged Transactions
+@admin_bp.route('/admin/flagged-transactions', methods=['GET'])
+@jwt_required()
+def get_flagged_transactions():
+    flagged = Transaction.query.filter_by(fraud_flag=True).order_by(Transaction.timestamp.desc()).all()
+    result = []
+    for tx in flagged:
+        user = User.query.get(tx.user_id)
+        result.append({
+            "id": tx.id,
+            "user": f"{user.first_name} {user.last_name}",
+            "amount": tx.amount,
+            "type": tx.transaction_type,
+            "risk_score": tx.risk_score,
+            "status": tx.status,
+            "timestamp": tx.timestamp.strftime("%Y-%m-%d %H:%M")
+        })
+    return jsonify(result), 200
+
+
+# Real time Logs
+@admin_bp.route("/admin/real-time-logs", methods=["GET"])
+@jwt_required()
+@role_required(["admin"])
+def get_real_time_logs():
+    logs = RealTimeLog.query.order_by(RealTimeLog.timestamp.desc()).limit(50).all()
+
+    result = []
+    for log in logs:
+        result.append({
+            "user": f"{log.user.first_name} {log.user.last_name}" if log.user else "Unknown",
+            "action": log.action,
+            "timestamp": log.timestamp.strftime("%Y-%m-%d %H:%M"),
+            "ip": log.ip_address,
+            "location": log.location,
+            "device": log.device_info,
+            "risk_alert": log.risk_alert
+        })
+
+    return jsonify(result), 200
+
+
+@admin_bp.route('/admin/user-auth-logs', methods=['GET'])
+@jwt_required()
+def get_user_auth_logs():
+    logs = UserAuthLog.query.order_by(UserAuthLog.auth_timestamp.desc()).limit(50).all()
+    result = []
+    for log in logs:
+        user = User.query.get(log.user_id)
+        result.append({
+            "user": f"{user.first_name} {user.last_name}" if user else "Unknown",
+            "method": log.auth_method,
+            "status": log.auth_status,
+            "timestamp": log.auth_timestamp.strftime("%Y-%m-%d %H:%M"),
+            "ip": log.ip_address,
+            "device": log.device_info,
+            "location": log.location,
+            "fails": log.failed_attempts
+        })
+    return jsonify(result), 200
+
+@admin_bp.route('/admin/unlock-user/<int:user_id>', methods=['PATCH'])
+@jwt_required()
+def unlock_user(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    user.locked_until = None
+    db.session.commit()
+
+    return jsonify({"message": "✅ User account unlocked"}), 200
+
+

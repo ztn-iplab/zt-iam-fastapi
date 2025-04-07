@@ -1,15 +1,15 @@
 console.log("🔐 TOTP Verification JS loaded");
 
-document.addEventListener('DOMContentLoaded', () => {
-  const form = document.getElementById('totp-form');
-  const input = document.getElementById('totp-code');
-  const errorDiv = document.getElementById('totp-error');
-  const verifyBtn = document.getElementById('verify-btn');
-  const spinner = document.getElementById('totp-spinner');
+document.addEventListener("DOMContentLoaded", () => {
+  const form = document.getElementById("totp-form");
+  const input = document.getElementById("totp-code");
+  const errorDiv = document.getElementById("totp-error");
+  const verifyBtn = document.getElementById("verify-btn");
+  const spinner = document.getElementById("totp-spinner");
 
   if (!form) return;
 
-  form.addEventListener('submit', async (e) => {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     clearError();
 
@@ -21,11 +21,11 @@ document.addEventListener('DOMContentLoaded', () => {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/verify-totp-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ totp: code }) // ⛔ No user_id in body — use JWT!
+      const res = await fetch("/api/auth/verify-totp-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ totp: code }), // ⛔ No user_id in body — use JWT!
       });
 
       const data = await res.json();
@@ -35,8 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       console.log("✅ TOTP verified. Redirecting to:", data.dashboard_url);
-      window.location.href = data.dashboard_url || '/';
-
+      window.location.href = data.dashboard_url || "/";
     } catch (err) {
       console.error("❌ TOTP error:", err);
       showError(err.message || "Verification failed.");
@@ -48,24 +47,24 @@ document.addEventListener('DOMContentLoaded', () => {
   function showError(msg) {
     if (errorDiv) {
       errorDiv.textContent = msg;
-      errorDiv.style.display = 'block';
+      errorDiv.style.display = "block";
     }
   }
 
   function clearError() {
     if (errorDiv) {
-      errorDiv.textContent = '';
-      errorDiv.style.display = 'none';
+      errorDiv.textContent = "";
+      errorDiv.style.display = "none";
     }
   }
 
   function setLoading(isLoading) {
     if (verifyBtn) {
       verifyBtn.disabled = isLoading;
-      verifyBtn.innerHTML = isLoading ? 'Verifying...' : 'Verify';
+      verifyBtn.innerHTML = isLoading ? "Verifying..." : "Verify";
     }
     if (spinner) {
-      spinner.style.display = isLoading ? 'block' : 'none';
+      spinner.style.display = isLoading ? "block" : "none";
     }
   }
 });

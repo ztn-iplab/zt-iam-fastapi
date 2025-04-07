@@ -8,11 +8,11 @@ let transactionChart; // Global chart variable
 const INACTIVITY_LIMIT = 15 * 60 * 1000; // 15 minutes
 let lastActivityTime = Date.now();
 
-function resetActivityTimer() { 
-  lastActivityTime = Date.now(); 
+function resetActivityTimer() {
+  lastActivityTime = Date.now();
 }
 
-["mousemove", "keydown", "click", "scroll"].forEach(evt =>
+["mousemove", "keydown", "click", "scroll"].forEach((evt) =>
   document.addEventListener(evt, resetActivityTimer)
 );
 
@@ -20,10 +20,9 @@ setInterval(() => {
   if (Date.now() - lastActivityTime > INACTIVITY_LIMIT) {
     alert("You've been inactive. Logging out.");
     // Redirect to the logout endpoint which clears the cookie
-    fetch("/api/auth/logout", { method: "POST" })
-      .then(() => {
-        window.location.href = '/api/auth/login_form';
-      });
+    fetch("/api/auth/logout", { method: "POST" }).then(() => {
+      window.location.href = "/api/auth/login_form";
+    });
   }
 }, 60000);
 
@@ -41,12 +40,12 @@ function getLocation() {
   return new Promise((resolve) => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        pos => {
+        (pos) => {
           const lat = pos.coords.latitude.toFixed(4);
           const lon = pos.coords.longitude.toFixed(4);
           resolve(`${lat}, ${lon}`);
         },
-        err => {
+        (err) => {
           console.error("Geolocation error:", err);
           resolve("");
         },
@@ -61,15 +60,15 @@ function getLocation() {
 // ============================
 // Toggle Recipient Input for Transfer
 // ============================
-document.addEventListener('DOMContentLoaded', function() {
-  const transactionTypeSelect = document.getElementById('transaction-type');
-  const recipientMobileInput = document.getElementById('recipient-mobile');
+document.addEventListener("DOMContentLoaded", function () {
+  const transactionTypeSelect = document.getElementById("transaction-type");
+  const recipientMobileInput = document.getElementById("recipient-mobile");
   if (transactionTypeSelect && recipientMobileInput) {
-    transactionTypeSelect.addEventListener('change', function() {
-      if (this.value === 'transfer') {
-        recipientMobileInput.style.display = 'block';
+    transactionTypeSelect.addEventListener("change", function () {
+      if (this.value === "transfer") {
+        recipientMobileInput.style.display = "block";
       } else {
-        recipientMobileInput.style.display = 'none';
+        recipientMobileInput.style.display = "none";
       }
     });
   }
@@ -78,170 +77,185 @@ document.addEventListener('DOMContentLoaded', function() {
 // ============================
 // Section Toggling for Sidebar
 // ============================
-document.addEventListener('DOMContentLoaded', function() {
-  const overviewSection = document.getElementById('content-overview');
-  const transactionsSection = document.getElementById('content-transactions');
-  const profileSection = document.getElementById('content-profile');
+document.addEventListener("DOMContentLoaded", function () {
+  const overviewSection = document.getElementById("content-overview");
+  const transactionsSection = document.getElementById("content-transactions");
+  const profileSection = document.getElementById("content-profile");
 
-  document.getElementById('show-overview-link').addEventListener('click', function(e) {
-    e.preventDefault();
-    overviewSection.style.display = 'block';
-    transactionsSection.style.display = 'none';
-    profileSection.style.display = 'none';
-  });
+  document
+    .getElementById("show-overview-link")
+    .addEventListener("click", function (e) {
+      e.preventDefault();
+      overviewSection.style.display = "block";
+      transactionsSection.style.display = "none";
+      profileSection.style.display = "none";
+    });
 
-  document.getElementById('show-transactions-link').addEventListener('click', function(e) {
-    e.preventDefault();
-    overviewSection.style.display = 'none';
-    transactionsSection.style.display = 'block';
-    profileSection.style.display = 'none';
-    fetchTransactions();
-  });
+  document
+    .getElementById("show-transactions-link")
+    .addEventListener("click", function (e) {
+      e.preventDefault();
+      overviewSection.style.display = "none";
+      transactionsSection.style.display = "block";
+      profileSection.style.display = "none";
+      fetchTransactions();
+    });
 
-  document.getElementById('show-profile-link').addEventListener('click', function(e) {
-    e.preventDefault();
-    overviewSection.style.display = 'none';
-    transactionsSection.style.display = 'none';
-    profileSection.style.display = 'block';
-    // Optionally: fetchProfileData();
-  });
+  document
+    .getElementById("show-profile-link")
+    .addEventListener("click", function (e) {
+      e.preventDefault();
+      overviewSection.style.display = "none";
+      transactionsSection.style.display = "none";
+      profileSection.style.display = "block";
+      // Optionally: fetchProfileData();
+    });
 
   // Initially show the overview section
-  overviewSection.style.display = 'block';
-  transactionsSection.style.display = 'none';
-  profileSection.style.display = 'none';
+  overviewSection.style.display = "block";
+  transactionsSection.style.display = "none";
+  profileSection.style.display = "none";
 });
 
 // ============================
 // Fetch Wallet Information
 // ============================
 function fetchWalletInfo() {
-  fetch('/api/wallets', {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include'
+  fetch("/api/wallets", {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
   })
-  .then(res => {
-    if (!res.ok) throw new Error("Failed to fetch wallet info");
-    return res.json();
-  })
-  .then(data => {
-    console.log("Wallet info received:", data);
-    document.getElementById('wallet-balance').textContent = data.balance;
-    document.getElementById('wallet-currency').textContent = data.currency;
-  })
-  .catch(err => console.error("Error fetching wallet info:", err));
+    .then((res) => {
+      if (!res.ok) throw new Error("Failed to fetch wallet info");
+      return res.json();
+    })
+    .then((data) => {
+      console.log("Wallet info received:", data);
+      document.getElementById("wallet-balance").textContent = data.balance;
+      document.getElementById("wallet-currency").textContent = data.currency;
+    })
+    .catch((err) => console.error("Error fetching wallet info:", err));
 }
 
 // ============================
 // Fetch Transactions and Render Chart
 // ============================
 function fetchTransactions() {
-  fetch('/api/transactions', {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include'
+  fetch("/api/transactions", {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
   })
-  .then(res => {
-    if (!res.ok) throw new Error("Failed to fetch transactions");
-    return res.json();
-  })
-  .then(response => {
-    console.log("Transactions received:", response);
-    
-    const transactions = response.transactions;
-    if (!Array.isArray(transactions)) {
-      throw new Error("Invalid transaction data format");
-    }
+    .then((res) => {
+      if (!res.ok) throw new Error("Failed to fetch transactions");
+      return res.json();
+    })
+    .then((response) => {
+      console.log("Transactions received:", response);
 
-    const historyTable = document.getElementById('transaction-history').querySelector('tbody');
-    historyTable.innerHTML = "";
+      const transactions = response.transactions;
+      if (!Array.isArray(transactions)) {
+        throw new Error("Invalid transaction data format");
+      }
 
-    transactions.forEach(tx => {
-      const row = document.createElement('tr');
-      row.innerHTML = `
+      const historyTable = document
+        .getElementById("transaction-history")
+        .querySelector("tbody");
+      historyTable.innerHTML = "";
+
+      transactions.forEach((tx) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
         <td>${new Date(tx.timestamp).toLocaleDateString()}</td>
         <td>${tx.transaction_type.toUpperCase()}</td>
         <td>${tx.amount}</td>
-        <td class="${tx.status_class || ''}">${tx.label || 'N/A'}</td>
+        <td class="${tx.status_class || ""}">${tx.label || "N/A"}</td>
       `;
-      historyTable.appendChild(row);
-    });
+        historyTable.appendChild(row);
+      });
 
-    // ✅ Aggregate transaction data for chart rendering
-    const aggregationSelect = document.getElementById('aggregation-type');
-    const aggregationType = aggregationSelect ? aggregationSelect.value : 'daily';
-    const aggregated = {};
-    transactions.forEach(tx => {
-      let label;
-      if (aggregationType === 'daily') {
-        label = tx.timestamp.slice(0, 10);
-      } else {
-        label = tx.timestamp.slice(0, 7);
-      }
-      const amount = parseFloat(tx.amount) * (tx.transaction_type === 'withdrawal' ? -1 : 1);
-      aggregated[label] = (aggregated[label] || 0) + amount;
-    });
-    const labels = Object.keys(aggregated).sort();
-    const data = labels.map(label => aggregated[label]);
-    renderTransactionChart(labels, data);
-  })
-  .catch(err => console.error("Error fetching transactions:", err));
+      // ✅ Aggregate transaction data for chart rendering
+      const aggregationSelect = document.getElementById("aggregation-type");
+      const aggregationType = aggregationSelect
+        ? aggregationSelect.value
+        : "daily";
+      const aggregated = {};
+      transactions.forEach((tx) => {
+        let label;
+        if (aggregationType === "daily") {
+          label = tx.timestamp.slice(0, 10);
+        } else {
+          label = tx.timestamp.slice(0, 7);
+        }
+        const amount =
+          parseFloat(tx.amount) *
+          (tx.transaction_type === "withdrawal" ? -1 : 1);
+        aggregated[label] = (aggregated[label] || 0) + amount;
+      });
+      const labels = Object.keys(aggregated).sort();
+      const data = labels.map((label) => aggregated[label]);
+      renderTransactionChart(labels, data);
+    })
+    .catch((err) => console.error("Error fetching transactions:", err));
 }
-
 
 // ============================
 // Render Transaction Chart
 // ============================
 function renderTransactionChart(labels, data) {
-  const ctx = document.getElementById('transactionChart').getContext('2d');
+  const ctx = document.getElementById("transactionChart").getContext("2d");
   if (transactionChart) {
     transactionChart.destroy();
   }
   transactionChart = new Chart(ctx, {
-    type: 'line',
+    type: "line",
     data: {
       labels: labels,
-      datasets: [{
-        label: 'Net Transaction Amount',
-        data: data,
-        backgroundColor: 'rgba(41, 98, 255, 0.2)',
-        borderColor: '#2962ff',
-        borderWidth: 2,
-        fill: true
-      }]
+      datasets: [
+        {
+          label: "Net Transaction Amount",
+          data: data,
+          backgroundColor: "rgba(41, 98, 255, 0.2)",
+          borderColor: "#2962ff",
+          borderWidth: 2,
+          fill: true,
+        },
+      ],
     },
     options: {
       scales: {
         x: {
-          title: { display: true, text: 'Date', color: '#ffffff' },
-          ticks: { color: '#ffffff' },
-          grid: { color: 'rgba(255, 255, 255, 0.1)' }
+          title: { display: true, text: "Date", color: "#ffffff" },
+          ticks: { color: "#ffffff" },
+          grid: { color: "rgba(255, 255, 255, 0.1)" },
         },
         y: {
-          title: { display: true, text: 'Net Amount', color: '#ffffff' },
-          ticks: { color: '#ffffff' },
-          grid: { color: 'rgba(255, 255, 255, 0.1)' }
-        }
+          title: { display: true, text: "Net Amount", color: "#ffffff" },
+          ticks: { color: "#ffffff" },
+          grid: { color: "rgba(255, 255, 255, 0.1)" },
+        },
       },
       plugins: {
         legend: {
           labels: {
-            font: { family: 'Inter' },
-            color: '#ffffff'
-          }
-        }
-      }
-    }
+            font: { family: "Inter" },
+            color: "#ffffff",
+          },
+        },
+      },
+    },
   });
 }
 
 // ============================
 // Transaction Form Submission
 // ============================
-document.addEventListener('DOMContentLoaded', function () {
-  const transactionForm = document.getElementById('transaction-form');
-  const transactionTypeSelect = transactionForm.querySelector('[name="transaction_type"]');
+document.addEventListener("DOMContentLoaded", function () {
+  const transactionForm = document.getElementById("transaction-form");
+  const transactionTypeSelect = transactionForm.querySelector(
+    '[name="transaction_type"]'
+  );
   const recipientGroup = document.getElementById("recipient-mobile-group");
   const agentGroup = document.getElementById("agent-mobile-group");
   const totpGroup = document.getElementById("totp-group");
@@ -267,13 +281,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // ✅ Transaction Form Submission with Confirmation Modal
   if (transactionForm) {
-    transactionForm.addEventListener('submit', async function (e) {
+    transactionForm.addEventListener("submit", async function (e) {
       e.preventDefault();
 
       const amountInput = transactionForm.querySelector('[name="amount"]');
-      const transactionTypeInput = transactionForm.querySelector('[name="transaction_type"]');
-      const recipientMobileInput = transactionForm.querySelector('[name="recipient_mobile"]');
-      const agentMobileInput = transactionForm.querySelector('[name="agent_mobile"]');
+      const transactionTypeInput = transactionForm.querySelector(
+        '[name="transaction_type"]'
+      );
+      const recipientMobileInput = transactionForm.querySelector(
+        '[name="recipient_mobile"]'
+      );
+      const agentMobileInput = transactionForm.querySelector(
+        '[name="agent_mobile"]'
+      );
       const totpInput = document.getElementById("totp-input");
 
       const amount = parseFloat(amountInput.value);
@@ -290,7 +310,7 @@ document.addEventListener('DOMContentLoaded', function () {
         Toastify({
           text: "❌ Invalid amount. Please enter a value greater than 0 RWF.",
           style: { background: "#d32f2f" },
-          duration: 4000
+          duration: 4000,
         }).showToast();
         return;
       }
@@ -300,7 +320,7 @@ document.addEventListener('DOMContentLoaded', function () {
         Toastify({
           text: "❌ Please select a transaction type.",
           style: { background: "#d32f2f" },
-          duration: 4000
+          duration: 4000,
         }).showToast();
         return;
       }
@@ -310,7 +330,7 @@ document.addEventListener('DOMContentLoaded', function () {
         Toastify({
           text: "❌ Please enter a valid TOTP code.",
           style: { background: "#d32f2f" },
-          duration: 4000
+          duration: 4000,
         }).showToast();
         return;
       }
@@ -320,29 +340,31 @@ document.addEventListener('DOMContentLoaded', function () {
         transaction_type: transactionType,
         device_info,
         location,
-        totp
+        totp,
       };
 
       // ✅ Handle Transfer
-      if (transactionType === 'transfer') {
+      if (transactionType === "transfer") {
         if (!recipient_mobile) {
           Toastify({
             text: "❌ Please provide a recipient mobile number for transfers.",
             style: { background: "#d32f2f" },
-            duration: 4000
+            duration: 4000,
           }).showToast();
           return;
         }
 
         try {
-          const res = await fetch(`/user-info/${recipient_mobile}`, { credentials: 'include' });
+          const res = await fetch(`/user-info/${recipient_mobile}`, {
+            credentials: "include",
+          });
           const userInfo = await res.json();
 
           if (!res.ok || !userInfo?.name) {
             Toastify({
               text: "❌ Recipient not found.",
               style: { background: "#d32f2f" },
-              duration: 4000
+              duration: 4000,
             }).showToast();
             return;
           }
@@ -357,32 +379,34 @@ document.addEventListener('DOMContentLoaded', function () {
           Toastify({
             text: "❌ Failed to verify recipient info.",
             style: { background: "#d32f2f" },
-            duration: 4000
+            duration: 4000,
           }).showToast();
           return;
         }
       }
 
       // ✅ Handle Withdrawal
-      if (transactionType === 'withdrawal') {
+      if (transactionType === "withdrawal") {
         if (!agent_mobile) {
           Toastify({
             text: "❌ Please provide the agent's mobile number for withdrawals.",
             style: { background: "#d32f2f" },
-            duration: 4000
+            duration: 4000,
           }).showToast();
           return;
         }
 
         try {
-          const res = await fetch(`/user-info/${agent_mobile}`, { credentials: 'include' });
+          const res = await fetch(`/user-info/${agent_mobile}`, {
+            credentials: "include",
+          });
           const agentInfo = await res.json();
 
           if (!res.ok || !agentInfo?.name) {
             Toastify({
               text: "❌ Agent not found.",
               style: { background: "#d32f2f" },
-              duration: 4000
+              duration: 4000,
             }).showToast();
             return;
           }
@@ -397,27 +421,28 @@ document.addEventListener('DOMContentLoaded', function () {
           Toastify({
             text: "❌ Failed to verify agent info.",
             style: { background: "#d32f2f" },
-            duration: 4000
+            duration: 4000,
           }).showToast();
           return;
         }
       }
 
       // ✅ Submit transaction
-      fetch('/api/transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(payload)
+      fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
       })
-        .then(async response => {
+        .then(async (response) => {
           const result = await response.json();
-          if (!response.ok) throw new Error(result.error || "Transaction failed");
+          if (!response.ok)
+            throw new Error(result.error || "Transaction failed");
 
           Toastify({
             text: result.message || "✅ Transaction successful.",
             style: { background: "#27ae60" },
-            duration: 4000
+            duration: 4000,
           }).showToast();
 
           transactionForm.reset();
@@ -427,11 +452,11 @@ document.addEventListener('DOMContentLoaded', function () {
           fetchTransactions();
           fetchWalletInfo();
         })
-        .catch(err => {
+        .catch((err) => {
           Toastify({
             text: "❌ Transaction error: " + err.message,
             style: { background: "#d32f2f" },
-            duration: 4000
+            duration: 4000,
           }).showToast();
           console.error("Transaction error:", err);
         });
@@ -442,7 +467,7 @@ document.addEventListener('DOMContentLoaded', function () {
 // ============================
 // Initial Data Load
 // ============================
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener("DOMContentLoaded", function () {
   fetchWalletInfo();
   fetchTransactions();
 });
@@ -450,26 +475,24 @@ document.addEventListener('DOMContentLoaded', function() {
 // / ============================
 // Apply Table Styling for Professional Look
 // ============================
-document.addEventListener('DOMContentLoaded', function() {
-  const table = document.getElementById('transaction-history');
+document.addEventListener("DOMContentLoaded", function () {
+  const table = document.getElementById("transaction-history");
   if (table) {
-    table.classList.add('styled-table');
+    table.classList.add("styled-table");
   }
 });
 
 // ---------------------------
 // Bind Logout Event
 // ---------------------------
-document.addEventListener('DOMContentLoaded', function(){
-  const logoutLink = document.getElementById('logout-link');
+document.addEventListener("DOMContentLoaded", function () {
+  const logoutLink = document.getElementById("logout-link");
   if (logoutLink) {
-    logoutLink.addEventListener('click', function(e){
+    logoutLink.addEventListener("click", function (e) {
       e.preventDefault();
-      fetch("/api/auth/logout", { method: "POST" })
-        .then(() => {
-          window.location.href = "/api/auth/login_form";
-        });
+      fetch("/api/auth/logout", { method: "POST" }).then(() => {
+        window.location.href = "/api/auth/login_form";
+      });
     });
   }
 });
-

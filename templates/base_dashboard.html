@@ -1,62 +1,59 @@
-{% extends "base.html" %}
-{% block title %}Dashboard - ZTN Simulation{% endblock %}
+{% extends "base.html" %} {% block title %}Dashboard - ZTN Simulation{% endblock
+%} {% block head %} {{ super() }}
+<!-- Dashboard-specific CSS -->
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='css/dashboard.css') }}"
+/>
+{% endblock %} {% block body %}
+<div class="dashboard-layout">
+  <!-- Sidebar Navigation -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2 class="app-brand">ZTN_SIM</h2>
+    </div>
+    <nav>
+      {% block sidebar_menu %}
+      <ul class="sidebar-menu">
+        <li><a href="#" id="show-overview-link">Overview</a></li>
+        <li><a href="#" id="show-transactions-link">Transactions</a></li>
+        <li><a href="#" id="show-profile-link">Profile</a></li>
+        <li><a href="#" id="show-settings-link">Settings</a></li>
+        <li><a href="#" id="logout-link">Logout</a></li>
+      </ul>
+      {% endblock %}
+    </nav>
+  </aside>
 
-{% block head %}
-  {{ super() }}
-  <!-- Dashboard-specific CSS -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
-{% endblock %}
-
-{% block body %}
-  <div class="dashboard-layout">
-    <!-- Sidebar Navigation -->
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <h2 class="app-brand">ZTN_SIM</h2>
+  <!-- Main Content Area -->
+  <main class="main-content">
+    <header class="top-bar">
+      <div class="top-bar-left">
+        <h1 id="welcome-title">Welcome, {{ user.first_name }}!</h1>
       </div>
-      <nav>
-        {% block sidebar_menu %}
-        <ul class="sidebar-menu">
-          <li><a href="#" id="show-overview-link">Overview</a></li>
-          <li><a href="#" id="show-transactions-link">Transactions</a></li>
-          <li><a href="#" id="show-profile-link">Profile</a></li>
-          <li><a href="#" id="show-settings-link">Settings</a></li>
-          <li><a href="#" id="logout-link">Logout</a></li>
-        </ul>
-        {% endblock %}
-      </nav>
-    </aside>
+      <div class="top-bar-right">
+        <div class="top-bar-icon" title="Notifications">
+          <i class="fas fa-bell"></i>
+        </div>
+        <div class="top-bar-icon" title="Language">
+          <i class="fas fa-globe"></i>
+        </div>
+        <div class="top-bar-icon" title="Help">
+          <i class="fas fa-question-circle"></i>
+        </div>
+        <a href="#" id="topbar-profile-link" title="Your Profile">
+          <div class="top-bar-avatar">
+            <i class="fas fa-user-circle"></i>
+          </div>
+        </a>
+      </div>
+    </header>
 
-    <!-- Main Content Area -->
-    <main class="main-content">
-      <header class="top-bar">
-        <div class="top-bar-left">
-          <h1 id="welcome-title">Welcome, {{ user.first_name }}!</h1>
-        </div>
-        <div class="top-bar-right">
-          <div class="top-bar-icon" title="Notifications">
-            <i class="fas fa-bell"></i>
-          </div>
-          <div class="top-bar-icon" title="Language">
-            <i class="fas fa-globe"></i>
-          </div>
-          <div class="top-bar-icon" title="Help">
-            <i class="fas fa-question-circle"></i>
-          </div>
-          <a href="#" id="topbar-profile-link" title="Your Profile">
-            <div class="top-bar-avatar">
-              <i class="fas fa-user-circle"></i>
-            </div>
-          </a>
-        </div>
-      </header>
-      
-      {% block dashboard_content %}{% endblock %}
-      
-      <footer class="footer">
-        <p>© 2025 ZTN Simulation. All rights reserved.</p>
-      </footer>
-    </main>
-  </div>
-  {% block scripts %}{% endblock %}
-{% endblock %}
+    {% block dashboard_content %}{% endblock %}
+
+    <footer class="footer">
+      <p>© 2025 ZTN Simulation. All rights reserved.</p>
+    </footer>
+  </main>
+</div>
+{% block scripts %}{% endblock %} {% endblock %}

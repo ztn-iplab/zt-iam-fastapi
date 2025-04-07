@@ -27,7 +27,8 @@ class User(db.Model):
 
     # Account Status
     is_active = db.Column(db.Boolean, default=True)      
-    deletion_requested = db.Column(db.Boolean, default=False)  
+    deletion_requested = db.Column(db.Boolean, default=False)
+    locked_until = db.Column(db.DateTime, nullable=True)  
     
     # Relationships
     user_access_control = db.relationship('UserAccessControl', backref='user', uselist=False)
@@ -137,6 +138,8 @@ class RealTimeLog(db.Model):
     device_info = db.Column(db.String(200))
     location = db.Column(db.String(100))
     risk_alert = db.Column(db.Boolean, default=False)  # Flagged risky actions
+     # ✅ This enables log.user to work
+    user = db.relationship("User", backref="real_time_logs")
 
 # 📌 One time passowrd for the security purpose
 class OTPCode(db.Model):

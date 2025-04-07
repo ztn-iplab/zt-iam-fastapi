@@ -3,7 +3,7 @@
 -------------------------------------------------------------------- */
 
 /* Import a clean, modern font */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap");
 
 /* Reset defaults */
 * {
@@ -30,7 +30,7 @@
 /* Base body styling - 
    DO NOT center content here, so that the dashboard layout can work properly. */
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: "Inter", sans-serif;
   background: var(--bg-dark-gradient);
   color: #ffffff;
   min-height: 100vh;
@@ -64,7 +64,6 @@ a {
   min-height: 100vh;
   background: var(--bg-dark-gradient);
 }
-
 
 /* Auth container card for login/register forms */
 .auth-container {
@@ -175,8 +174,6 @@ a {
   color: var(--brand-green);
 }
 
-
-
 /* --------------------------------------------------------------------
    3. HOME / LANDING PAGE (Optional)
 -------------------------------------------------------------------- */
@@ -215,7 +212,7 @@ a {
 
 /* Outer container for the dashboard pages */
 .dashboard-layout {
-  display: flex;          /* side-by-side: sidebar + main content */
+  display: flex; /* side-by-side: sidebar + main content */
   min-height: 100vh;
 }
 
@@ -263,7 +260,7 @@ a {
 
 /* Main content on the right */
 .main-content {
-  flex: 1;                /* take remaining space */
+  flex: 1; /* take remaining space */
   display: flex;
   flex-direction: column; /* top bar at top, footer at bottom, widgets in between */
   background: var(--bg-dark-gradient);
@@ -316,7 +313,6 @@ a {
   background-color: var(--card-bg);
 }
 
-
 /* Titles for wallet/transactions widgets */
 .transaction-form {
   display: flex;
@@ -349,7 +345,8 @@ a {
   overflow: hidden;
 }
 
-.transaction-table th, .transaction-table td {
+.transaction-table th,
+.transaction-table td {
   padding: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
@@ -377,7 +374,8 @@ a {
   overflow: hidden;
 }
 
-.sim-table th, .sim-table td {
+.sim-table th,
+.sim-table td {
   padding: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
@@ -390,7 +388,6 @@ a {
 .sim-table tbody tr:hover {
   background-color: rgba(255, 255, 255, 0.1);
 }
-
 
 /* --------------------------------------------------------------------
    5. FOOTER
@@ -434,7 +431,6 @@ a {
   background-color: var(--brand-blue-dark);
 }
 
-
 /* ======================= */
 /* Admin Panel styles 
 =======================*/
@@ -457,13 +453,13 @@ a {
 }
 
 /* Ensure general table column spacing and alignment */
-.admin-table th, .admin-table td {
+.admin-table th,
+.admin-table td {
   padding: 12px;
   text-align: left;
   white-space: nowrap;
   font-size: 14px;
 }
-
 
 td.action-buttons {
   overflow: visible !important; //Very important line, for the admin table Actions
@@ -485,7 +481,8 @@ td.action-buttons {
   overflow: hidden;
 }
 
-.admin-table th, .adminim-table td {
+.admin-table th,
+.adminim-table td {
   padding: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
@@ -494,11 +491,17 @@ td.action-buttons {
   background-color: var(--brand-blue);
   color: #ffffff;
 }
-/* Add light borders for better visibility
-.admin-table th, .admin-table td {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-} */
 
+.locked-user-row {
+  background-color: #ffe6e6 !important;
+  color: #a80000;
+  font-weight: bold;
+}
+
+.badge + small {
+  display: block;
+  font-size: 0.75rem;
+}
 
 /* ======================= */
 /* Global Search Bar Styles */
@@ -569,34 +572,32 @@ td.action-buttons {
 
 /* Ensure table cells do not wrap */
 #admin-user-list td {
-    white-space: nowrap;  /* Prevents text wrapping */
-    overflow: hidden;
-    text-overflow: ellipsis; /* Adds '...' if text is too long */
+  white-space: nowrap; /* Prevents text wrapping */
+  overflow: hidden;
+  text-overflow: ellipsis; /* Adds '...' if text is too long */
 }
 
-
-
 .action-buttons div {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px; /* Adds spacing between buttons */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px; /* Adds spacing between buttons */
 }
 
 /* Ensure buttons do not shrink */
 .action-buttons button {
-    flex-grow: 1;
-    min-width: 100px; /* Adjust button width */
-    display: flex; /*This is making the .dropdown visible*/
-    flex-wrap: nowrap;
-    gap: 3px;
-    justify-content: center;
+  flex-grow: 1;
+  min-width: 100px; /* Adjust button width */
+  display: flex; /*This is making the .dropdown visible*/
+  flex-wrap: nowrap;
+  gap: 3px;
+  justify-content: center;
 }
 
 /* Specifically for admin buttons */
 /* Force all buttons to stay in a single row */
 .action-buttons {
   display: flex;
-  flex-wrap: nowrap;  /* ✅ Prevents buttons from going to the next line */
+  flex-wrap: nowrap; /* ✅ Prevents buttons from going to the next line */
   gap: 3px; /* Reduced gap for better spacing */
   justify-content: center;
 }
@@ -627,7 +628,6 @@ td.action-buttons {
   display: inline-block;
 }
 //* ✅ Style the dropdown button */
-
 
 /* ✅ Ensure Actions button has a slightly darker green on hover */
 .action-buttons .dropdown-toggle:hover {
@@ -767,7 +767,6 @@ td.action-buttons {
   color: #95a5a6; /* Gray */
 }
 
-
 /* ✅ Fix SIM Details Modal - Remove Extra Space */
 /* ✅ Fix SIM Details Modal - Now with Dark Blue */
 #simDetailsModal {
@@ -779,7 +778,7 @@ td.action-buttons {
   transform: translate(-50%, -50%);
   width: 400px;
   max-width: 90%;
-  background-color:rgb(22, 59, 119); /* ✅ Dark Blue */
+  background-color: rgb(22, 59, 119); /* ✅ Dark Blue */
   border-radius: 12px;
   box-shadow: var(--card-shadow);
   overflow: hidden;
@@ -794,12 +793,16 @@ td.action-buttons {
   max-height: 90vh;
   overflow-y: auto;
   height: auto !important;
-  background-color:rgb(22, 59, 119) !important; /* ✅ Ensure content is also dark blue */
+  background-color: rgb(
+    22,
+    59,
+    119
+  ) !important; /* ✅ Ensure content is also dark blue */
 }
 
 /* ✅ Ensure the modal header also follows the new color */
 #simDetailsModal .modal-header {
-  background:rgb(22, 59, 119) !important; /* ✅ Dark Blue */
+  background: rgb(22, 59, 119) !important; /* ✅ Dark Blue */
   color: white;
   font-size: 16px;
   border-top-left-radius: 12px;
@@ -856,7 +859,7 @@ td.action-buttons {
   transform: translate(-50%, -50%);
   width: 400px;
   max-width: 90%;
-  background-color:rgb(22, 59, 119); /* ✅ Dark Blue */
+  background-color: rgb(22, 59, 119); /* ✅ Dark Blue */
   border-radius: 12px;
   box-shadow: var(--card-shadow);
   overflow: hidden;
@@ -871,12 +874,16 @@ td.action-buttons {
   max-height: 90vh;
   overflow-y: auto;
   height: auto !important;
-  background-color:rgb(22, 59, 119) !important; /* ✅ Ensure content is also dark blue */
+  background-color: rgb(
+    22,
+    59,
+    119
+  ) !important; /* ✅ Ensure content is also dark blue */
 }
 
 /* ✅ Ensure the modal header also follows the new color */
 #simDetailsModal .modal-header {
-  background:rgb(22, 59, 119) !important; /* ✅ Dark Blue */
+  background: rgb(22, 59, 119) !important; /* ✅ Dark Blue */
   color: white;
   font-size: 16px;
   border-top-left-radius: 12px;
@@ -924,12 +931,17 @@ td.action-buttons {
 
 /* Home page styles */
 
-    .navbar {
+.navbar {
   position: fixed;
   width: 100%;
   top: 0;
   left: 0;
-  background: rgba(20, 20, 40, 0.95); /* Darker background, slightly transparent */
+  background: rgba(
+    20,
+    20,
+    40,
+    0.95
+  ); /* Darker background, slightly transparent */
   z-index: 1000;
   display: flex;
   justify-content: center;
@@ -1005,211 +1017,214 @@ td.action-buttons {
 }
 
 /* Hero and other sections */
-    .hero {
-    position: relative;
-    width: 100%;
-    height: 100vh; /* Make it take the full viewport height */
-    background: url('/static/images/hero.png') no-repeat center center/cover;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    color: white;
-  }
+.hero {
+  position: relative;
+  width: 100%;
+  height: 100vh; /* Make it take the full viewport height */
+  background: url("/static/images/hero.png") no-repeat center center/cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: white;
+}
 
-  .hero-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5); /* Dark overlay for readability */
-  }
+.hero-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5); /* Dark overlay for readability */
+}
 
-  .hero-content {
-    position: relative;
-    z-index: 2;
-    max-width: 800px;
-    padding: 20px;
-  }
+.hero-content {
+  position: relative;
+  z-index: 2;
+  max-width: 800px;
+  padding: 20px;
+}
 
+.hero h1 {
+  font-size: 3rem;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.hero p {
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+}
+
+.hero .btn-primary {
+  padding: 12px 20px;
+  font-size: 1.2rem;
+  font-weight: bold;
+  border-radius: 8px;
+  background-color: var(--brand-green);
+  color: #fff;
+  text-decoration: none;
+  transition: background-color 0.3s ease;
+}
+
+.hero .btn-primary:hover {
+  background-color: var(--brand-green-dark);
+}
+
+@media (max-width: 768px) {
   .hero h1 {
-    font-size: 3rem;
-    font-weight: bold;
-    text-transform: uppercase;
+    font-size: 2.5rem;
   }
-
   .hero p {
-    font-size: 1.5rem;
-    margin-bottom: 20px;
-  }
-
-  .hero .btn-primary {
-    padding: 12px 20px;
     font-size: 1.2rem;
-    font-weight: bold;
-    border-radius: 8px;
-    background-color: var(--brand-green);
-    color: #fff;
-    text-decoration: none;
-    transition: background-color 0.3s ease;
   }
+  .hero .btn-primary {
+    font-size: 1rem;
+  }
+}
+.services,
+.auth-section,
+.about,
+.contact {
+  max-width: 900px;
+  margin: 40px auto;
+  padding: 30px;
+  background: var(--card-bg);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+}
+.service-cards {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+}
 
-  .hero .btn-primary:hover {
-    background-color: var(--brand-green-dark);
-  }
+.service-card {
+  flex: 1;
+  text-align: center;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.3s ease-in-out;
+}
 
-  @media (max-width: 768px) {
-    .hero h1 {
-      font-size: 2.5rem;
-    }
-    .hero p {
-      font-size: 1.2rem;
-    }
-    .hero .btn-primary {
-      font-size: 1rem;
-    }
-  }
-    .services, .auth-section, .about, .contact {
-      max-width: 900px;
-      margin: 40px auto;
-      padding: 30px;
-      background: var(--card-bg);
-      border-radius: 12px;
-      box-shadow: var(--card-shadow);
-    }
-    .service-cards {
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    gap: 20px;
-    flex-wrap: wrap;
-  }
+.service-card:hover {
+  transform: scale(1.05);
+}
+/* Contact Section Layout */
+.contact-container {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  align-items: flex-start;
+  flex-wrap: wrap; /* Ensures responsiveness */
+}
 
-  .service-card {
-    flex: 1;
-    text-align: center;
-    text-decoration: none;
-    color: inherit;
-    transition: transform 0.3s ease-in-out;
-  }
+/* Equal Size for Get in Touch and Quick Links */
+.contact-form-card,
+.quick-links-card {
+  flex: 1;
+  max-width: 400px; /* Ensures both cards are the same width */
+  padding: 20px;
+}
 
-  .service-card:hover {
-    transform: scale(1.05);
-  }
-     /* Contact Section Layout */
-  .contact-container {
-    display: flex;
-    gap: 20px;
-    justify-content: center;
-    align-items: flex-start;
-    flex-wrap: wrap; /* Ensures responsiveness */
-  }
-
-  /* Equal Size for Get in Touch and Quick Links */
-  .contact-form-card, .quick-links-card {
-    flex: 1;
-    max-width: 400px; /* Ensures both cards are the same width */
-    padding: 20px;
-  }
-
-  /* Quick Links Styling */
+/* Quick Links Styling */
 .quick-links {
-    list-style: none;
-    padding: 0;
+  list-style: none;
+  padding: 0;
 }
 
 .quick-links li {
-    margin-bottom: 8px;
+  margin-bottom: 8px;
 }
 
 .quick-links li a {
-    color: var(--brand-blue);
-    text-decoration: none;
-    transition: color 0.3s ease-in-out, text-decoration 0.3s ease-in-out;
+  color: var(--brand-blue);
+  text-decoration: none;
+  transition: color 0.3s ease-in-out, text-decoration 0.3s ease-in-out;
 }
 
 .quick-links li a:hover {
-    color: var(--brand-green);
-    text-decoration: underline;
+  color: var(--brand-green);
+  text-decoration: underline;
 }
 
+/* Contact Info Styling */
+.contact-info p {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
 
-  /* Contact Info Styling */
-  .contact-info p {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 10px 0;
-  }
+.contact-info i {
+  color: var(--brand-green);
+  font-size: 16px;
+}
 
-  .contact-info i {
-    color: var(--brand-green);
-    font-size: 16px;
-  }
+/* Contact Form with Inline Labels */
+.form-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
 
-  /* Contact Form with Inline Labels */
-  .form-group {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-  }
+.form-group label {
+  flex: 1;
+  font-size: 14px;
+  font-weight: bold;
+  color: #d1d1e0;
+  text-align: right;
+}
 
-  .form-group label {
-    flex: 1;
-    font-size: 14px;
-    font-weight: bold;
-    color: #d1d1e0;
-    text-align: right;
-  }
+.form-group .input-field {
+  flex: 2;
+  padding: 10px;
+  font-size: 14px;
+  border-radius: 6px;
+  background-color: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
 
-  .form-group .input-field {
-    flex: 2;
-    padding: 10px;
-    font-size: 14px;
-    border-radius: 6px;
-    background-color: var(--input-bg);
-    border: 1px solid var(--input-border);
-    color: #ffffff;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  }
+.form-group .input-field:focus {
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 1px var(--input-focus);
+}
 
-  .form-group .input-field:focus {
-    border-color: var(--input-focus);
-    box-shadow: 0 0 0 1px var(--input-focus);
-  }
+/* Consent Checkbox */
+.form-consent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
-  /* Consent Checkbox */
-  .form-consent {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
+.form-consent input {
+  transform: scale(1.2);
+}
 
-  .form-consent input {
-    transform: scale(1.2);
-  }
+/* Submit Button Full Width */
+.full-width-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+  background-color: var(--brand-green);
+  color: #fff;
+  transition: background-color 0.3s ease;
+  text-align: center;
+}
 
-  /* Submit Button Full Width */
-  .full-width-btn {
-    width: 100%;
-    padding: 12px;
-    font-size: 15px;
-    font-weight: bold;
-    border-radius: 8px;
-    cursor: pointer;
-    background-color: var(--brand-green);
-    color: #fff;
-    transition: background-color 0.3s ease;
-    text-align: center;
-  }
+.full-width-btn:hover {
+  background-color: var(--brand-green-dark);
+}
 
-  .full-width-btn:hover {
-    background-color: var(--brand-green-dark);
-  }
-
-    /* Enhance Section Titles */
+/* Enhance Section Titles */
 h2 {
   color: var(--brand-blue);
   font-size: 1.8rem;
@@ -1244,53 +1259,51 @@ h2 {
 
 /* About section styles */
 .about-container {
-    display: flex;
-    gap: 20px;
-    justify-content: center;
-    align-items: flex-start; /* Make sure items align at the top */
-    flex-wrap: wrap;
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  align-items: flex-start; /* Make sure items align at the top */
+  flex-wrap: wrap;
 }
 
 .about-text {
-    flex: 1;
-    min-width: 300px;
-    padding: 20px;
-    text-align: left !important; /* Force left alignment */
-    display: block; /* Ensure it behaves as a normal block */
+  flex: 1;
+  min-width: 300px;
+  padding: 20px;
+  text-align: left !important; /* Force left alignment */
+  display: block; /* Ensure it behaves as a normal block */
 }
 
 .about-image {
-    flex: 1;
-    min-width: 300px;
-    text-align: center;
-    padding: 20px;
+  flex: 1;
+  min-width: 300px;
+  text-align: center;
+  padding: 20px;
 }
 
 .about-image img {
-    width: 100%;
-    height: auto;
-    border-radius: 12px;
-    box-shadow: var(--card-shadow);
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
 }
 
 .btn-left {
-    display: inline-block;
-    margin-top: 15px;
-    padding: 12px 20px;
-    font-size: 1rem;
-    font-weight: bold;
-    border-radius: 6px;
-    background-color: var(--brand-green);
-    color: #fff;
-    text-decoration: none;
-    transition: background-color 0.3s ease;
-    text-align: center;
-    width: fit-content; /* Prevents full width */
-    margin-left: 0 !important; /* Forces it to stay left */
+  display: inline-block;
+  margin-top: 15px;
+  padding: 12px 20px;
+  font-size: 1rem;
+  font-weight: bold;
+  border-radius: 6px;
+  background-color: var(--brand-green);
+  color: #fff;
+  text-decoration: none;
+  transition: background-color 0.3s ease;
+  text-align: center;
+  width: fit-content; /* Prevents full width */
+  margin-left: 0 !important; /* Forces it to stay left */
 }
 
 .btn-left:hover {
-    background-color: var(--brand-green-dark);
+  background-color: var(--brand-green-dark);
 }
-  
-

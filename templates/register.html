@@ -1,10 +1,5 @@
-{% extends "base.html" %}
-
-{% block title %}Register{% endblock %}
-
-{% block body_class %}auth-page{% endblock %}
-
-{% block body %}
+{% extends "base.html" %} {% block title %}Register{% endblock %} {% block
+body_class %}auth-page{% endblock %} {% block body %}
 
 <div class="home-link-container">
   <a href="{{ url_for('index') }}" class="home-link">&larr; Back to Home</a>
@@ -13,39 +8,38 @@
 <div class="auth-container">
   <h1>Register</h1>
   <form id="register-form" class="auth-form">
-    
     <!-- ICCID Field (Instead of Mobile Number) -->
-    <input 
-      type="text" 
-      id="iccid" 
-      placeholder="Enter ICCID from Your SIM Card" 
+    <input
+      type="text"
+      id="iccid"
+      placeholder="Enter ICCID from Your SIM Card"
       class="input-field"
       required
     />
 
     <!-- Email Address -->
-    <input 
-      type="email" 
-      id="email" 
-      placeholder="Email Address" 
+    <input
+      type="email"
+      id="email"
+      placeholder="Email Address"
       class="input-field"
       required
     />
 
     <!-- First Name (required) -->
-    <input 
-      type="text" 
-      id="first-name" 
-      placeholder="First Name" 
+    <input
+      type="text"
+      id="first-name"
+      placeholder="First Name"
       class="input-field"
       required
     />
 
     <!-- Last Name (optional) -->
-    <input 
-      type="text" 
-      id="last-name" 
-      placeholder="Last Name" 
+    <input
+      type="text"
+      id="last-name"
+      placeholder="Last Name"
       class="input-field"
     />
 
@@ -60,10 +54,10 @@
     </select>
 
     <!-- Password -->
-    <input 
-      type="password" 
-      id="password" 
-      placeholder="Password" 
+    <input
+      type="password"
+      id="password"
+      placeholder="Password"
       class="input-field"
       required
     />
@@ -72,7 +66,7 @@
   </form>
 
   <div id="register-error" class="error-message"></div>
-  
+
   <div class="auth-note">
     Already have an account?
     <a href="{{ url_for('auth.login_form') }}" class="auth-link">Login here</a>

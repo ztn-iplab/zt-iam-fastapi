@@ -8,10 +8,11 @@ from flask_jwt_extended import (
     verify_jwt_in_request,
 )
 from flask_jwt_extended.exceptions import NoAuthorizationError
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.security import check_password_hash, generate_password_hash
-from models.models import User, Wallet, db, UserRole, UserAccessControl,SIMCard, OTPCode
+from models.models import User, Wallet, db, UserRole, UserAccessControl,SIMCard, OTPCode, RealTimeLog, UserAuthLog
 from utils.otp import generate_otp_code  # Import your OTP logic
+from utils.location import get_ip_location
 import pyotp
 import qrcode
 import io
@@ -35,58 +36,121 @@ def login_form():
 
 @auth_bp.route('/login', methods=['POST'])
 def login_route():
+
+    def count_recent_failures(user_id, method="password", window_minutes=5):
+        threshold = datetime.utcnow() - timedelta(minutes=window_minutes)
+        return UserAuthLog.query.filter_by(
+            user_id=user_id,
+            auth_method=method,
+            auth_status="failed"
+        ).filter(UserAuthLog.auth_timestamp >= threshold).count()
+
     data = request.get_json()
     if not data or 'identifier' not in data or 'password' not in data:
-        return jsonify({"error": "Mobile number or email and password are required"}), 400
+        return jsonify({"error": "Mobile number/email and password required"}), 400
 
     login_input = data.get('identifier')
     password = data.get('password')
 
-    user = None
-    sim_card = None
+    ip_address = request.remote_addr
+    device_info = request.user_agent.string
+    location = get_ip_location(ip_address)
 
-    # Try email first
     user = User.query.filter_by(email=login_input).first()
 
-    if user:
-        sim_card = SIMCard.query.filter_by(user_id=user.id, status='active').first()
-    else:
-        # Try mobile number
-        sim_card = SIMCard.query.filter_by(mobile_number=login_input, status='active').first()
-        if sim_card:
-            user = sim_card.user
+    if not user:
+        sim = SIMCard.query.filter_by(mobile_number=login_input, status='active').first()
+        if sim:
+            user = sim.user
 
     if not user:
+        db.session.add(RealTimeLog(
+            user_id=None,
+            action=f"❌ Failed login: Unknown identifier {login_input}",
+            ip_address=ip_address,
+            device_info=device_info,
+            location=location,
+            risk_alert=True
+        ))
+        db.session.commit()
         return jsonify({"error": "User not found or SIM inactive"}), 404
 
+    if user.locked_until and user.locked_until > datetime.utcnow():
+        return jsonify({"error": f"Account locked. Try again after {user.locked_until}"}), 429
+
+    recent_fails = count_recent_failures(user.id)
+
     if not user.check_password(password):
+        failed_count = recent_fails + 1
+
+        db.session.add(UserAuthLog(
+            user_id=user.id,
+            auth_method="password",
+            auth_status="failed",
+            ip_address=ip_address,
+            location=location,
+            device_info=device_info,
+            failed_attempts=failed_count
+        ))
+
+        db.session.add(RealTimeLog(
+            user_id=user.id,
+            action=f"❌ Failed login: Invalid password ({failed_count})",
+            ip_address=ip_address,
+            device_info=device_info,
+            location=location,
+            risk_alert=(failed_count >= 3)
+        ))
+
+        if failed_count >= 5:
+            user.locked_until = datetime.utcnow() + timedelta(minutes=15)
+            db.session.add(RealTimeLog(
+                user_id=user.id,
+                action="🚨 Account temporarily locked due to failed login attempts",
+                ip_address=ip_address,
+                device_info=device_info,
+                location=location,
+                risk_alert=True
+            ))
+
+        db.session.commit()
         return jsonify({"error": "Invalid credentials"}), 401
 
-    # ✅ Create and set JWT cookie
+    # ✅ Successfull Login
     access_token = create_access_token(identity=str(user.id))
-    set_access_cookies(response := jsonify({}), access_token)
-
-    print("✅ JWT being created for user:", user.id)
-    print("🔑 Access token:", access_token)
-
-    # ✅ Determine TOTP logic
-    require_totp_setup = user.otp_secret is None
-    require_totp_reset = (
-        user.otp_secret is not None and user.otp_email_label != user.email
-    )
-    require_totp = user.otp_secret is not None
-
-    # ✅ Build full login response
     response = jsonify({
         "message": "Login successful",
         "user_id": user.id,
-        "require_totp": require_totp,
-        "require_totp_setup": require_totp_setup,
-        "require_totp_reset": require_totp_reset
+        "require_totp": bool(user.otp_secret),
+        "require_totp_setup": user.otp_secret is None,
+        "require_totp_reset": user.otp_secret and user.otp_email_label != user.email
     })
 
+    db.session.add(UserAuthLog(
+        user_id=user.id,
+        auth_method="password",
+        auth_status="success",
+        ip_address=ip_address,
+        location=location,
+        device_info=device_info,
+        failed_attempts=0
+    ))
+
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        action="✅ Successful login",
+        ip_address=ip_address,
+        device_info=device_info,
+        location=location,
+        risk_alert=False
+    ))
+
+    db.session.commit()
     set_access_cookies(response, access_token)
     return response, 200
+
+
+
 
 # ✅ Registering new user accounts
 @auth_bp.route('/register', methods=['POST'])
@@ -274,21 +338,15 @@ def setup_totp():
 
 # ✅ Verifying the OTP
 @auth_bp.route('/verify-totp-login', methods=['POST'])
-def verify_totp_login():
-    
+def verify_totp_login():   
     try:
-        print("🍪 Cookies seen:", dict(request.cookies))  # Log cookies
-        verify_jwt_in_request(locations=["cookies"])  # 🔐 Force it to check cookies
+        verify_jwt_in_request(locations=["cookies"])
         user_id = get_jwt_identity()
-        print(f"✅ JWT verified for user ID: {user_id}")
     except NoAuthorizationError as e:
-        print("❌ JWT verification failed:", e)
         return jsonify({"error": "Invalid or missing token"}), 401
 
-    # Continue with the TOTP logic
     data = request.get_json()
     totp_code = data.get('totp')
-
     if not totp_code:
         return jsonify({"error": "TOTP code is required"}), 400
 
@@ -296,11 +354,82 @@ def verify_totp_login():
     if not user or not user.otp_secret:
         return jsonify({"error": "Invalid user or TOTP not configured"}), 403
 
+    ip_address = request.remote_addr
+    device_info = request.user_agent.string
+    location = get_ip_location(ip_address)
+
+    # Lockout check
+    if user.locked_until and user.locked_until > datetime.utcnow():
+        return jsonify({"error": f"TOTP locked. Try again after {user.locked_until}"}), 429
+
+    # Count recent failures
+    threshold_time = datetime.utcnow() - timedelta(minutes=5)
+    recent_otp_fails = UserAuthLog.query.filter_by(
+        user_id=user.id,
+        auth_method="totp",
+        auth_status="failed"
+    ).filter(UserAuthLog.auth_timestamp >= threshold_time).count()
+
     from utils.totp import verify_totp_code
     if not verify_totp_code(user.otp_secret, totp_code):
+        fail_count = recent_otp_fails + 1
+
+        db.session.add(UserAuthLog(
+            user_id=user.id,
+            auth_method="totp",
+            auth_status="failed",
+            ip_address=ip_address,
+            location=location,
+            device_info=device_info,
+            failed_attempts=fail_count
+        ))
+
+        db.session.add(RealTimeLog(
+            user_id=user.id,
+            action=f"❌ Failed TOTP verification ({fail_count})",
+            ip_address=ip_address,
+            device_info=device_info,
+            location=location,
+            risk_alert=True
+        ))
+
+        if fail_count >= 5:
+            user.locked_until = datetime.utcnow() + timedelta(minutes=15)
+            db.session.add(RealTimeLog(
+                user_id=user.id,
+                action="🚨 TOTP temporarily locked after multiple failed attempts",
+                ip_address=ip_address,
+                device_info=device_info,
+                location=location,
+                risk_alert=True
+            ))
+
+        db.session.commit()
         return jsonify({"error": "Invalid or expired TOTP code"}), 401
 
-    # 🎯 Fetch role info for redirect
+    # ✅ Successful totp verification
+    db.session.add(UserAuthLog(
+        user_id=user.id,
+        auth_method="totp",
+        auth_status="success",
+        ip_address=ip_address,
+        location=location,
+        device_info=device_info,
+        failed_attempts=0
+    ))
+
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        action="✅ TOTP verified successfully",
+        ip_address=ip_address,
+        device_info=device_info,
+        location=location,
+        risk_alert=False
+    ))
+
+    db.session.commit()
+
+    # Redirect role-based
     access = UserAccessControl.query.filter_by(user_id=user.id).first()
     role = db.session.get(UserRole, access.role_id).role_name.lower() if access else "user"
 
@@ -315,6 +444,8 @@ def verify_totp_login():
         "dashboard_url": urls.get(role, url_for("user.user_dashboard", _external=True))
     })
     return response, 200
+
+
 
 # Whoami 
 @auth_bp.route('/whoami', methods=['GET'])

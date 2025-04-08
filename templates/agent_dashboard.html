@@ -212,6 +212,47 @@
     </div>
   </section>
 
+  <!-- 🔄 SIM Swap Modal -->
+<div class="modal fade" id="swapSimModal" tabindex="-1" aria-labelledby="swapSimModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form id="swap-sim-form">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">🔄 Swap SIM</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+          <input type="hidden" id="old-iccid" />
+
+          <div class="mb-3">
+            <label for="swap-new-iccid" class="form-label">Select New ICCID</label>
+            <select id="swap-new-iccid" class="form-select" required>
+              <option value="">Choose ICCID...</option>
+              <!-- Options will be populated dynamically -->
+            </select>
+          </div>
+          
+
+          <div class="mb-3">
+            <label for="swap-network" class="form-label">Network Provider</label>
+            <select id="swap-network" class="form-select" required>
+              <option value="">Select provider</option>
+              <option value="MTN">MTN</option>
+              <option value="Airtel">Airtel</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-success">Confirm Swap</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
   <!-- ✅ SIM Details Modal -->
   <div id="simDetailsModal" class="modal">
     <div class="modal-content">

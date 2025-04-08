@@ -2,6 +2,7 @@
 %} {% block sidebar_menu %}
 <ul class="sidebar-menu">
   <li><a href="#" id="show-user-management">User Management</a></li>
+  <li><a href="#" id="show-all-transactions">All Transactions</a></li>
   <li><a href="#" id="show-flagged-transactions">Flagged Transactions</a></li>
   <li><a href="#" id="show-real-time-logs">Real-Time Logs</a></li>
   <li><a href="#" id="show-user-auth-logs">User Auth Logs</a></li>
@@ -115,6 +116,26 @@
         <tbody></tbody>
       </table>
     </section>
+
+    <!-- All Transactions Section -->
+    <section id="all-transactions-section" class="admin-section" style="display:none;">
+      <h3>All Transactions</h3>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>User</th>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Timestamp</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="all-transactions-body"></tbody>
+      </table>
+    </section>
+
 
     <!-- Admin View User Modal -->
     <div

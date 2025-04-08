@@ -29,6 +29,7 @@ document.addEventListener("DOMContentLoaded", function () {
     "show-real-time-logs": "real-time-logs",
     "show-user-auth-logs": "user-auth-logs",
     "show-fund-agent": "fund-agent-section",
+    "show-all-transactions": "all-transactions-section",
   };
 
   Object.entries(sectionMap).forEach(([menuId, sectionId]) => {
@@ -179,6 +180,91 @@ async function getLocation() {
     );
   });
 }
+
+// ---------------------------
+// Funcction to load all transactions
+// ---------------------------
+// 
+function loadAllTransactions() {
+  fetch("/admin/all-transactions", {
+    method: "GET",
+    credentials: "include"
+  })
+    .then(res => res.json())
+    .then((data) => {
+      const tbody = document.getElementById("all-transactions-body");
+      tbody.innerHTML = "";
+
+      if (!data.transactions.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center">No transactions found.</td></tr>`;
+        return;
+      }
+
+      data.transactions.forEach(tx => {
+        const canReverse = tx.transaction_type === "transfer" && tx.status === "completed";
+
+        const reverseBtn = canReverse
+          ? `<button class="btn btn-sm btn-danger" onclick="reverseTransfer(${tx.id})">
+               <i class="fas fa-undo"></i> Reverse
+             </button>`
+          : "";
+
+        const row = `
+          <tr>
+            <td>${tx.id}</td>
+            <td>${tx.user_name}</td>
+            <td>${tx.transaction_type}</td>
+            <td>${tx.amount}</td>
+            <td>${tx.status}</td>
+            <td>${tx.timestamp}</td>
+            <td>${reverseBtn}</td>
+          </tr>
+        `;
+        tbody.innerHTML += row;
+      });
+    })
+    .catch(err => {
+      console.error("❌ Failed to load transactions:", err);
+      alert("Could not load all transactions.");
+    });
+}
+// Binding All transactions function
+document.getElementById("show-all-transactions").addEventListener("click", () => {
+  document.querySelectorAll(".admin-section").forEach(s => s.style.display = "none");
+  document.getElementById("all-transactions-section").style.display = "block";
+  loadAllTransactions();
+});
+
+// ---------------------------
+// Function to reverse transfers
+// ---------------------------
+function reverseTransfer(transactionId) {
+  if (!confirm("⚠️ Are you sure you want to reverse this transfer?")) return;
+
+  fetch(`/admin/reverse-transfer/${transactionId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include"
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.message) {
+        alert(data.message);
+        loadAllTransactions();
+        loadRealTimeLogs?.();
+      } else {
+        alert(data.error || "Failed to reverse transfer.");
+      }
+    })
+    .catch(err => {
+      console.error("❌ Error reversing transfer:", err);
+      alert("❌ Something went wrong while reversing the transfer.");
+    });
+}
+
+// ✅ Expose globally
+window.reverseTransfer = reverseTransfer;
+
 
 // ✅ Function to fetch and display users in Admin Dashboard
 function fetchUsersForAdmin() {

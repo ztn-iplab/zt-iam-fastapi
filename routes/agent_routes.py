@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.models import db, User, Wallet, Transaction, SIMCard, UserAccessControl, UserRole
+from models.models import db, User, Wallet, Transaction, SIMCard, UserAccessControl, UserRole, RealTimeLog
 from utils.decorators import role_required
 import random
 import json
@@ -129,7 +129,6 @@ def register_sim():
 
 
 # ✅ API: Fetch SIM Registration History
-# ✅ API: Fetch SIM Registration History
 @agent_bp.route("/agent/sim-registrations", methods=["GET"])
 @jwt_required()
 def fetch_sim_registration_history():
@@ -145,6 +144,8 @@ def fetch_sim_registration_history():
             status_class = "text-success"
         elif sim.status == "suspended":
             status_class = "text-danger"
+        elif sim.status == "swapped":
+            status_class = "text-warning"
         else:
             status_class = "text-muted"  # unregistered or unknown
 
@@ -181,7 +182,6 @@ def agent_dashboard():
 @jwt_required()
 @role_required(["agent"])
 def process_agent_transaction():
-    """Handle agent transactions: Deposits, Withdrawals, Transfers with validation and TOTP."""
     user_id = get_jwt_identity()
     data = request.get_json()
 
@@ -199,7 +199,6 @@ def process_agent_transaction():
     if not transaction_type:
         return jsonify({"error": "Transaction type is required"}), 400
 
-    # ✅ Fetch Agent & Wallet
     agent = db.session.get(User, user_id)
     if not agent:
         return jsonify({"error": "Agent not found"}), 404
@@ -208,7 +207,6 @@ def process_agent_transaction():
     if not agent_wallet:
         return jsonify({"error": "Agent wallet not found"}), 404
 
-    # ✅ TOTP Validation
     from utils.totp import verify_totp_code
     totp_code = data.get("totp")
     if not totp_code:
@@ -221,8 +219,8 @@ def process_agent_transaction():
         return jsonify({"error": "Invalid or expired TOTP code"}), 401
 
     transaction_metadata = {}
+    rt_log = None
 
-    # ✅ Handle Deposits
     if transaction_type == "deposit":
         if not recipient_mobile:
             return jsonify({"error": "Recipient mobile is required for deposits"}), 400
@@ -263,7 +261,15 @@ def process_agent_transaction():
             transaction_metadata=json.dumps(transaction_metadata)
         )
 
-    # ✅ Handle Transfers
+        rt_log = RealTimeLog(
+            user_id=agent.id,
+            action=f"🧾 Agent deposited {amount} RWF to {recipient.first_name} ({recipient_mobile})",
+            ip_address=request.remote_addr,
+            device_info=request.headers.get("User-Agent", "Unknown"),
+            location=data.get("location", "Unknown"),
+            risk_alert=False
+        )
+
     elif transaction_type == "transfer":
         if not recipient_mobile:
             return jsonify({"error": "Recipient mobile is required for transfers"}), 400
@@ -301,7 +307,15 @@ def process_agent_transaction():
             transaction_metadata=json.dumps(transaction_metadata)
         )
 
-    # ✅ Handle Withdrawals
+        rt_log = RealTimeLog(
+            user_id=agent.id,
+            action=f"🔁 Agent transferred {amount} RWF to {recipient.first_name} ({recipient_mobile})",
+            ip_address=request.remote_addr,
+            device_info=request.headers.get("User-Agent", "Unknown"),
+            location=data.get("location", "Unknown"),
+            risk_alert=False
+        )
+
     elif transaction_type == "withdrawal":
         if agent_wallet.balance < amount:
             return jsonify({"error": "Insufficient balance"}), 400
@@ -321,11 +335,22 @@ def process_agent_transaction():
             transaction_metadata=json.dumps(transaction_metadata)
         )
 
+        rt_log = RealTimeLog(
+            user_id=agent.id,
+            action=f"💸 Agent withdrew {amount} RWF from own float",
+            ip_address=request.remote_addr,
+            device_info=request.headers.get("User-Agent", "Unknown"),
+            location=data.get("location", "Unknown"),
+            risk_alert=False
+        )
+
     else:
         return jsonify({"error": "Invalid transaction type"}), 400
 
-    # ✅ Commit and respond
+    # ✅ Commit Transaction and Real-Time Log
     db.session.add(new_transaction)
+    if rt_log:
+        db.session.add(rt_log)
     db.session.commit()
 
     return jsonify({
@@ -345,10 +370,23 @@ def process_agent_transaction():
 def get_agent_transactions():
     agent_id = int(get_jwt_identity())
 
-    # ✅ Include agent's own transactions AND user withdrawals needing their approval
+    # ✅ Get all SIMs (active + swapped) for historical tracking
+    agent_sims = SIMCard.query.filter(
+        SIMCard.user_id == agent_id,
+        SIMCard.status.in_(["active", "swapped"])
+    ).all()
+    agent_mobiles = [sim.mobile_number for sim in agent_sims if sim.mobile_number]
+
+    # ✅ Query transactions agent is involved in
     transactions = Transaction.query.filter(
-        (Transaction.user_id == agent_id) |
-        (Transaction.transaction_metadata.contains(f'"assigned_agent_id": {agent_id}'))
+        db.or_(
+            Transaction.user_id == agent_id,
+            Transaction.transaction_metadata.contains(f'"assigned_agent_id": {agent_id}'),
+            *[
+                Transaction.transaction_metadata.contains(f'"deposited_by_mobile": "{mobile}"')
+                for mobile in agent_mobiles
+            ]
+        )
     ).order_by(Transaction.timestamp.desc()).all()
 
     transaction_list = []
@@ -356,22 +394,19 @@ def get_agent_transactions():
         try:
             metadata = json.loads(tx.transaction_metadata or "{}")
 
-            # ✅ Agent involvement logic — DO NOT CHANGE
+            # ✅ Determine if agent was involved
+            involved = False
             if tx.user_id == agent_id:
                 involved = True
             elif metadata.get("assigned_agent_id") and int(metadata.get("assigned_agent_id")) == agent_id:
                 involved = True
-            elif metadata.get("deposited_by_mobile") and metadata.get("deposited_by_mobile") in [
-                sim.mobile_number for sim in SIMCard.query.filter_by(user_id=agent_id).all()
-            ]:
+            elif metadata.get("deposited_by_mobile") in agent_mobiles:
                 involved = True
-            else:
-                involved = False
 
             if not involved:
                 continue
 
-            # ✅ Recipient logic — KEEP AS IS
+            # ✅ Determine recipient mobile
             if tx.transaction_type in ["deposit", "transfer"]:
                 recipient_mobile = metadata.get("recipient_mobile", "N/A")
             elif tx.transaction_type == "withdrawal":
@@ -380,7 +415,7 @@ def get_agent_transactions():
             else:
                 recipient_mobile = "Self"
 
-            # ✅ Add human-readable label
+            # ✅ Build descriptive label
             admin_msg = metadata.get("admin_message")
             if tx.transaction_type == "withdrawal":
                 if tx.status == "pending":
@@ -402,7 +437,7 @@ def get_agent_transactions():
             else:
                 label = tx.transaction_type.capitalize()
 
-            # ✅ Status class
+            # ✅ Determine status class for UI
             status_class = ""
             if tx.status == "rejected":
                 status_class = "text-danger"
@@ -413,7 +448,7 @@ def get_agent_transactions():
             elif tx.status == "expired":
                 status_class = "text-muted"
 
-            # ✅ Final result
+            # ✅ Final output structure
             transaction_list.append({
                 "transaction_id": tx.id,
                 "amount": tx.amount,
@@ -428,7 +463,6 @@ def get_agent_transactions():
         except Exception as e:
             print(f"❌ Error processing transaction ID {tx.id}: {e}")
             continue
-
 
     return jsonify({"transactions": transaction_list}), 200
 
@@ -548,6 +582,7 @@ def view_sim(iccid):
 @agent_bp.route("/agent/activate_sim", methods=["POST"])
 @jwt_required()
 def activate_sim():
+    
     data = request.get_json()
     iccid = data.get("iccid")
 
@@ -558,7 +593,22 @@ def activate_sim():
     sim.status = "active"
     db.session.commit()
 
+    # ✅ Log the SIM activation to RealTimeLog
+    agent_id = get_jwt_identity()
+    
+    rt_log = RealTimeLog(
+        user_id=agent_id,
+        action=f"📲 Activated SIM ICCID: {iccid}",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Unknown"),
+        location=data.get("location", "Unknown"),
+        risk_alert=False
+    )
+    db.session.add(rt_log)
+    db.session.commit()
+
     return jsonify({"message": "✅ SIM activated successfully!"}), 200
+
 
 
 @agent_bp.route("/agent/suspend_sim", methods=["POST"])
@@ -574,7 +624,54 @@ def suspend_sim():
     sim.status = "suspended"
     db.session.commit()
 
+    # ✅ Log to RealTimeLog
+    agent_id = get_jwt_identity()
+    rt_log = RealTimeLog(
+        user_id=agent_id,
+        action=f"⚠️ Suspended SIM ICCID: {iccid}",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Unknown"),
+        location=data.get("location", "Unknown"),
+        risk_alert=True  # 🚨 Mark as sensitive
+    )
+    db.session.add(rt_log)
+    db.session.commit()
+
     return jsonify({"message": "⚠️ SIM suspended successfully!"}), 200
+
+# Reactivate sim
+@agent_bp.route("/agent/reactivate_sim", methods=["POST"])
+@jwt_required()
+@role_required(["agent"])
+def reactivate_sim():
+    data = request.get_json()
+    iccid = data.get("iccid")
+
+    sim = SIMCard.query.filter_by(iccid=iccid).first()
+    if not sim:
+        return jsonify({"error": "SIM not found"}), 404
+
+    if sim.status != "suspended":
+        return jsonify({"error": "Only suspended SIMs can be re-activated"}), 400
+
+    sim.status = "active"
+    db.session.commit()
+
+    # ✅ Log the action
+    agent_id = get_jwt_identity()
+    rt_log = RealTimeLog(
+        user_id=agent_id,
+        action=f"🔄 Re-activated suspended SIM ICCID: {iccid}",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Unknown"),
+        location=data.get("location", "Unknown"),
+        risk_alert=False
+    )
+    db.session.add(rt_log)
+    db.session.commit()
+
+    return jsonify({"message": "🔄 SIM re-activated successfully!"}), 200
+
 
 @agent_bp.route("/agent/delete_sim", methods=["DELETE"])
 @jwt_required()
@@ -590,6 +687,19 @@ def delete_sim():
         return jsonify({"error": "Cannot delete an activated SIM."}), 400
 
     db.session.delete(sim)
+    db.session.commit()
+
+    # ✅ Log SIM deletion in RealTimeLog
+    agent_id = get_jwt_identity()
+    rt_log = RealTimeLog(
+        user_id=agent_id,
+        action=f"🗑️ Deleted SIM ICCID: {iccid}",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Unknown"),
+        location=data.get("location", "Unknown"),
+        risk_alert=True
+    )
+    db.session.add(rt_log)
     db.session.commit()
 
     return jsonify({"message": "🗑️ SIM deleted successfully!"}), 200
@@ -652,30 +762,33 @@ def approve_user_withdrawal(transaction_id):
     agent_id = int(get_jwt_identity())
     transaction = Transaction.query.get(transaction_id)
 
-    # ❌ Invalid or already processed
     if not transaction or transaction.transaction_type != "withdrawal" or transaction.status != "pending":
         return jsonify({"error": "Invalid or already processed withdrawal request"}), 400
 
-    # ✅ Load and check metadata
     metadata = json.loads(transaction.transaction_metadata or "{}")
     assigned_agent_id = int(metadata.get("assigned_agent_id", -1))
 
-    # 🔐 Ensure this agent is authorized
     if assigned_agent_id != agent_id:
         return jsonify({"error": "You are not authorized to approve this withdrawal"}), 403
 
-    # ⏳ Check expiration window
     now = datetime.utcnow()
     if transaction.timestamp and now - transaction.timestamp > timedelta(minutes=WITHDRAWAL_EXPIRY_MINUTES):
         transaction.status = "expired"
+
+        # ✅ Real-time log for expiration
+        rt_log = RealTimeLog(
+            user_id=agent_id,
+            action=f"⏳ Withdrawal request of {transaction.amount} RWF for User {transaction.user_id} expired",
+            ip_address=request.remote_addr,
+            device_info=request.headers.get("User-Agent", "Unknown"),
+            location="Agent location",  # or data.get("location") if passed
+            risk_alert=True
+        )
+        db.session.add(rt_log)
         db.session.commit()
-        print("🔎 Now (UTC):", datetime.utcnow())
-        print("📦 TX Timestamp:", transaction.timestamp)
-        print("⏰ Time since TX:", datetime.utcnow() - transaction.timestamp)
 
         return jsonify({"error": "⏳ This withdrawal request has expired and can no longer be approved."}), 403
 
-    # ✅ Deduct from user wallet
     user_wallet = Wallet.query.filter_by(user_id=transaction.user_id).first()
     if not user_wallet:
         return jsonify({"error": "User wallet not found"}), 404
@@ -686,12 +799,23 @@ def approve_user_withdrawal(transaction_id):
     user_wallet.balance -= transaction.amount
     transaction.status = "completed"
 
-    # ✅ Update metadata
     metadata["approved_by_agent"] = True
     metadata["approved_by"] = agent_id
     metadata["approved_at"] = now.isoformat()
     transaction.transaction_metadata = json.dumps(metadata)
 
+    db.session.commit()
+
+    # ✅ Real-time log for approval
+    rt_log = RealTimeLog(
+        user_id=agent_id,
+        action=f"✅ Approved withdrawal of {transaction.amount} RWF for User {transaction.user_id}",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Unknown"),
+        location="Agent location",  # or data.get("location") if passed
+        risk_alert=False
+    )
+    db.session.add(rt_log)
     db.session.commit()
 
     return jsonify({
@@ -701,6 +825,7 @@ def approve_user_withdrawal(transaction_id):
         "updated_balance": user_wallet.balance,
         "approved_by": agent_id
     }), 200
+
 
 
 # ✅ AGENT Rejects WITHDRAWAL
@@ -720,13 +845,24 @@ def reject_user_withdrawal(transaction_id):
     if assigned_agent_id != agent_id:
         return jsonify({"error": "You are not authorized to reject this withdrawal"}), 403
 
-    # ✅ Update status to rejected
     transaction.status = "rejected"
     metadata["rejected_by_agent"] = True
     metadata["rejected_by"] = agent_id
     metadata["rejected_at"] = datetime.utcnow().isoformat()
     transaction.transaction_metadata = json.dumps(metadata)
 
+    db.session.commit()
+
+    # ✅ Log to RealTimeLog
+    rt_log = RealTimeLog(
+        user_id=agent_id,
+        action=f"❌ Rejected withdrawal of {transaction.amount} RWF for User {transaction.user_id}",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Unknown"),
+        location="Agent location",  # Or data.get("location") if passed
+        risk_alert=True
+    )
+    db.session.add(rt_log)
     db.session.commit()
 
     return jsonify({
@@ -736,4 +872,83 @@ def reject_user_withdrawal(transaction_id):
     }), 200
 
 
+# SIM SWAPPING
+@agent_bp.route("/agent/swap-sim", methods=["POST"])
+@jwt_required()
+@role_required(["agent"])
+def swap_sim():
+    data = request.get_json()
+
+    old_iccid = data.get("old_iccid")
+    new_iccid = data.get("new_iccid")
+    network_provider = data.get("network_provider")
+    location = data.get("location", "Unknown")
+
+    if not old_iccid or not new_iccid or not network_provider:
+        return jsonify({"error": "Missing required fields"}), 400
+
+    agent_id = int(get_jwt_identity())
+
+    # ✅ 1. Validate old SIM
+    old_sim = SIMCard.query.filter_by(iccid=old_iccid).first()
+    if not old_sim or old_sim.status != "active":
+        return jsonify({"error": "Old SIM not found or not active"}), 404
+
+    # ✅ 2. Validate new SIM
+    new_sim = SIMCard.query.filter_by(iccid=new_iccid).first()
+    if not new_sim:
+        return jsonify({"error": "The selected new ICCID does not exist in the system."}), 404
+    if new_sim.status != "unregistered":
+        return jsonify({"error": "The selected ICCID is not available for activation."}), 400
+
+    # ✅ 3. Enforce same network provider
+    if old_sim.network_provider != new_sim.network_provider:
+        return jsonify({
+            "error": f"SIM swap denied: Cannot swap from {old_sim.network_provider} to {new_sim.network_provider}."
+        }), 400
+
+    # ✅ 4. Prevent frequent swaps of same number
+    recent_swap = SIMCard.query.filter_by(
+        mobile_number=old_sim.mobile_number,
+        status="swapped"
+    ).order_by(SIMCard.registration_date.desc()).first()
+
+    if recent_swap:
+        time_since_last = datetime.utcnow() - recent_swap.registration_date
+        if time_since_last.total_seconds() < 120:
+            return jsonify({"error": "SIM was recently swapped. Please wait before swapping again."}), 429
+
+    # ✅ 5. Backup mobile number
+    old_mobile_number = old_sim.mobile_number
+
+    # ✅ 6. Mark old SIM as swapped
+    old_sim.status = "swapped"
+    old_sim.mobile_number = f"SWP_{int(datetime.utcnow().timestamp())}"
+
+    # ✅ 7. Assign new SIM
+    new_sim.status = "active"
+    new_sim.user_id = old_sim.user_id
+    new_sim.mobile_number = old_mobile_number
+    new_sim.registration_date = datetime.utcnow()
+    new_sim.registered_by = str(agent_id)  # For tracking in history
+
+    # ✅ 8. Log real-time
+    rt_log = RealTimeLog(
+        user_id=agent_id,
+        action=f"🔄 SIM swapped for {old_mobile_number}: {old_iccid} ➡️ {new_iccid}",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Unknown"),
+        location=location,
+        risk_alert=True
+    )
+
+    db.session.add(rt_log)
+    db.session.commit()
+
+    return jsonify({
+        "message": "🔄 SIM swap successful",
+        "mobile_number": old_mobile_number,
+        "old_iccid": old_iccid,
+        "new_iccid": new_iccid
+    }), 200
 

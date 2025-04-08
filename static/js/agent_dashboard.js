@@ -33,6 +33,8 @@ document.addEventListener("DOMContentLoaded", function () {
   window.suspendSIM = suspendSIM;
   window.transferSIM = transferSIM;
   window.deleteSIM = deleteSIM;
+  window.reactivateSIM = reactivateSIM;
+  window.showSwapSIMModal = showSwapSIMModal;
 
   // ✅ Function to Show Sections
   function showSection(section, callback = null) {
@@ -552,6 +554,89 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
+   // ✅ Function SIM SWAPPING
+   function showSwapSIMModal(oldIccid, mobileNumber) {
+    document.getElementById("old-iccid").value = oldIccid;
+    document.getElementById("swap-network").value = "";
+  
+    const iccidDropdown = document.getElementById("swap-new-iccid");
+    iccidDropdown.innerHTML = "<option value=''>Loading available ICCIDs...</option>";
+  
+    // 🔄 Fetch unregistered SIMs
+    fetch("/agent/sim-registrations", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        iccidDropdown.innerHTML = "<option value=''>Select ICCID</option>";
+  
+        if (data?.sims?.length) {
+          const unregistered = data.sims.filter((sim) => sim.status === "unregistered");
+  
+          if (!unregistered.length) {
+            iccidDropdown.innerHTML = "<option value=''>⚠️ No unregistered SIMs found</option>";
+          }
+  
+          unregistered.forEach((sim) => {
+            const option = document.createElement("option");
+            option.value = sim.iccid;
+            option.textContent = `${sim.iccid} (${sim.network_provider})`;
+            iccidDropdown.appendChild(option);
+          });
+        }
+      })
+      .catch((err) => {
+        iccidDropdown.innerHTML = "<option value=''>⚠️ Failed to load ICCIDs</option>";
+        console.error("❌ Error loading unregistered SIMs:", err);
+      });
+  
+    const modal = new bootstrap.Modal(document.getElementById("swapSimModal"));
+    modal.show();
+  }
+  
+  document.getElementById("swap-sim-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+  
+    const old_iccid = document.getElementById("old-iccid").value;
+    const new_iccid = document.getElementById("swap-new-iccid").value;
+    const network_provider = document.getElementById("swap-network").value;
+  
+    if (!new_iccid || !network_provider) {
+      alert("Please select a valid ICCID and network provider.");
+      return;
+    }
+  
+    fetch("/agent/swap-sim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        old_iccid,
+        new_iccid,
+        network_provider,
+        location: "Unknown",
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.message) {
+          alert(data.message);
+          const modal = bootstrap.Modal.getInstance(document.getElementById("swapSimModal"));
+          modal.hide();
+          fetchSimRegistrationHistory(); // 🔁 Refresh
+        } else {
+          alert(data.error || "Something went wrong.");
+        }
+      })
+      .catch((err) => {
+        console.error("❌ SIM swap failed:", err);
+        alert("❌ Failed to perform SIM swap.");
+      });
+  });
+  
+
   // ✅ Function to fetch and display the SIMs registered by the agent.
   function fetchSimRegistrationHistory() {
     fetch("/agent/sim-registrations", {
@@ -587,40 +672,60 @@ document.addEventListener("DOMContentLoaded", function () {
                       Actions ▼
                     </button>
                     <div class="dropdown-menu">
-                        <button class="btn btn-sm view-btn" onclick="viewSIM('${
-                          sim.iccid
-                        }')">
-                            <i class="fas fa-eye"></i> View
-                        </button>
-                        ${
-                          sim.status === "unregistered"
-                            ? `<button class="btn btn-sm activate-btn" onclick="activateSIM('${sim.iccid}')">
-                            <i class="fas fa-check-circle"></i> Activate
-                        </button>`
-                            : ""
-                        }
-                        ${
-                          sim.status === "active"
-                            ? `<button class="btn btn-sm suspend-btn" onclick="suspendSIM('${sim.iccid}')">
-                            <i class="fas fa-exclamation-triangle"></i> Suspend
-                        </button>`
-                            : ""
-                        }
-                        ${
-                          sim.status === "unregistered"
-                            ? `<button class="btn btn-sm transfer-btn" onclick="transferSIM('${sim.iccid}')">
-                            <i class="fas fa-random"></i> Transfer
-                        </button>`
-                            : ""
-                        }
-                        ${
-                          sim.status === "unregistered"
-                            ? `<button class="btn btn-sm delete-btn" onclick="deleteSIM('${sim.iccid}')">
-                            <i class="fas fa-trash-alt"></i> Delete
-                        </button>`
-                            : ""
-                        }
+                      <button class="btn btn-sm view-btn" onclick="viewSIM('${
+                        sim.iccid
+                      }')">
+                        <i class="fas fa-eye"></i> View
+                      </button>
+
+                      ${
+                        sim.status === "unregistered"
+                          ? `<button class="btn btn-sm activate-btn" onclick="activateSIM('${sim.iccid}')">
+                              <i class="fas fa-check-circle"></i> Activate
+                            </button>`
+                          : ""
+                      }
+
+                      ${
+                        sim.status === "suspended"
+                          ? `<button class="btn btn-sm reactivate-btn" onclick="reactivateSIM('${sim.iccid}')">
+                              <i class="fas fa-undo"></i> Reactivate
+                            </button>`
+                          : ""
+                      }
+
+                      ${
+                        sim.status === "active"
+                          ? `<button class="btn btn-sm suspend-btn" onclick="suspendSIM('${sim.iccid}')">
+                              <i class="fas fa-exclamation-triangle"></i> Suspend
+                            </button>`
+                          : ""
+                      }
+
+                      ${
+                        sim.status === "unregistered"
+                          ? `<button class="btn btn-sm transfer-btn" onclick="transferSIM('${sim.iccid}')">
+                              <i class="fas fa-random"></i> Transfer
+                            </button>`
+                          : ""
+                      }
+
+                      ${
+                        sim.status === "unregistered"
+                          ? `<button class="btn btn-sm delete-btn" onclick="deleteSIM('${sim.iccid}')">
+                              <i class="fas fa-trash-alt"></i> Delete
+                            </button>`
+                          : ""
+                      }
+                      ${
+                        sim.status === "active"
+                          ? `<button class="btn btn-sm swap-btn" onclick="showSwapSIMModal('${sim.iccid}', '${sim.mobile_number}')">
+                               <i class="fas fa-exchange-alt"></i> Swap SIM
+                             </button>`
+                          : ""
+                      }                      
                     </div>
+
                 </div>
             </td>
           `;
@@ -800,6 +905,31 @@ document.addEventListener("DOMContentLoaded", function () {
       .catch((error) => console.error("❌ Error activating SIM:", error));
   }
 
+  // ✅ Reactivate SIM Function
+  function reactivateSIM(iccid) {
+    if (!confirm("Are you sure you want to re-activate this SIM?")) return;
+  
+    fetch("/agent/reactivate_sim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ iccid })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.message) {
+          alert(data.message);
+          fetchSimRegistrationHistory(); // reload list
+        } else {
+          alert(data.error || "An error occurred");
+        }
+      })
+      .catch(err => {
+        console.error("❌ Reactivate SIM failed:", err);
+        alert("Something went wrong while trying to re-activate the SIM.");
+      });
+  }
+  
   // ✅ Suspend SIM Function
   function suspendSIM(iccid) {
     if (!confirm("⚠️ Are you sure you want to suspend this SIM?")) return;

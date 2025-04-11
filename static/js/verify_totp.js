@@ -33,9 +33,15 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!res.ok) {
         throw new Error(data.error || "TOTP verification failed.");
       }
-
-      console.log("✅ TOTP verified. Redirecting to:", data.dashboard_url);
-      window.location.href = data.dashboard_url || "/";
+      
+      if (data.require_webauthn && data.user_id) {
+        console.log("🧬 WebAuthn required — redirecting to biometric setup...");
+        window.location.href = "/api/auth/enroll-biometric";
+      } else {
+        console.log("✅ Fully authenticated — redirecting to dashboard...");
+        window.location.href = data.dashboard_url || "/";
+      }
+      
     } catch (err) {
       console.error("❌ TOTP error:", err);
       showError(err.message || "Verification failed.");

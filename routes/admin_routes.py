@@ -4,12 +4,60 @@ from utils.decorators import role_required
 from models.models import db, User, UserAccessControl, UserRole, Wallet, Transaction, UserAuthLog, SIMCard, RealTimeLog, HeadquartersWallet
 import random
 import json
+import threading
 from datetime import datetime
 from threading import Timer
 
 
 
 admin_bp = Blueprint("admin", __name__)
+
+# ✅ FINALIZE FUNCTION (move this OUTSIDE any route)
+def finalize_reversal(app, reversal_id, sender_wallet_id, amount):
+    try:
+        with app.app_context():
+            print("🧠 finalize_reversal() running...")
+
+            reversal_tx = db.session.get(Transaction, reversal_id)
+            sender_wallet = db.session.get(Wallet, sender_wallet_id)
+
+            if not reversal_tx:
+                print(f"❌ Reversal transaction {reversal_id} not found.")
+                return
+
+            if not sender_wallet:
+                print(f"❌ Sender wallet {sender_wallet_id} not found.")
+                return
+
+            if reversal_tx.status != "pending":
+                print(f"⚠️ Reversal TX {reversal_id} is already completed.")
+                return
+
+            sender_wallet.balance += amount
+            reversal_tx.status = "completed"
+
+            try:
+                tx_meta = json.loads(reversal_tx.transaction_metadata)
+                original_tx_id = tx_meta.get("reversal_of_transaction_id", "Unknown")
+            except:
+                original_tx_id = "Unknown"
+
+            completion_log = RealTimeLog(
+                user_id=reversal_tx.user_id,
+                action=f"✅ Reversal completed: {amount} RWF refunded to sender for TX #{original_tx_id}",
+                ip_address="System",
+                device_info="Auto Processor",
+                location="Headquarters",
+                risk_alert=False
+            )
+
+            db.session.add(completion_log)
+            db.session.commit()
+
+            print(f"✅ TX #{reversal_id} refunded {amount} to sender.")
+
+    except Exception as e:
+        print(f"❌ finalize_reversal() crashed: {e}")
 
 #Admin Dashboard
 @admin_bp.route('/admin/dashboard')
@@ -505,14 +553,16 @@ def all_transactions():
 
     return jsonify({"transactions": result}), 200
 
-# Admin perform Transfer Reverses
+
+
+
+# ✅ ROUTE (cleaned + safe)
 @admin_bp.route("/admin/reverse-transfer/<int:transaction_id>", methods=["POST"])
 @jwt_required()
 @role_required(["admin"])
 def reverse_transfer(transaction_id):
     transaction = Transaction.query.get(transaction_id)
 
-    # ✅ Validate original transaction
     if not transaction or transaction.transaction_type != "transfer" or transaction.status != "completed":
         return jsonify({"error": "This transaction is not eligible for reversal."}), 400
 
@@ -521,7 +571,6 @@ def reverse_transfer(transaction_id):
     except Exception as e:
         return jsonify({"error": "Invalid metadata", "details": str(e)}), 400
 
-    # ✅ Prevent multiple reversals
     existing_reversal = Transaction.query.filter(
         Transaction.transaction_type == "reversal",
         Transaction.transaction_metadata.contains(f'"reversal_of_transaction_id": {transaction.id}')
@@ -530,9 +579,8 @@ def reverse_transfer(transaction_id):
     if existing_reversal:
         return jsonify({"error": "This transaction has already been reversed."}), 400
 
-    # ✅ Check time window
     time_since_tx = datetime.utcnow() - transaction.timestamp
-    if time_since_tx.total_seconds() > 86400:  # 24 hours
+    if time_since_tx.total_seconds() > 86400:
         return jsonify({"error": "This transaction is too old to be reversed."}), 403
 
     sender_id = transaction.user_id
@@ -549,10 +597,8 @@ def reverse_transfer(transaction_id):
     if recipient_wallet.balance < transaction.amount:
         return jsonify({"error": "Recipient does not have sufficient balance for reversal"}), 400
 
-    # ✅ Deduct immediately from recipient
     recipient_wallet.balance -= transaction.amount
 
-    # ✅ Metadata for reversal record
     reversal_metadata = {
         "reversal_of_transaction_id": transaction.id,
         "original_sender": sender_id,
@@ -565,14 +611,13 @@ def reverse_transfer(transaction_id):
         user_id=sender_id,
         amount=transaction.amount,
         transaction_type="reversal",
-        status="pending",  # ✅ status will change after delay
+        status="pending",
         transaction_metadata=json.dumps(reversal_metadata),
         timestamp=datetime.utcnow()
     )
 
     db.session.add(reversal)
 
-    # ✅ Log it in RealTimeLog
     admin_user = db.session.get(User, get_jwt_identity())
     rt_log = RealTimeLog(
         user_id=admin_user.id,
@@ -585,22 +630,14 @@ def reverse_transfer(transaction_id):
     db.session.add(rt_log)
     db.session.commit()
 
-    # ✅ Delayed refund logic
-    def finalize_reversal(app, reversal_id, sender_wallet_id, amount):
-        with app.app_context():
-            reversal_tx = Transaction.query.get(reversal_id)
-            if reversal_tx and reversal_tx.status == "pending":
-                sender_wallet = Wallet.query.get(sender_wallet_id)
-                if sender_wallet:
-                    sender_wallet.balance += amount
-                    reversal_tx.status = "completed"
-                    db.session.commit()
-                    print(f"✅ Reversal TX #{reversal_id} completed and balance refunded.")
-
+    # ✅ 10-second test delay (increase in prod)
     app = current_app._get_current_object()
-    threading.Timer(180, finalize_reversal, args=(app, reversal.id, sender_wallet.id, transaction.amount)).start()  # 180 sec delay
+    print("🌀 Scheduling finalize_reversal in 10 seconds...")
+
+    threading.Timer(10, finalize_reversal, args=(app, reversal.id, sender_wallet.id, transaction.amount)).start()
 
     return jsonify({
         "message": "✅ Reversal initiated. Refund will be processed shortly.",
         "reversed_transaction_id": reversal.id
     }), 200
+

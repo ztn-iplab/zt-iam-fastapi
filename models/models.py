@@ -156,3 +156,17 @@ class OTPCode(db.Model):
 class HeadquartersWallet(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     balance = db.Column(db.Float, default=0.0)
+
+class WebAuthnCredential(db.Model):
+    __tablename__ = 'webauthn_credentials'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    credential_id = db.Column(db.LargeBinary, unique=True, nullable=False)
+    public_key = db.Column(db.LargeBinary, nullable=False)
+    sign_count = db.Column(db.Integer, default=0)
+    transports = db.Column(db.String)  # e.g. ["usb", "nfc", "ble", "internal"]
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref='webauthn_credentials')
+

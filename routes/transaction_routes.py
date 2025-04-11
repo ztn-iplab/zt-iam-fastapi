@@ -247,8 +247,23 @@ def get_transactions():
             initiated_by = metadata.get("initiated_by", None)
             approved_by_agent = metadata.get("approved_by_agent", None)
 
+            # ✅ Normalize any swapped agent mobile
+            if isinstance(agent_mobile, str) and agent_mobile.startswith("SWP_"):
+                assigned_agent_id = metadata.get("assigned_agent_id")
+                if assigned_agent_id:
+                    active_sim = SIMCard.query.filter_by(user_id=assigned_agent_id, status="active").first()
+                    if active_sim:
+                        agent_mobile = active_sim.mobile_number
+
+                # Or try looking up who deposited
+                deposited_by_mobile = metadata.get("deposited_by_mobile")
+                if deposited_by_mobile and deposited_by_mobile.startswith("SWP_"):
+                    deposited_sim = SIMCard.query.filter_by(user_id=logged_in_user, status="active").first()
+                    if deposited_sim:
+                        agent_mobile = deposited_sim.mobile_number
+
             # ✅ Fetch sender mobile number (for transfer receiver label)
-            sender_sim = SIMCard.query.filter_by(user_id=tx.user_id).first()
+            sender_sim = SIMCard.query.filter_by(user_id=tx.user_id, status="active").first()
             sender_mobile = sender_sim.mobile_number if sender_sim else "Unknown"
 
             # ✅ Labeling logic based on transaction type
@@ -272,6 +287,10 @@ def get_transactions():
                     label = f"Withdrawal (⏳ Expired - Not Approved in Time)"
                 else:
                     label = f"Withdrawal (✅ Approved by Agent {agent_mobile})"
+
+            elif tx.transaction_type == "reversal":
+                label = "🔁 Transfer Reversed"
+
             else:
                 label = tx.transaction_type.capitalize()
 

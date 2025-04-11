@@ -123,7 +123,7 @@ def login_route():
         "user_id": user.id,
         "require_totp": bool(user.otp_secret),
         "require_totp_setup": user.otp_secret is None,
-        "require_totp_reset": user.otp_secret and user.otp_email_label != user.email
+        "require_totp_reset": user.otp_secret and user.otp_email_label != user.email    
     })
 
     db.session.add(UserAuthLog(
@@ -301,12 +301,6 @@ def setup_totp():
         user.otp_secret is None or
         (user.otp_secret and user.otp_email_label != user.email)
     )
-
-    print("📡 Email label:", user.otp_email_label)
-    print("📡 Current email:", user.email)
-    print("📡 Has TOTP secret:", bool(user.otp_secret))
-    print("📡 Reset required?", reset_required)
-
     if reset_required:
         secret = pyotp.random_base32()
         user.otp_secret = secret
@@ -441,6 +435,8 @@ def verify_totp_login():
 
     response = jsonify({
         "message": "TOTP verified successfully",
+        "require_webauthn": not user.webauthn_credentials,
+        "user_id": user.id,
         "dashboard_url": urls.get(role, url_for("user.user_dashboard", _external=True))
     })
     return response, 200
@@ -505,3 +501,9 @@ def debug_cookie():
     except Exception as e:
         print("❌ JWT Debug error:", e)
         return "❌ Invalid token", 401
+
+
+@auth_bp.route("/enroll-biometric", methods=["GET"])
+@jwt_required()
+def enroll_biometric_page():
+    return render_template("enroll_biometric.html")

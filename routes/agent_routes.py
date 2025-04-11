@@ -147,11 +147,18 @@ def fetch_sim_registration_history():
         elif sim.status == "swapped":
             status_class = "text-warning"
         else:
-            status_class = "text-muted"  # unregistered or unknown
+            status_class = "text-muted"
+
+        # ✅ If the SIM was swapped, show the real current mobile number
+        if sim.mobile_number.startswith("SWP_") and sim.user_id:
+            active_sim = SIMCard.query.filter_by(user_id=sim.user_id, status="active").first()
+            display_mobile = active_sim.mobile_number if active_sim else sim.mobile_number
+        else:
+            display_mobile = sim.mobile_number
 
         sim_list.append({
             "iccid": sim.iccid,
-            "mobile_number": sim.mobile_number,
+            "mobile_number": display_mobile,
             "network_provider": sim.network_provider,
             "status": sim.status,
             "status_class": status_class,
@@ -160,6 +167,7 @@ def fetch_sim_registration_history():
         })
 
     return jsonify({"sims": sim_list}), 200
+
 
 
 
@@ -410,8 +418,9 @@ def get_agent_transactions():
             if tx.transaction_type in ["deposit", "transfer"]:
                 recipient_mobile = metadata.get("recipient_mobile", "N/A")
             elif tx.transaction_type == "withdrawal":
-                recipient_sim = SIMCard.query.filter_by(user_id=tx.user_id).first()
-                recipient_mobile = recipient_sim.mobile_number if recipient_sim else "N/A"
+                recipient_user_id = tx.user_id
+                active_sim = SIMCard.query.filter_by(user_id=recipient_user_id, status="active").first()
+                recipient_mobile = active_sim.mobile_number if active_sim else "N/A"
             else:
                 recipient_mobile = "Self"
 
@@ -465,6 +474,7 @@ def get_agent_transactions():
             continue
 
     return jsonify({"transactions": transaction_list}), 200
+
 
 
 # ✅ API: Fetch Agent Wallet Info

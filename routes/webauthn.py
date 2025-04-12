@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, session, url_for
 from flask_jwt_extended import jwt_required, get_jwt_identity
-
+from utils.location import get_ip_location
 from fido2.server import Fido2Server
 from fido2.utils import websafe_decode, websafe_encode
 from fido2.cbor import decode as cbor_decode
@@ -9,7 +9,7 @@ from fido2.webauthn import (
     AuthenticatorData,
     AuthenticatorAssertionResponse
 )
-from models.models import db, User, WebAuthnCredential, UserAccessControl, UserRole
+from models.models import db, User, WebAuthnCredential, UserAccessControl, UserRole, RealTimeLog, UserAuthLog
 from enum import Enum
 from fido2.cose import ES256
 from fido2 import cbor
@@ -250,6 +250,49 @@ def complete_assertion():
             "agent": url_for("agent.agent_dashboard", _external=True),
             "user": url_for("user.user_dashboard", _external=True)
         }
+
+        # 🧬 Determine login method based on credential metadata
+        transports = credential.transports.split(",") if credential.transports else []
+        if "hybrid" in transports:
+            method = "cross-device passkey"
+        elif "usb" in transports:
+            method = "USB security key"
+        elif "internal" in transports:
+            # Heuristic: if on desktop and using internal, likely platform auth (fingerprint or passkey)
+            user_agent = request.user_agent.string.lower()
+            if "android" in user_agent or "iphone" in user_agent:
+                method = "platform authenticator (fingerprint)"
+            elif "chrome" in user_agent and "linux" in user_agent:
+                method = "passkey via Chrome Sync (Google account)"
+            else:
+                method = "platform authenticator (fingerprint)"
+        else:
+            method = "unknown method"
+
+
+        # 🛡️ RealTimeLog entry for login
+        db.session.add(RealTimeLog(
+            user_id=user.id,
+            action=f"🔐 Logged in via WebAuthn ({method})",
+            ip_address=request.remote_addr,
+            device_info=request.user_agent.string,
+            location=get_ip_location(request.remote_addr),
+            risk_alert=False
+        ))
+
+        # 🧾 UserAuthLog entry
+        db.session.add(UserAuthLog(
+            user_id=user.id,
+            auth_method="webauthn",
+            auth_status="success",
+            ip_address=request.remote_addr,
+            device_info=request.user_agent.string,
+            location=get_ip_location(request.remote_addr),
+            failed_attempts=0
+        ))
+
+        db.session.commit()
+        session.pop("webauthn_register_state", None)
 
         return jsonify({
             "message": "✅ Biometric/passkey login successful",

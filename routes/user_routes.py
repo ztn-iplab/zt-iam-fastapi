@@ -3,7 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from models.models import db, User,UserAccessControl, UserRole, SIMCard
 from utils.decorators import role_required
 from utils.decorators import require_totp_setup
-
+from utils.auth_decorators import require_full_mfa
 
 
 user_bp = Blueprint('user', __name__)
@@ -12,6 +12,7 @@ user_bp = Blueprint('user', __name__)
 @user_bp.route("/user/dashboard")
 @jwt_required()
 @require_totp_setup
+@require_full_mfa
 def user_dashboard():  # ✅ Function name must be "user_dashboard"
     """User dashboard view"""
     user_id = get_jwt_identity()

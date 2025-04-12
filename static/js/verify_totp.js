@@ -35,13 +35,18 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       
       if (data.require_webauthn && data.user_id) {
-        console.log("🧬 WebAuthn required — redirecting to biometric setup...");
-        window.location.href = "/api/auth/enroll-biometric";
+        if (data.has_webauthn_credentials) {
+          console.log("🧬 WebAuthn required — redirecting to biometric verification...");
+          window.location.href = "/api/auth/verify-biometric";
+        } else {
+          console.log("🧬 No WebAuthn credential found — redirecting to enroll...");
+          window.location.href = "/api/auth/enroll-biometric";
+        }
       } else {
         console.log("✅ Fully authenticated — redirecting to dashboard...");
         window.location.href = data.dashboard_url || "/";
-      }
-      
+      }     
+         
     } catch (err) {
       console.error("❌ TOTP error:", err);
       showError(err.message || "Verification failed.");

@@ -5,6 +5,7 @@ from utils.decorators import role_required
 import random
 import json
 from datetime import datetime, timedelta
+from utils.auth_decorators import require_full_mfa
 
 agent_bp = Blueprint("agent", __name__)
 
@@ -175,6 +176,7 @@ def fetch_sim_registration_history():
 @agent_bp.route("/agent/dashboard", methods=["GET"])
 @jwt_required()
 @role_required(["agent"])
+@require_full_mfa
 def agent_dashboard():
     """Render Agent Dashboard"""
     user_id = get_jwt_identity()

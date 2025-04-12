@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, url_for
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from fido2.server import Fido2Server
@@ -6,10 +6,10 @@ from fido2.utils import websafe_decode, websafe_encode
 from fido2.cbor import decode as cbor_decode
 from fido2.webauthn import (
     PublicKeyCredentialRpEntity,
-    AuthenticatorData
+    AuthenticatorData,
+    AuthenticatorAssertionResponse
 )
-
-from models.models import db, User, WebAuthnCredential
+from models.models import db, User, WebAuthnCredential, UserAccessControl, UserRole
 from enum import Enum
 from fido2.cose import ES256
 from fido2 import cbor
@@ -126,43 +126,78 @@ def complete_registration():
         return jsonify({"error": f"❌ Registration failed: {str(e)}"}), 500
 
 
-
-
-
 @webauthn_bp.route("/webauthn/assertion-begin", methods=["POST"])
+@jwt_required()
 def begin_assertion():
-    email = request.json.get("email")
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+    try:
+        from fido2.webauthn import PublicKeyCredentialRequestOptions
 
-    credentials = [
-        {
-            "id": c.credential_id,
-            "transports": c.transports.split(',') if c.transports else [],
-            "type": "public-key"
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+
+        if not user or not user.webauthn_credentials:
+            return jsonify({"error": "No registered WebAuthn credentials for this user"}), 404
+
+        credentials = [
+            {
+                "id": c.credential_id,
+                "transports": c.transports.split(',') if c.transports else [],
+                "type": "public-key"
+            }
+            for c in user.webauthn_credentials
+        ]
+
+        # 👇 Begin authentication
+        assertion_data, state = server.authenticate_begin(credentials)
+
+        # 🔐 Store session for completion
+        session["webauthn_assertion_state"] = state
+        session["assertion_user_id"] = user.id
+        session["mfa_webauthn_verified"] = False
+
+        # ✅ Manually serialize clean dict
+        options: PublicKeyCredentialRequestOptions = assertion_data.public_key
+
+        public_key_dict = {
+            "challenge": websafe_encode(options.challenge),
+            "rpId": options.rp_id,
+            "allowCredentials": [
+                {
+                    "type": c.type.value,
+                    "id": websafe_encode(c.id),
+                    "transports": [t.value for t in c.transports] if c.transports else []
+                }
+                for c in options.allow_credentials or []
+            ],
+            "userVerification": options.user_verification,
+            "timeout": options.timeout
         }
-        for c in user.webauthn_credentials
-    ]
 
-    assertion_data, state = server.authenticate_begin(credentials)
-    session['webauthn_assertion_state'] = state
-    session['assertion_user_id'] = user.id
-    return jsonify(jsonify_webauthn(assertion_data))
+        return jsonify({"public_key": public_key_dict})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Assertion begin failed: {str(e)}"}), 500
 
 
 @webauthn_bp.route("/webauthn/assertion-complete", methods=["POST"])
+@jwt_required()
 def complete_assertion():
-    data = request.get_json()
-    state = session.get("webauthn_assertion_state")
-    user_id = session.get("assertion_user_id")
-
-    if not state or not user_id:
-        return jsonify({"error": "No assertion in progress."}), 400
-
+    from fido2.utils import websafe_decode
     try:
-        credential_id = websafe_decode(data['credentialId'])
+        data = request.get_json()
+        state = session.get("webauthn_assertion_state")
+        user_id = session.get("assertion_user_id")
+
+        if not state or not user_id:
+            return jsonify({"error": "No assertion in progress."}), 400
+
         user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        credential_id = websafe_decode(data["credentialId"])
         credential = WebAuthnCredential.query.filter_by(
             user_id=user.id,
             credential_id=credential_id
@@ -171,27 +206,61 @@ def complete_assertion():
         if not credential:
             return jsonify({"error": "Credential not found."}), 404
 
-        auth_data = AuthenticatorData(websafe_decode(data['authenticatorData']))
-        client_data = CollectedClientData(websafe_decode(data['clientDataJSON']))
-        signature = websafe_decode(data['signature'])
+        # ✅ Build WebAuthn response object (as dict)
+            assertion = {
+                "id": data["credentialId"],
+                "rawId": websafe_decode(data["credentialId"]),
+                "type": "public-key",
+                "response": {
+                    "authenticatorData": websafe_decode(data["authenticatorData"]),
+                    "clientDataJSON": websafe_decode(data["clientDataJSON"]),
+                    "signature": websafe_decode(data["signature"]),
+                    "userHandle": websafe_decode(data["userHandle"]) if data.get("userHandle") else None
+                }
+            }
 
-        server.authenticate_complete(
-            state,
-            credential.public_key,
-            auth_data,
-            client_data,
-            signature
-        )
+            # ✅ Credential from DB
+            public_key_source = {
+                "id": credential.credential_id,
+                "public_key": credential.public_key,
+                "sign_count": credential.sign_count,
+                "transports": credential.transports.split(",") if credential.transports else [],
+                "user_handle": None,
+            }
 
-        credential.sign_count = auth_data.sign_count
+            # ✅ Final auth check (note: NO brackets on `assertion`)
+            server.authenticate_complete(
+                state,
+                assertion,
+                [public_key_source]
+            )
+
+        # 🎉 Success
+        credential.sign_count += 1
         db.session.commit()
+        session["mfa_webauthn_verified"] = True
+        session.pop("webauthn_assertion_state", None)
+        session.pop("assertion_user_id", None)
+
+        access = UserAccessControl.query.filter_by(user_id=user.id).first()
+        role = db.session.get(UserRole, access.role_id).role_name.lower() if access else "user"
+
+        urls = {
+            "admin": url_for("admin.admin_dashboard", _external=True),
+            "agent": url_for("agent.agent_dashboard", _external=True),
+            "user": url_for("user.user_dashboard", _external=True)
+        }
 
         return jsonify({
-            "message": "✅ WebAuthn authentication successful.",
-            "user_id": user.id
+            "message": "✅ Biometric/passkey login successful",
+            "user_id": user.id,
+            "dashboard_url": urls.get(role, url_for("user.user_dashboard", _external=True))
         })
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": f"WebAuthn assertion failed: {str(e)}"}), 500
+        return jsonify({"error": f"❌ Assertion failed: {str(e)}"}), 500
+
+
+

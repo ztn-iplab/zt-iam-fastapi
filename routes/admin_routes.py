@@ -7,7 +7,7 @@ import json
 import threading
 from datetime import datetime
 from threading import Timer
-
+from utils.auth_decorators import require_full_mfa
 
 
 admin_bp = Blueprint("admin", __name__)
@@ -63,6 +63,7 @@ def finalize_reversal(app, reversal_id, sender_wallet_id, amount):
 @admin_bp.route('/admin/dashboard')
 @jwt_required()
 @role_required(['admin'])
+@require_full_mfa
 def admin_dashboard():
     user_id = get_jwt_identity()
     user = db.session.get(User, user_id)

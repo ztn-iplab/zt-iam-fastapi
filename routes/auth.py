@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, render_template, redirect, url_for, make_response
+from flask import Blueprint, request, jsonify, render_template, redirect, url_for, make_response, session
 from flask_jwt_extended import (
     create_access_token,
     set_access_cookies,
@@ -18,6 +18,7 @@ import qrcode
 import io
 import base64
 from flask import current_app
+from utils.auth_decorators import require_full_mfa
 
 
 
@@ -250,20 +251,6 @@ def register():
 
     return response, 201
 
-# # ✅ Setting the OTP
-# @auth_bp.route('/setup-totp', methods=['GET'])
-# def show_setup_totp():
-#     try:
-#         verify_jwt_in_request(locations=["cookies"])  # ✅ Important!
-#         user_id = get_jwt_identity()
-#         print("✅ Reached setup-totp route")
-#         print("🎯 Extracted user_id from JWT:", user_id)
-#     except Exception as e:
-#         print("❌ Token error on /setup-totp page:", e)
-#         return redirect(url_for('auth.login_page'))
-
-#     return render_template('setup_totp.html')
-
 
 # ✅ Getting the OTP
 @auth_bp.route('/verify-totp', methods=['GET'])
@@ -433,12 +420,17 @@ def verify_totp_login():
         "user": url_for("user.user_dashboard", _external=True)
     }
 
-    response = jsonify({
-        "message": "TOTP verified successfully",
-        "require_webauthn": not user.webauthn_credentials,
-        "user_id": user.id,
-        "dashboard_url": urls.get(role, url_for("user.user_dashboard", _external=True))
+    session["mfa_totp_verified"] = True
+
+    return jsonify({
+    "message": "TOTP verified successfully",
+    "require_webauthn": True,  # ✅ always required
+    "has_webauthn_credentials": bool(user.webauthn_credentials),  # ✅ helps JS route
+    "user_id": user.id,
+    "dashboard_url": urls.get(role, url_for("user.user_dashboard", _external=True))
     })
+
+
     return response, 200
 
 
@@ -507,3 +499,8 @@ def debug_cookie():
 @jwt_required()
 def enroll_biometric_page():
     return render_template("enroll_biometric.html")
+
+@auth_bp.route("/verify-biometric")
+@jwt_required()
+def verify_biometric_page():
+    return render_template("verify_biometric.html")

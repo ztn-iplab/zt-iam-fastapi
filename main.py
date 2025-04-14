@@ -79,7 +79,7 @@ def not_found_error(error):
 @app.route('/send-test-email')
 def send_test_email():
     msg = Message(subject="🚀 Flask Mail Test",
-                  recipients=["pathos2m@gmail.com"],
+                  recipients=["patrick.mutabazi.pj1@g.ext.naist.jp"],
                   body="Hey buddy! This is a test email from your Flask app.")
     mail.send(msg)
     return jsonify({"message": "Test email sent successfully!"})

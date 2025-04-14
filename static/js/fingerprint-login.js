@@ -42,6 +42,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       ...c,
       id: base64urlToBuffer(c.id)
     }));
+    
+    console.log("🟢 WebAuthn options challenge:", options.challenge);
 
     // ✅ Prompt fingerprint/passkey
     const assertion = await navigator.credentials.get({ publicKey: options });
@@ -55,6 +57,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         ? bufferToBase64url(assertion.response.userHandle)
         : null
     };
+    console.log("🛂 WebAuthn Assertion Payload:", payload);
 
     const finalRes = await fetch("/webauthn/assertion-complete", {
       method: "POST",

@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, render_template, redirect, url_for, make_response, session
+from flask import Blueprint, request, jsonify, render_template, redirect, url_for, make_response, session, current_app
 from flask_jwt_extended import (
     create_access_token,
     set_access_cookies,
@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from werkzeug.security import check_password_hash, generate_password_hash
 from models.models import User, Wallet, db, UserRole, UserAccessControl,SIMCard, OTPCode, RealTimeLog, UserAuthLog
 from utils.otp import generate_otp_code  # Import your OTP logic
+from utils.totp import verify_totp_code
 from utils.location import get_ip_location
 import pyotp
 import qrcode
@@ -19,7 +20,9 @@ import io
 import base64
 from flask import current_app
 from utils.auth_decorators import require_full_mfa
-
+from flask_mail import Message
+from extensions import mail
+from utils.email_alerts import send_admin_alert, send_user_alert
 
 
 
@@ -35,9 +38,24 @@ def register_form():
 def login_form():
     return render_template('login.html')
 
+# def send_admin_alert(subject, body):
+#     try:
+#         msg = Message(
+#             subject=subject,
+#             recipients=[current_app.config["ADMIN_ALERT_EMAIL"]],
+#             body=body
+#         )
+#         mail.send(msg)
+#     except Exception as e:
+#         print(f"❌ Failed to send alert email: {e}")
+
+# def send_user_alert(user_email, subject, body):
+#     if user_email:
+#         msg = Message(subject=subject, recipients=[user_email], body=body)
+#         mail.send(msg)
+
 @auth_bp.route('/login', methods=['POST'])
 def login_route():
-
     def count_recent_failures(user_id, method="password", window_minutes=5):
         threshold = datetime.utcnow() - timedelta(minutes=window_minutes)
         return UserAuthLog.query.filter_by(
@@ -58,7 +76,6 @@ def login_route():
     location = get_ip_location(ip_address)
 
     user = User.query.filter_by(email=login_input).first()
-
     if not user:
         sim = SIMCard.query.filter_by(mobile_number=login_input, status='active').first()
         if sim:
@@ -105,6 +122,7 @@ def login_route():
 
         if failed_count >= 5:
             user.locked_until = datetime.utcnow() + timedelta(minutes=15)
+
             db.session.add(RealTimeLog(
                 user_id=user.id,
                 action="🚨 Account temporarily locked due to failed login attempts",
@@ -114,10 +132,29 @@ def login_route():
                 risk_alert=True
             ))
 
+            # ✅ Email alerts
+            if user.email:
+                send_user_alert(
+                    user=user,
+                    event_type="login_lockout",
+                    ip_address=ip_address,
+                    location=location,
+                    device_info=device_info
+                )
+
+            send_admin_alert(
+                user=user,
+                event_type="login_lockout",
+                ip_address=ip_address,
+                location=location,
+                device_info=device_info
+            )
+
         db.session.commit()
         return jsonify({"error": "Invalid credentials"}), 401
 
-    # ✅ Successfull Login
+
+    # ✅ Success
     access_token = create_access_token(identity=str(user.id))
     response = jsonify({
         "message": "Login successful",
@@ -317,7 +354,7 @@ def setup_totp():
     }), 200
 
 
-# ✅ Verifying the OTP
+# ✅ Verifying the TOTP
 @auth_bp.route('/verify-totp-login', methods=['POST'])
 def verify_totp_login():   
     try:
@@ -351,7 +388,6 @@ def verify_totp_login():
         auth_status="failed"
     ).filter(UserAuthLog.auth_timestamp >= threshold_time).count()
 
-    from utils.totp import verify_totp_code
     if not verify_totp_code(user.otp_secret, totp_code):
         fail_count = recent_otp_fails + 1
 
@@ -376,6 +412,26 @@ def verify_totp_login():
 
         if fail_count >= 5:
             user.locked_until = datetime.utcnow() + timedelta(minutes=15)
+
+            # 🚨 Email alerts to admin and user
+            if user.email:
+                send_user_alert(
+                    user=user,
+                    event_type="totp_lockout",
+                    ip_address=ip_address,
+                    location=location,
+                    device_info=device_info
+                )
+
+            send_admin_alert(
+                user=user,
+                event_type="totp_lockout",
+                ip_address=ip_address,
+                location=location,
+                device_info=device_info
+            )
+
+
             db.session.add(RealTimeLog(
                 user_id=user.id,
                 action="🚨 TOTP temporarily locked after multiple failed attempts",
@@ -388,7 +444,7 @@ def verify_totp_login():
         db.session.commit()
         return jsonify({"error": "Invalid or expired TOTP code"}), 401
 
-    # ✅ Successful totp verification
+    # ✅ Successful TOTP verification
     db.session.add(UserAuthLog(
         user_id=user.id,
         auth_method="totp",
@@ -410,7 +466,6 @@ def verify_totp_login():
 
     db.session.commit()
 
-    # Redirect role-based
     access = UserAccessControl.query.filter_by(user_id=user.id).first()
     role = db.session.get(UserRole, access.role_id).role_name.lower() if access else "user"
 
@@ -423,16 +478,12 @@ def verify_totp_login():
     session["mfa_totp_verified"] = True
 
     return jsonify({
-    "message": "TOTP verified successfully",
-    "require_webauthn": True,  # ✅ always required
-    "has_webauthn_credentials": bool(user.webauthn_credentials),  # ✅ helps JS route
-    "user_id": user.id,
-    "dashboard_url": urls.get(role, url_for("user.user_dashboard", _external=True))
-    })
-
-
-    return response, 200
-
+        "message": "TOTP verified successfully",
+        "require_webauthn": True,
+        "has_webauthn_credentials": bool(user.webauthn_credentials),
+        "user_id": user.id,
+        "dashboard_url": urls.get(role, url_for("user.user_dashboard", _external=True))
+    }), 200
 
 
 # Whoami 

@@ -148,7 +148,20 @@ def assign_role():
         new_access = UserAccessControl(user_id=user.id, role_id=role.id)
         db.session.add(new_access)
 
+    # ✅ Log admin action
+    admin_id = int(get_jwt_identity())
+    rt_log = RealTimeLog(
+        user_id=admin_id,
+        action=f"🛠️ Assigned role '{role.role_name}' to user {user.first_name} {user.last_name} ({mobile_number})",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Admin Panel"),
+        location="Headquarters",
+        risk_alert=False
+    )
+    db.session.add(rt_log)
+
     db.session.commit()
+
     return jsonify({"message": f"✅ Role '{role.role_name}' assigned to user with mobile {mobile_number}"}), 200
 
 
@@ -172,6 +185,22 @@ def suspend_user(user_id):
     # 🔒 Suspend user and flag for deletion
     user.is_active = False
     user.deletion_requested = True
+
+    # ✅ Log suspension
+    admin_user = User.query.get(current_user_id)
+    user_sim = SIMCard.query.filter_by(user_id=user.id).first()
+    mobile_number = user_sim.mobile_number if user_sim else "N/A"
+
+    rt_log = RealTimeLog(
+        user_id=admin_user.id,
+        action=f"🚫 Suspended user {user.first_name} {user.last_name} ({mobile_number}) and marked for deletion.",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Admin Panel"),
+        location="Headquarters",
+        risk_alert=True  # ✅ You can mark this as risky
+    )
+    db.session.add(rt_log)
+
     db.session.commit()
 
     return jsonify({"message": "User has been suspended and marked for deletion."}), 200
@@ -188,9 +217,29 @@ def verify_user(user_id):
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # Restore user account
+    # ✅ Restore user account
     user.is_active = True
     user.deletion_requested = False
+
+    # ✅ Admin details
+    admin_id = int(get_jwt_identity())
+    admin_user = User.query.get(admin_id)
+
+    # ✅ Get user's mobile number (if available)
+    user_sim = SIMCard.query.filter_by(user_id=user.id).first()
+    mobile_number = user_sim.mobile_number if user_sim else "N/A"
+
+    # ✅ Log admin verification action
+    rt_log = RealTimeLog(
+        user_id=admin_user.id,
+        action=f"✅ Verified and reactivated user {user.first_name} {user.last_name} ({mobile_number})",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Admin Panel"),
+        location="Headquarters",
+        risk_alert=False
+    )
+    db.session.add(rt_log)
+
     db.session.commit()
 
     return jsonify({"message": "User account has been activated and verified."}), 200
@@ -220,15 +269,27 @@ def delete_user(user_id):
     user_sim = SIMCard.query.filter_by(user_id=user.id).first()
     mobile_number = user_sim.mobile_number if user_sim else "N/A"
 
-    # Delete related records to maintain database integrity
+    # ✅ Log the deletion BEFORE removing the user
+    admin_user = User.query.get(current_user_id)
+    rt_log = RealTimeLog(
+        user_id=admin_user.id,
+        action=f"🗑️ Deleted user {user.first_name} {user.last_name} ({mobile_number}) and all associated records",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Admin Panel"),
+        location="Headquarters",
+        risk_alert=True
+    )
+    db.session.add(rt_log)
+
+    # ✅ Delete related records
     Wallet.query.filter_by(user_id=user_id).delete()
     Transaction.query.filter_by(user_id=user_id).delete()
     UserAuthLog.query.filter_by(user_id=user_id).delete()
     SIMCard.query.filter_by(user_id=user_id).delete()
     UserAccessControl.query.filter_by(user_id=user_id).delete()
-    RealTimeLog.query.filter_by(user_id=user_id).delete()
+    RealTimeLog.query.filter_by(user_id=user_id).delete()  # Clear user-specific logs
 
-    # Finally, delete the user
+    # ✅ Finally, delete the user
     db.session.delete(user)
     db.session.commit()
 
@@ -251,33 +312,58 @@ def edit_user(user_id):
         return jsonify({"error": "User not found"}), 404
 
     data = request.get_json()
-    
+    changes = []  # To track what was modified
+
     # ✅ Update only the provided fields
     if "first_name" in data:
         user.first_name = data["first_name"]
+        changes.append("first_name")
+
     if "last_name" in data:
         user.last_name = data["last_name"]
+        changes.append("last_name")
+
     if "email" in data:
         existing_email = User.query.filter_by(email=data["email"]).first()
         if existing_email and existing_email.id != user_id:
             return jsonify({"error": "Email already in use"}), 400
         user.email = data["email"]
+        changes.append("email")
 
-    # ✅ Handle Mobile Number Update (Check in SIMCard, not User)
+    # ✅ Handle Mobile Number Update
     if "mobile_number" in data:
         existing_sim = SIMCard.query.filter_by(mobile_number=data["mobile_number"]).first()
         if existing_sim and existing_sim.user_id != user_id:
             return jsonify({"error": "Mobile number already in use"}), 400
 
-        # ✅ Update the SIM Card's mobile number (if user has one)
         user_sim = SIMCard.query.filter_by(user_id=user.id).first()
         if user_sim:
             user_sim.mobile_number = data["mobile_number"]
+            changes.append("mobile_number")
         else:
             return jsonify({"error": "No SIM card linked to this user"}), 400
 
+    # ✅ Log admin edit action
+    if changes:
+        admin_id = int(get_jwt_identity())
+        admin_user = User.query.get(admin_id)
+
+        user_sim = SIMCard.query.filter_by(user_id=user.id).first()
+        mobile_number = user_sim.mobile_number if user_sim else "N/A"
+
+        rt_log = RealTimeLog(
+            user_id=admin_id,
+            action=f"✏️ Edited user {user.first_name} {user.last_name} ({mobile_number}) — Fields updated: {', '.join(changes)}",
+            ip_address=request.remote_addr,
+            device_info=request.headers.get("User-Agent", "Admin Panel"),
+            location="Headquarters",
+            risk_alert=False
+        )
+        db.session.add(rt_log)
+
     db.session.commit()
     return jsonify({"message": "User updated successfully!"}), 200
+
 
 # 📌 ✅ Generate Unique Mobile Number
 def generate_unique_mobile_number():
@@ -316,6 +402,21 @@ def generate_sim():
         )
 
         db.session.add(new_sim)
+
+        # ✅ Real-time log entry
+        admin_id = int(get_jwt_identity())
+        admin_user = User.query.get(admin_id)
+
+        rt_log = RealTimeLog(
+            user_id=admin_user.id,
+            action=f"📱 Admin generated SIM: {new_iccid} with mobile {new_mobile_number}",
+            ip_address=request.remote_addr,
+            device_info=request.headers.get("User-Agent", "Admin Panel"),
+            location="Headquarters",
+            risk_alert=False
+        )
+        db.session.add(rt_log)
+
         db.session.commit()
 
         return jsonify({
@@ -327,39 +428,54 @@ def generate_sim():
         db.session.rollback()
         return jsonify({"error": f"Failed to generate SIM: {str(e)}"}), 500
 
+
 # View User Details
 @admin_bp.route("/admin/view_user/<int:user_id>", methods=["GET"])
 @jwt_required()
 def view_user(user_id):
     """Admin views user details and action buttons based on status."""
+
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # Fetch the active SIM card associated with the user
     primary_sim = SIMCard.query.filter_by(user_id=user.id, status="active").first()
-    
-    # Safely fetch the user's role
     user_role = UserRole.query.get(user.user_access_control.role_id) if user.user_access_control else None
     role_name = user_role.role_name if user_role else "N/A"
-    
+
+    # ✅ Log this view action
+    admin_id = int(get_jwt_identity())
+    admin_user = User.query.get(admin_id)
+
+    rt_log = RealTimeLog(
+        user_id=admin_id,
+        action=f"👁️ Viewed profile of {user.first_name} {user.last_name or ''} ({primary_sim.mobile_number if primary_sim else 'N/A'})",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Admin Panel"),
+        location="Headquarters",
+        risk_alert=False
+    )
+    db.session.add(rt_log)
+    db.session.commit()
+
     # Prepare user details
     user_details = {
         "id": user.id,
         "name": f"{user.first_name} {user.last_name or ''}".strip(),
-        "mobile_number": primary_sim.mobile_number if primary_sim else "N/A",  # Fetch mobile from SIMCard
+        "mobile_number": primary_sim.mobile_number if primary_sim else "N/A",
         "email": user.email,
-        "role": role_name,  # Fetch role name
+        "role": role_name,
         "is_verified": user.identity_verified,
         "is_suspended": user.is_active == False,
-        "can_assign_role": True,  # Add this as true, so front end knows to display "Assign Role"
-        "can_suspend": not user.is_active,  # Can suspend if user is active
-        "can_verify": not user.identity_verified,  # Can verify if not verified
-        "can_delete": True,  # Can always delete (after deletion request)
-        "can_edit": True,  # Can always edit
+        "can_assign_role": True,
+        "can_suspend": not user.is_active,
+        "can_verify": not user.identity_verified,
+        "can_delete": True,
+        "can_edit": True,
     }
 
     return jsonify(user_details), 200
+
 
 # Sending froats to agents
 @admin_bp.route('/admin/fund-agent', methods=['POST'])
@@ -398,8 +514,6 @@ def fund_agent():
     if not agent:
         return jsonify({"error": "Agent user not found."}), 404
 
-
-    agent = User.query.get(agent_sim.user_id)
     agent_wallet = Wallet.query.filter_by(user_id=agent.id).first()
     if not agent_wallet:
         return jsonify({"error": "Agent wallet not found"}), 404
@@ -410,21 +524,33 @@ def fund_agent():
 
     # 🧾 Record the transaction
     float_tx = Transaction(
-    user_id=agent.id,
-    amount=amount,
-    transaction_type="float_received",
-    status="completed",
-    location=json.dumps(location),         # ✅ serialized
-    device_info=json.dumps(device_info),   # ✅ serialized
-    transaction_metadata=json.dumps({
-        "from_admin": admin_id,
-        "approved_by": "admin",
-        "float_source": "HQ Wallet"
-    }),
-    fraud_flag=False,
-    risk_score=0.0
-)
+        user_id=agent.id,
+        amount=amount,
+        transaction_type="float_received",
+        status="completed",
+        location=json.dumps(location),         # ✅ serialized
+        device_info=json.dumps(device_info),   # ✅ serialized
+        transaction_metadata=json.dumps({
+            "from_admin": admin_id,
+            "approved_by": "admin",
+            "float_source": "HQ Wallet"
+        }),
+        fraud_flag=False,
+        risk_score=0.0
+    )
     db.session.add(float_tx)
+
+    # ✅ Real-time log entry
+    rt_log = RealTimeLog(
+        user_id=admin_id,
+        action=f"💸 Funded agent {agent.first_name} ({agent_mobile}) with {amount} RWF from HQ Wallet",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent"),
+        location=json.dumps(location),  # ✅ FIXED: serialize location
+        risk_alert=False
+    )
+    db.session.add(rt_log)
+
     db.session.commit()
 
     return jsonify({
@@ -523,15 +649,36 @@ def get_user_auth_logs():
 
 @admin_bp.route('/admin/unlock-user/<int:user_id>', methods=['PATCH'])
 @jwt_required()
+@role_required(['admin'])
 def unlock_user(user_id):
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 
+    # ✅ Unlock the user
     user.locked_until = None
     db.session.commit()
 
+    # ✅ Log the action to RealTimeLog
+    admin_id = get_jwt_identity()
+    admin_user = User.query.get(admin_id)
+    user_sim = SIMCard.query.filter_by(user_id=user.id).first()
+    mobile_number = user_sim.mobile_number if user_sim else "N/A"
+
+    rt_log = RealTimeLog(
+        user_id=admin_id,
+        action=f"🔓 Unlocked user account for {user.first_name} {user.last_name} ({mobile_number})",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Unknown"),
+        location="Admin Panel",
+        risk_alert=False
+    )
+
+    db.session.add(rt_log)
+    db.session.commit()
+
     return jsonify({"message": "✅ User account unlocked"}), 200
+
 
 # Admin View all transactions
 @admin_bp.route("/admin/all-transactions", methods=["GET"])

@@ -123,6 +123,23 @@ def create_transaction():
         )
         db.session.add(rt_log)
 
+        # ✅ Send Email
+        subject = "🚨 Fraud Alert: Suspicious Transaction Detected"
+        body = f"""
+        A suspicious transaction has been flagged.
+
+        User ID: {user.id}
+        Amount: {amount} RWF
+        Type: {transaction_type}
+        Risk Score: {risk_score}
+        IP: {ip_address}
+        Device: {data.get('device_info')}
+        Location: {data.get('location')}
+
+        Please log in to the admin dashboard to review.
+        """
+        send_alert_email(subject, body)
+
         db.session.commit()
 
         return jsonify({

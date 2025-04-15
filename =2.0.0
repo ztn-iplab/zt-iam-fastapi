@@ -1,0 +1,4 @@
+Requirement already satisfied: fido2 in ./s_venv/lib/python3.10/site-packages (1.2.0)
+Requirement already satisfied: cryptography!=35,<45,>=2.6 in ./s_venv/lib/python3.10/site-packages (from fido2) (44.0.2)
+Requirement already satisfied: cffi>=1.12 in ./s_venv/lib/python3.10/site-packages (from cryptography!=35,<45,>=2.6->fido2) (1.17.1)
+Requirement already satisfied: pycparser in ./s_venv/lib/python3.10/site-packages (from cffi>=1.12->cryptography!=35,<45,>=2.6->fido2) (2.22)

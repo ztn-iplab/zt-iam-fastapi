@@ -1,26 +1,22 @@
 from flask import Blueprint, request, jsonify, session, url_for
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.location import get_ip_location
+from datetime import datetime, timedelta
 from fido2.server import Fido2Server
 from fido2.utils import websafe_decode, websafe_encode
 from fido2.cbor import decode as cbor_decode
 from fido2.webauthn import (
     PublicKeyCredentialRpEntity,
     AuthenticatorData,
-    AuthenticatorAssertionResponse,
-    AuthenticationResponse,
-    PublicKeyCredentialRequestOptions
+    AuthenticatorAssertionResponse
 )
 from models.models import db, User, WebAuthnCredential, UserAccessControl, UserRole, RealTimeLog, UserAuthLog
 from enum import Enum
 from fido2.cose import ES256
 from fido2 import cbor
-from datetime import datetime, timedelta
 from utils.email_alerts import send_admin_alert, send_user_alert
-from fido2.webauthn import CollectedClientData as ClientData  # ✅ works in 2.0.0b1
-
-
-
+import json
+import base64
 
 webauthn_bp = Blueprint('webauthn', __name__)
 
@@ -137,6 +133,8 @@ def complete_registration():
 @jwt_required()
 def begin_assertion():
     try:
+        from fido2.webauthn import PublicKeyCredentialRequestOptions
+
         user_id = get_jwt_identity()
         user = User.query.get(user_id)
 
@@ -152,13 +150,16 @@ def begin_assertion():
             for c in user.webauthn_credentials
         ]
 
-        # ✅ This is correct for your FIDO2 version
+        # 👇 Begin authentication
         assertion_data, state = server.authenticate_begin(credentials)
-        options = assertion_data.public_key
 
+        # 🔐 Store session for completion
         session["webauthn_assertion_state"] = state
         session["assertion_user_id"] = user.id
         session["mfa_webauthn_verified"] = False
+
+        # ✅ Manually serialize clean dict
+        options: PublicKeyCredentialRequestOptions = assertion_data.public_key
 
         public_key_dict = {
             "challenge": websafe_encode(options.challenge),
@@ -186,158 +187,185 @@ def begin_assertion():
 @webauthn_bp.route("/webauthn/assertion-complete", methods=["POST"])
 @jwt_required()
 def complete_assertion():
+    from fido2.utils import websafe_decode
     try:
-        from fido2.utils import websafe_decode
-        from fido2.webauthn import CollectedClientData as ClientData
-        from fido2.cose import ES256
-        from fido2 import cbor
-
         data = request.get_json()
-        if isinstance(data, list):
-            if not data:
-                return jsonify({"error": "Empty WebAuthn assertion"}), 400
-            data = data[0]
-
         state = session.get("webauthn_assertion_state")
         user_id = session.get("assertion_user_id")
 
         if not state or not user_id:
             return jsonify({"error": "No assertion in progress."}), 400
 
-        # ✅ Decode challenge from session
-        challenge = websafe_decode(state.get("challenge"))
-
         user = User.query.get(user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        ip_address = request.remote_addr
-        device_info = request.user_agent.string
-        location = get_ip_location(ip_address)
-
-        if user.locked_until and user.locked_until > datetime.utcnow():
-            return jsonify({"error": f"WebAuthn locked. Try again after {user.locked_until}"}), 429
-
         credential_id = websafe_decode(data["credentialId"])
-        print("📦 Credential ID from client:", credential_id)
-
         credential = WebAuthnCredential.query.filter_by(
             user_id=user.id,
             credential_id=credential_id
         ).first()
 
+        ip_address = request.remote_addr
+        device_info = request.user_agent.string
+        location = get_ip_location(ip_address)
+
+        # Lockout check
+        if user.locked_until and user.locked_until > datetime.utcnow():
+            return jsonify({"error": f"Webauthn locked. Try again after {user.locked_until}"}), 429
+
         if not credential:
-            session.pop("webauthn_assertion_state", None)
-            session.pop("assertion_user_id", None)
-            print("❌ Credential not found.")
-            return jsonify({"error": "❌ Credential not registered"}), 404
-
-        print("📦 Credential ID in DB:", credential.credential_id)
-
-        # ✅ Prepare assertion object
-        assertion_dict = {
-            "id": data["credentialId"],
-            "rawId": data["credentialId"],
-            "type": "public-key",
-            "response": {
-                "authenticatorData": data["authenticatorData"],
-                "clientDataJSON": data["clientDataJSON"],
-                "signature": data["signature"],
-                "userHandle": data.get("userHandle")
-            }
-        }
-
-        assertion = AuthenticationResponse.from_dict(assertion_dict)
-
-        client_data = ClientData(websafe_decode(data["clientDataJSON"]))
-        print("🧪 clientData.challenge:", client_data.challenge)
-        print("🧪 session challenge:", challenge)
-
-        # ✅ Wrap credential
-        class VerifiedCredential:
-            def __init__(self, cred):
-                self.credential_id = cred.credential_id
-                self.public_key = ES256(cbor.decode(cred.public_key))
-                self.sign_count = cred.sign_count
-                self.transports = cred.transports.split(",") if cred.transports else []
-                self.user_handle = None
-
-        verified_credential = VerifiedCredential(credential)
-
-        # ✅ Perform verification
-        try:
-            state["challenge"] = websafe_encode(challenge)  # Ensure valid format for internal decode
-            auth_result = server.authenticate_complete(
-                state,
-                [verified_credential],
-                assertion
-            )
-
-            if not hasattr(auth_result, "auth_data"):
-                raise ValueError("FIDO2 did not verify the assertion (no auth_data returned)")
-
-            credential.sign_count = auth_result.auth_data.sign_count
-            print("✅ WebAuthn verified. New sign count:", credential.sign_count)
-
-        except Exception as e:
-            print("❌ WebAuthn verification failed:", str(e))
-            import traceback
-            traceback.print_exc()
-            session.pop("webauthn_assertion_state", None)
-            session.pop("assertion_user_id", None)
-            return jsonify({"error": f"❌ Biometric verification failed: {str(e)}"}), 401
-
-        # ✅ Log success
-        db.session.add_all([
-            credential,
-            UserAuthLog(
+            # Count recent failures
+            threshold_time = datetime.utcnow() - timedelta(minutes=5)
+            fail_count = UserAuthLog.query.filter_by(
                 user_id=user.id,
                 auth_method="webauthn",
-                auth_status="success",
-                ip_address=ip_address,
-                location=location,
-                device_info=device_info,
-                failed_attempts=0
-            ),
-            RealTimeLog(
-                user_id=user.id,
-                action="✅ WebAuthn biometric/passkey verified",
-                ip_address=ip_address,
-                device_info=device_info,
-                location=location,
-                risk_alert=False
-            )
-        ])
-        db.session.commit()
+                auth_status="failed"
+            ).filter(UserAuthLog.auth_timestamp >= threshold_time).count() + 1
 
+            if fail_count >= 5:
+                user.locked_until = datetime.utcnow() + timedelta(minutes=15)
+
+            # Log failed WebAuthn attempt
+            db.session.add(UserAuthLog(
+                user_id=user.id,
+                auth_method="webauthn",
+                auth_status="failed",
+                ip_address=ip_address,
+                location=location,
+                device_info=device_info,
+                failed_attempts=fail_count
+            ))
+
+            db.session.add(RealTimeLog(
+                user_id=user.id,
+                action=f"❌ Failed WebAuthn: Credential not found ({fail_count})",
+                ip_address=ip_address,
+                device_info=device_info,
+                location=location,
+                risk_alert=(fail_count >= 3)
+            ))
+
+            if fail_count >= 5:
+                if user.email:
+                    send_user_alert(
+                        user=user,
+                        event_type="webauthn_lockout", 
+                        ip_address=ip_address,
+                        location=location,
+                        device_info=device_info
+                    )
+                send_admin_alert(
+                    user=user,
+                    event_type="webauthn_lockout", 
+                    ip_address=ip_address,
+                    location=location,
+                    device_info=device_info
+                )
+
+            db.session.commit()
+            return jsonify({"error": "Invalid WebAuthn credential."}), 401
+
+
+
+        # ✅ Build WebAuthn response object (as dict)
+            assertion = {
+                "id": data["credentialId"],
+                "rawId": websafe_decode(data["credentialId"]),
+                "type": "public-key",
+                "response": {
+                    "authenticatorData": websafe_decode(data["authenticatorData"]),
+                    "clientDataJSON": websafe_decode(data["clientDataJSON"]),
+                    "signature": websafe_decode(data["signature"]),
+                    "userHandle": websafe_decode(data["userHandle"]) if data.get("userHandle") else None
+                }
+            }
+
+            # ✅ Credential from DB
+            public_key_source = {
+                "id": credential.credential_id,
+                "public_key": credential.public_key,
+                "sign_count": credential.sign_count,
+                "transports": credential.transports.split(",") if credential.transports else [],
+                "user_handle": None,
+            }
+
+            # ✅ Final auth check (note: NO brackets on `assertion`)
+            server.authenticate_complete(
+                state,
+                assertion,
+                [public_key_source]
+            )
+
+        # 🎉 Success
+        credential.sign_count += 1
+        db.session.commit()
         session["mfa_webauthn_verified"] = True
         session.pop("webauthn_assertion_state", None)
         session.pop("assertion_user_id", None)
 
         access = UserAccessControl.query.filter_by(user_id=user.id).first()
         role = db.session.get(UserRole, access.role_id).role_name.lower() if access else "user"
+
         urls = {
             "admin": url_for("admin.admin_dashboard", _external=True),
             "agent": url_for("agent.agent_dashboard", _external=True),
             "user": url_for("user.user_dashboard", _external=True)
         }
 
+        # 🧬 Determine login method based on credential metadata
+        transports = credential.transports.split(",") if credential.transports else []
+        if "hybrid" in transports:
+            method = "cross-device passkey"
+        elif "usb" in transports:
+            method = "USB security key"
+        elif "internal" in transports:
+            # Heuristic: if on desktop and using internal, likely platform auth (fingerprint or passkey)
+            user_agent = request.user_agent.string.lower()
+            if "android" in user_agent or "iphone" in user_agent:
+                method = "platform authenticator (fingerprint)"
+            elif "chrome" in user_agent and "linux" in user_agent:
+                method = "passkey via Chrome Sync (Google account)"
+            else:
+                method = "platform authenticator (fingerprint)"
+        else:
+            method = "unknown method"
+
+        
+
+        # 🛡️ RealTimeLog entry for login
+        db.session.add(RealTimeLog(
+            user_id=user.id,
+            action=f"🔐 Logged in via WebAuthn ({method})",
+            ip_address=request.remote_addr,
+            device_info=request.user_agent.string,
+            location=get_ip_location(request.remote_addr),
+            risk_alert=False
+        ))
+
+        # 🧾 UserAuthLog entry
+        db.session.add(UserAuthLog(
+            user_id=user.id,
+            auth_method="webauthn",
+            auth_status="success",
+            ip_address=request.remote_addr,
+            device_info=request.user_agent.string,
+            location=get_ip_location(request.remote_addr),
+            failed_attempts=0
+        ))
+
+        db.session.commit()
+        session.pop("webauthn_register_state", None)
+
+        
+
         return jsonify({
             "message": "✅ Biometric/passkey login successful",
             "user_id": user.id,
-            "dashboard_url": urls.get(role, urls["user"])
+            "dashboard_url": urls.get(role, url_for("user.user_dashboard", _external=True))
         })
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        session.pop("webauthn_assertion_state", None)
-        session.pop("assertion_user_id", None)
-        return jsonify({"error": f"❌ WebAuthn error: {str(e)}"}), 500
-
-
-
-
-
-
-
+        return jsonify({"error": f"❌ Assertion failed: {str(e)}"}), 500

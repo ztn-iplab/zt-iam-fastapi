@@ -45,6 +45,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     
     console.log("🟢 WebAuthn options challenge:", options.challenge);
 
+    try {
+      const assertion = await navigator.credentials.get({ publicKey });
+      // Submit to /webauthn/assertion-complete
+    } catch (err) {
+      console.warn("❌ WebAuthn failed before reaching server:", err.message);
+    
+      fetch("/api/auth/log-webauthn-failure", {
+        method: "POST",
+        body: JSON.stringify({ error: err.message }),
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    
     // ✅ Prompt fingerprint/passkey
     const assertion = await navigator.credentials.get({ publicKey: options });
 

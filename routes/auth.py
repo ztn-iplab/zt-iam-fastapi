@@ -555,3 +555,31 @@ def enroll_biometric_page():
 @jwt_required()
 def verify_biometric_page():
     return render_template("verify_biometric.html")
+
+
+@auth_bp.route("/log-webauthn-failure", methods=["POST"])
+@jwt_required(optional=True)
+def log_webauthn_client_failure():
+    from flask_jwt_extended import get_jwt_identity
+
+    data = request.get_json()
+    error = data.get("error", "Unknown client error")
+    ip = request.remote_addr
+    device_info = request.user_agent.string
+    location = get_ip_location(ip)
+
+    user_id = get_jwt_identity() or session.get("assertion_user_id")
+
+    db.session.add(RealTimeLog(
+        user_id=user_id,
+        action=f"⚠️ Client-side WebAuthn failure: {error}",
+        ip_address=ip,
+        device_info=device_info,
+        location=location,
+        risk_alert=False
+    ))
+    db.session.commit()
+
+    return jsonify({"status": "logged"}), 200
+
+

@@ -1,14 +1,25 @@
 from flask import Blueprint, request, jsonify, render_template, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.decorators import role_required
-from models.models import db, User, UserAccessControl, UserRole, Wallet, Transaction, UserAuthLog, SIMCard, RealTimeLog, HeadquartersWallet
+from models.models import (
+    db,
+    User, 
+    UserAccessControl, 
+    UserRole, 
+    Wallet, 
+    Transaction,
+    UserAuthLog, 
+    SIMCard, 
+    RealTimeLog, 
+    HeadquartersWallet)
 import random
 import json
 import threading
+from sqlalchemy import func, text
 from datetime import datetime
 from threading import Timer
 from utils.auth_decorators import require_full_mfa
-
+from datetime import datetime, timedelta
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -789,3 +800,92 @@ def reverse_transfer(transaction_id):
         "reversed_transaction_id": reversal.id
     }), 200
 
+# Admin Metrics
+@admin_bp.route("/api/admin/metrics")
+@jwt_required()
+def admin_dashboard_metrics():
+    from flask import request
+
+    def daterange(start_date, end_date):
+        for n in range((end_date - start_date).days + 1):
+            yield start_date + timedelta(n)
+
+    from_str = request.args.get("from")
+    to_str = request.args.get("to")
+
+    now = datetime.utcnow()
+    default_from = (now - timedelta(days=7)).date()
+    default_to = now.date()
+
+    try:
+        start_date = datetime.strptime(from_str, "%Y-%m-%d").date() if from_str else default_from
+        end_date = datetime.strptime(to_str, "%Y-%m-%d").date() if to_str else default_to
+    except Exception:
+        return jsonify({"error": "Invalid date format"}), 400
+
+    # Login method breakdown (success only)
+    login_methods = {
+        "password": UserAuthLog.query.filter_by(auth_method="password", auth_status="success").count(),
+        "totp": UserAuthLog.query.filter_by(auth_method="totp", auth_status="success").count(),
+        "webauthn": UserAuthLog.query.filter_by(auth_method="webauthn", auth_status="success").count()
+    }
+
+    # Authentication failures padded by date range
+    failures = (
+        db.session.query(
+            func.date(UserAuthLog.auth_timestamp).label('day'),
+            func.count().label('count')
+        )
+        .filter(
+            UserAuthLog.auth_status == 'failed',
+            func.date(UserAuthLog.auth_timestamp) >= start_date,
+            func.date(UserAuthLog.auth_timestamp) <= end_date
+        )
+        .group_by('day')
+        .order_by('day')
+        .all()
+    )
+
+    failure_dict = {r.day.strftime('%Y-%m-%d'): r.count for r in failures}
+    padded_dates = [d.strftime('%Y-%m-%d') for d in daterange(start_date, end_date)]
+    padded_counts = [failure_dict.get(d, 0) for d in padded_dates]
+
+    auth_failures = {
+        "dates": padded_dates,
+        "counts": padded_counts
+    }
+
+    # Transactions by actor (from transaction_metadata)
+    actor_query = text("""
+        SELECT
+            CASE
+                WHEN transaction_metadata::json->>'initiated_by' = 'user' THEN 'user'
+                WHEN transaction_metadata::json->>'transfer_by' = 'Agent' THEN 'agent'
+                WHEN transaction_metadata::json->>'withdrawal_method' = 'Agent Processed' THEN 'agent'
+                ELSE 'admin'
+            END AS actor,
+            COUNT(*) AS count
+        FROM transactions
+        GROUP BY actor
+    """)
+
+    actor_results = db.session.execute(actor_query)
+    actor_counts = {row.actor: row.count for row in actor_results}
+    transaction_sources = [
+        actor_counts.get("user", 0),
+        actor_counts.get("agent", 0),
+        actor_counts.get("admin", 0)
+    ]
+
+    # Flagged vs clean transactions
+    flagged = {
+        "flagged": Transaction.query.filter(Transaction.risk_score >= 0.7).count(),
+        "clean": Transaction.query.filter(Transaction.risk_score < 0.7).count()
+    }
+
+    return jsonify({
+        "login_methods": login_methods,
+        "auth_failures": auth_failures,
+        "transaction_sources": transaction_sources,
+        "flagged": flagged
+    })

@@ -1,5 +1,6 @@
-{% extends "base.html" %} {% block title %}Set Up TOTP{% endblock %} {% block
-body %}
+{% extends "base.html" %}
+{% block title %}Set Up TOTP{% endblock %}
+{% block body %}
 <div class="main-container">
   <div class="totp-card">
     <h2>🔐 Secure Your Transactions</h2>
@@ -16,7 +17,9 @@ body %}
       <strong>Microsoft Authenticator</strong>.
     </p>
 
-    <div id="totp-setup-container" class="qr-container">Loading QR Code...</div>
+    <div id="totp-setup-container" class="qr-container">
+      <div class="qr-placeholder">Loading QR Code...</div>
+    </div>
 
     <p class="manual-label">If you can't scan the QR, use this manual key:</p>
     <code id="manual-key" class="manual-key">Loading...</code>
@@ -38,53 +41,78 @@ body %}
 <script src="{{ url_for('static', filename='js/setup_totp.js') }}"></script>
 
 <style>
+  body {
+    background: linear-gradient(135deg, #1e1f36, #2a2b4f);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+  }
+
   .main-container {
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 85vh;
+    padding-top: 40px;
+    padding-bottom: 40px;
+    min-height: 100vh;
   }
 
   .totp-card {
-    background: #fff;
-    padding: 2.5rem;
-    border-radius: 16px;
-    box-shadow: 0 0 20px rgba(0, 0, 0, 0.08);
+    background: #ffffff;
+    padding: 1.8rem 1.5rem;
+    border-radius: 18px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
     text-align: center;
-    max-width: 500px;
     width: 100%;
+    max-width: 420px;
+    box-sizing: border-box;
   }
 
   .totp-card h2 {
     color: #2c3e50;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
+    font-size: 1.5rem;
+  }
+
+  #totp-reason-message {
+    font-size: 0.95rem;
+    color: #03a9f4;
+    margin-bottom: 1.25rem;
   }
 
   .totp-instructions {
-    color: #34495e;
-    margin-bottom: 1.5rem;
+    color: #555;
+    margin-bottom: 1rem;
+    font-size: 0.95rem;
+  }
+
+  .qr-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 1.2rem;
   }
 
   .qr-container img {
-    width: 200px;
-    height: 200px;
-    border: 2px solid #e0e0e0;
-    border-radius: 8px;
-    padding: 8px;
+    width: 180px;
+    height: 180px;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 6px;
     background: #fafafa;
   }
 
   .manual-label {
-    margin-top: 1.5rem;
+    margin-top: 1rem;
     font-weight: 500;
     color: #444;
+    font-size: 0.9rem;
   }
 
   .manual-key {
     display: inline-block;
-    font-size: 1.1rem;
+    font-size: 1rem;
     background: #f3f3f3;
-    padding: 6px 12px;
+    padding: 5px 10px;
     border-radius: 6px;
     margin-top: 0.5rem;
     letter-spacing: 0.1em;
@@ -95,16 +123,23 @@ body %}
     background-color: #1e88e5;
     color: white;
     border: none;
-    padding: 10px 20px;
+    padding: 10px 18px;
     border-radius: 8px;
     cursor: pointer;
     font-size: 1rem;
+    margin-top: 1.8rem;
+    transition: background 0.2s ease;
+  }
+
+  .btn-primary:hover {
+    background-color: #1565c0;
   }
 
   .totp-footer-note {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: #888;
-    margin-top: 1.5rem;
+    margin-top: 1.2rem;
   }
 </style>
+
 {% endblock %}

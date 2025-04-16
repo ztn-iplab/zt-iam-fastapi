@@ -503,6 +503,11 @@ td.action-buttons {
   font-size: 0.75rem;
 }
 
+#daterange {
+  background-color: white;
+  cursor: pointer;
+}
+
 /* ======================= */
 /* Global Search Bar Styles */
 /* ======================= */

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <title>{% block title %}ZTN Simulation{% endblock %}</title>
 
-    <!-- Fav Icon -->
+    <!-- ✅ Fav Icon -->
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" />
 
     <!-- ✅ Bootstrap 5 CSS -->
@@ -13,19 +13,25 @@
       rel="stylesheet"
     />
 
+    <!-- ✅ Font Awesome -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
+    />
+
     <!-- ✅ Toastify CSS -->
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css"
     />
 
-    <!-- ✅ Font Awesome for icons -->
+    <!-- ✅ Flatpickr CSS -->
     <link
       rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
+      href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"
     />
 
-    <!-- ✅ Your custom styles (override Bootstrap last) -->
+    <!-- ✅ Your custom styles (always last to override others) -->
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/styles.css') }}"
@@ -35,18 +41,21 @@
   <body class="{% block body_class %}{% endblock %}">
     {% block body %}{% endblock %}
 
-    <!-- ✅ JS Scripts at the bottom for better load performance -->
+    <!-- ✅ JavaScript (footer load for performance) -->
 
-    <!-- ✅ Bootstrap Bundle (JS + Popper) -->
+    <!-- ✅ Bootstrap Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
 
     <!-- ✅ Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- ✅ Toastify (must come before any script using it) -->
+    <!-- ✅ Toastify -->
     <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
 
-    <!-- ✅ Block for child templates to inject their own JS -->
+    <!-- ✅ Flatpickr -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+    <!-- ✅ Child templates will inject here -->
     {% block extra_scripts %}{% endblock %}
   </body>
 </html>

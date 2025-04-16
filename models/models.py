@@ -102,6 +102,7 @@ class Transaction(db.Model):
     fraud_flag = db.Column(db.Boolean, default=False)
     risk_score = db.Column(db.Float, default=0.0)  # Score for fraud detection
     transaction_metadata = db.Column(db.Text, nullable=True)  # Store JSON-like metadata
+    
 
 class PendingTransaction(db.Model):
     __tablename__ = 'pending_transactions'

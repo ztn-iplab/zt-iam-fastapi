@@ -63,8 +63,306 @@ document.addEventListener("DOMContentLoaded", function () {
     .querySelectorAll(".admin-section")
     .forEach((s) => (s.style.display = "none"));
   document.getElementById("admin-welcome").style.display = "block";
+
+  // ---------------------------
+  // Admin Metrics Section
+  // ---------------------------
+  // ---------------------------
+  // Admin Metrics Section
+  // ---------------------------
+  (async () => {
+    const loginChart = document.getElementById("login-method-chart");
+    const authFailuresChart = document.getElementById("auth-failures-chart");
+    const transactionTypeChart = document.getElementById("transaction-type-chart");
+    const flaggedChart = document.getElementById("flagged-transactions-chart");
+    const heatmapContainer = document.getElementById("heatmap-container");
+
+    let loginChartInstance, authFailuresInstance, transactionTypeInstance, flaggedInstance;
+
+    const dateControls = document.createElement("div");
+    dateControls.className = "d-flex gap-2 align-items-center mt-2 mb-3";
+    dateControls.innerHTML = `
+      <input type="text" id="daterange" class="form-control form-control-sm" style="max-width: 250px;" placeholder="Select date range">
+      <button id="filter-date" class="btn btn-sm btn-outline-primary">🔍 Apply Filter</button>
+    `;
+    document.querySelector("#dashboard-metrics")?.prepend(dateControls);
+
+    setTimeout(() => {
+      if (window.flatpickr && document.getElementById("daterange")) {
+        flatpickr("#daterange", {
+          mode: "range",
+          dateFormat: "Y-m-d",
+          onClose: function (selectedDates, dateStr) {
+            const range = dateStr.split(" to ");
+            const from = range[0]?.trim() || null;
+            const to = range[1]?.trim() || null;
+            loadMetrics(from, to);
+          }
+        });
+      }
+    }, 100);
+
+    const kpiContainer = document.createElement("div");
+    kpiContainer.className = "row mb-4";
+    document.querySelector("#dashboard-metrics")?.prepend(kpiContainer);
+
+    function updateKPIs(data) {
+      kpiContainer.innerHTML = `
+        <div class="col-md-3">
+          <div class="card text-white bg-primary mb-3 text-center">
+            <div class="card-body">
+              <h5 class="card-title">Total Logins</h5>
+              <p class="card-text fs-4">${
+                data.login_methods.password +
+                data.login_methods.totp +
+                data.login_methods.webauthn
+              }</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card text-white bg-danger mb-3 text-center">
+            <div class="card-body">
+              <h5 class="card-title">Failed Logins (7d)</h5>
+              <p class="card-text fs-4">${data.auth_failures.counts.reduce((a, b) => a + b, 0)}</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card text-white bg-warning mb-3 text-center">
+            <div class="card-body">
+              <h5 class="card-title">Flagged Txns</h5>
+              <p class="card-text fs-4">${data.flagged.flagged}</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card text-white bg-success mb-3 text-center">
+            <div class="card-body">
+              <h5 class="card-title">Clean Txns</h5>
+              <p class="card-text fs-4">${data.flagged.clean}</p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    await loadMetrics(
+      new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().slice(0, 10),
+      new Date().toISOString().slice(0, 10)
+    );
+
+    function renderHeatmap(data) {
+      if (!heatmapContainer) return;
+  
+      const locationCounts = {};
+      for (const log of data.logs || []) {
+        const loc = log.location || "Unknown";
+        locationCounts[loc] = (locationCounts[loc] || 0) + 1;
+      }
+  
+      const entries = Object.entries(locationCounts).sort((a, b) => b[1] - a[1]);
+      heatmapContainer.innerHTML = `
+        <h5 class="text-center">🌍 Location Heatmap</h5>
+        <ul class="list-group mt-2">
+          ${entries
+            .map(
+              ([loc, count]) => `<li class="list-group-item d-flex justify-content-between align-items-center">
+                ${loc}
+                <span class="badge bg-danger rounded-pill">${count}</span>
+              </li>`
+            )
+            .join("")}
+        </ul>
+      `;
+    }
+  
+    function downloadCSV(metrics) {
+      const rows = [
+        ["Metric", "Value"],
+        ["Password Logins", metrics.login_methods.password],
+        ["TOTP Logins", metrics.login_methods.totp],
+        ["WebAuthn Logins", metrics.login_methods.webauthn],
+        ["Total Logins", metrics.login_methods.password + metrics.login_methods.totp + metrics.login_methods.webauthn],
+        ["Failed Logins (7d)", metrics.auth_failures.counts.reduce((a, b) => a + b, 0)],
+        ["Clean Transactions", metrics.flagged.clean],
+        ["Flagged Transactions", metrics.flagged.flagged]
+      ];
+      const csv = rows.map(row => row.join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `admin_dashboard_metrics_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  
+    async function loadMetrics(from = null, to = null) {
+      try {
+        const params = new URLSearchParams();
+        if (from) params.append("from", from);
+        if (to) params.append("to", to);
+  
+        const res = await fetch(`/api/admin/metrics?${params.toString()}`, {
+          method: "GET",
+          credentials: "include"
+        });
+        const data = await res.json();
+  
+        updateKPIs(data);
+        renderHeatmap(data);
+  
+        [loginChartInstance, authFailuresInstance, transactionTypeInstance, flaggedInstance].forEach(chart => {
+          if (chart) chart.destroy();
+        });
+  
+        authFailuresInstance = new Chart(authFailuresChart, {
+          type: "line",
+          data: {
+            labels: data.auth_failures.dates,
+            datasets: [{
+              label: "Auth Failures",
+              data: data.auth_failures.counts,
+              fill: false,
+              borderColor: "#dc3545",
+              tension: 0.1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: {
+                ticks: {
+                  autoSkip: true,
+                  maxTicksLimit: 10
+                }
+              }
+            }
+          }
+        });
+        
+        loginChartInstance = new Chart(loginChart, {
+          type: "doughnut",
+          data: {
+            labels: ["Password", "TOTP", "WebAuthn"],
+            datasets: [{
+              label: "Login Methods",
+              data: [
+                data.login_methods.password,
+                data.login_methods.totp,
+                data.login_methods.webauthn
+              ]
+            }]
+          }
+        });
+        
+        transactionTypeInstance = new Chart(transactionTypeChart, {
+          type: "bar",
+          data: {
+            labels: ["User", "Agent", "Admin"],
+            datasets: [{
+              label: "Transactions by Actor",
+              data: data.transaction_sources,
+              backgroundColor: ["#007bff", "#28a745", "#ffc107"]
+            }]
+          }
+        });
+        
+        flaggedInstance = new Chart(flaggedChart, {
+          type: "pie",
+          data: {
+            labels: ["Clean", "Flagged"],
+            datasets: [{
+              data: [data.flagged.clean, data.flagged.flagged],
+              backgroundColor: ["#6c757d", "#dc3545"]
+            }]
+          }
+        });
+        
+        if (data.auth_failures.counts.every(count => count === 0)) {
+          Toastify({
+            text: "No failed logins found in selected date range.",
+            duration: 3000,
+            backgroundColor: "#6c757d"
+          }).showToast();
+        }
+        
+        if (data.login_methods.password + data.login_methods.totp + data.login_methods.webauthn === 0) {
+          Toastify({
+            text: "No successful logins found in selected date range.",
+            duration: 3000,
+            backgroundColor: "#6c757d"
+          }).showToast();
+        }
+        
+        if (data.transaction_sources.every(v => v === 0)) {
+          Toastify({
+            text: "No transactions found in selected date range.",
+            duration: 3000,
+            backgroundColor: "#6c757d"
+          }).showToast();
+        }
+        
+        if ((data.flagged.clean + data.flagged.flagged) === 0) {
+          Toastify({
+            text: "No transactions flagged or clean in selected range.",
+            duration: 3000,
+            backgroundColor: "#6c757d"
+          }).showToast();
+        }
+        
+        exportButton.onclick = () => downloadCSV(data);
+      } catch (err) {
+        console.error("Failed to load admin metrics:", err);
+      }
+    }
+  
+    await loadMetrics();
+  
+    let autoRefresh = true;
+    let refreshInterval = 60000;
+  
+    const toggleButton = document.createElement("button");
+    toggleButton.textContent = "⏸ Pause Auto-Refresh";
+    toggleButton.className = "btn btn-sm btn-outline-secondary mt-3 me-2";
+    toggleButton.onclick = () => {
+      autoRefresh = !autoRefresh;
+      toggleButton.textContent = autoRefresh ? "⏸ Pause Auto-Refresh" : "▶️ Resume Auto-Refresh";
+    };
+  
+    const exportButton = document.createElement("button");
+    exportButton.textContent = "⬇️ Export Metrics";
+    exportButton.className = "btn btn-sm btn-outline-success mt-3 me-2";
+  
+    const controlsDiv = document.createElement("div");
+    controlsDiv.className = "d-flex gap-2";
+    controlsDiv.appendChild(toggleButton);
+    controlsDiv.appendChild(exportButton);
+  
+    document.querySelector("#dashboard-metrics")?.prepend(controlsDiv);
+  
+    setInterval(() => {
+      if (autoRefresh) {
+        const range = document.getElementById("daterange").value.split(" to ");
+        const from = range[0]?.trim() || null;
+        const to = range[1]?.trim() || null;
+        loadMetrics(from, to);
+      }
+    }, refreshInterval);
+  
+    document.getElementById("filter-date").addEventListener("click", () => {
+      const range = document.getElementById("daterange").value.split(" to ");
+      const from = range[0]?.trim() || null;
+      const to = range[1]?.trim() || null;
+      loadMetrics(from, to);
+    });
+  
+  })(); 
 });
 
+  
 function fetchHqBalance() {
   fetch("/admin/hq-balance", { credentials: "include" })
     .then((res) => res.json())

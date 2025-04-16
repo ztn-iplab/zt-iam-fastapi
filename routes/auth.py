@@ -38,22 +38,6 @@ def register_form():
 def login_form():
     return render_template('login.html')
 
-# def send_admin_alert(subject, body):
-#     try:
-#         msg = Message(
-#             subject=subject,
-#             recipients=[current_app.config["ADMIN_ALERT_EMAIL"]],
-#             body=body
-#         )
-#         mail.send(msg)
-#     except Exception as e:
-#         print(f"❌ Failed to send alert email: {e}")
-
-# def send_user_alert(user_email, subject, body):
-#     if user_email:
-#         msg = Message(subject=subject, recipients=[user_email], body=body)
-#         mail.send(msg)
-
 @auth_bp.route('/login', methods=['POST'])
 def login_route():
     def count_recent_failures(user_id, method="password", window_minutes=5):
@@ -219,7 +203,7 @@ def register():
     existing_user = User.query.filter(
         (User.email == data['email']) | (User.id == sim_card.user_id)
     ).first()
-    
+
     if existing_user:
         return jsonify({"error": "User with this email or SIM card already exists"}), 400
 
@@ -234,7 +218,7 @@ def register():
     )
 
     # ✅ Use the setter to ensure hashing works correctly
-    new_user.password = data['password']  # This will hash the password automatically
+    new_user.password = data['password']
 
     try:
         db.session.add(new_user)
@@ -258,8 +242,19 @@ def register():
     # 🔹 Create Wallet for the User
     new_wallet = Wallet(user_id=new_user.id, balance=0.0, currency="RWF")
     db.session.add(new_wallet)
-    
-    db.session.commit()  # ✅ Ensure all database changes are saved
+
+    # 🔹 Log registration event
+    rt_log = RealTimeLog(
+        user_id=new_user.id,
+        action=f"🆕 New user registered using ICCID {data['iccid']} (SIM created by: {sim_card.registered_by})",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Unknown"),
+        location=data.get("location", "Unknown"),
+        risk_alert=False
+    )
+    db.session.add(rt_log)
+
+    db.session.commit()
 
     # 🔹 Generate JWT token for the newly registered user
     access_token = create_access_token(identity=new_user.id)

@@ -1,6 +1,7 @@
 document.addEventListener("DOMContentLoaded", async () => {
   const statusDiv = document.getElementById("biometric-status");
 
+  // 🔧 Utility: Buffer → Base64URL
   function bufferToBase64url(buffer) {
     const bytes = new Uint8Array(buffer);
     let str = "";
@@ -8,6 +9,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
 
+  // 🔧 Utility: Base64URL → Buffer
   function base64urlToBuffer(base64url) {
     if (!base64url || typeof base64url !== "string") {
       throw new Error("Invalid base64url input");
@@ -24,6 +26,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   try {
+    // 🟢 Step 1: Begin WebAuthn assertion
     const res = await fetch("/webauthn/assertion-begin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -35,32 +38,23 @@ document.addEventListener("DOMContentLoaded", async () => {
       throw new Error(result.error || "Invalid WebAuthn response from server.");
     }
 
-    const options = result.public_key;
+    const publicKey = result.public_key;
 
-    options.challenge = base64urlToBuffer(options.challenge);
-    options.allowCredentials = (options.allowCredentials || []).map(c => ({
+    // 🔁 Convert challenge & credential IDs
+    publicKey.challenge = base64urlToBuffer(publicKey.challenge);
+    publicKey.allowCredentials = (publicKey.allowCredentials || []).map(c => ({
       ...c,
       id: base64urlToBuffer(c.id)
     }));
-    
-    console.log("🟢 WebAuthn options challenge:", options.challenge);
 
-    try {
-      const assertion = await navigator.credentials.get({ publicKey });
-      // Submit to /webauthn/assertion-complete
-    } catch (err) {
-      console.warn("❌ WebAuthn failed before reaching server:", err.message);
-    
-      fetch("/api/auth/log-webauthn-failure", {
-        method: "POST",
-        body: JSON.stringify({ error: err.message }),
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-    
-    // ✅ Prompt fingerprint/passkey
-    const assertion = await navigator.credentials.get({ publicKey: options });
+    console.log("🟢 WebAuthn assertion options ready:", publicKey);
 
+    // 👆 Step 2: Prompt for fingerprint or USB key
+    const assertion = await navigator.credentials.get({ publicKey });
+
+    console.log("✅ WebAuthn assertion successful:", assertion);
+
+    // 🧾 Step 3: Build payload
     const payload = {
       credentialId: bufferToBase64url(assertion.rawId),
       authenticatorData: bufferToBase64url(assertion.response.authenticatorData),
@@ -70,8 +64,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         ? bufferToBase64url(assertion.response.userHandle)
         : null
     };
+
     console.log("🛂 WebAuthn Assertion Payload:", payload);
 
+    // 📨 Step 4: Send to server
     const finalRes = await fetch("/webauthn/assertion-complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -85,13 +81,41 @@ document.addEventListener("DOMContentLoaded", async () => {
       throw new Error(finalResult.error || "Passkey verification failed.");
     }
 
+    // ✅ Step 5: Show success
     statusDiv.textContent = "✅ Identity verified. Redirecting...";
     statusDiv.style.color = "green";
     window.location.href = finalResult.dashboard_url || "/";
 
   } catch (err) {
-    console.error("❌ Fingerprint error:", err);
-    statusDiv.textContent = "❌ " + err.message;
+    let readableReason = "Unknown client-side WebAuthn error.";
+    switch (err.name) {
+      case "NotAllowedError":
+        readableReason = "User cancelled or did not interact with WebAuthn prompt in time.";
+        break;
+      case "AbortError":
+        readableReason = "WebAuthn operation was aborted (maybe navigated away or tab closed).";
+        break;
+      case "SecurityError":
+        readableReason = "WebAuthn blocked due to insecure context or permissions.";
+        break;
+      case "InvalidStateError":
+        readableReason = "Authenticator is not in a valid state to complete the operation.";
+        break;
+      case "UnknownError":
+        readableReason = "WebAuthn failed due to an unknown browser error.";
+        break;
+    }
+  
+    console.warn(`❌ ${readableReason} (${err.name}: ${err.message})`);
+    statusDiv.textContent = "❌ " + readableReason;
     statusDiv.style.color = "red";
-  }
+  
+    await fetch("/api/auth/log-webauthn-failure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        error: `${readableReason} (${err.name}: ${err.message})`
+      })
+    });
+  } 
 });

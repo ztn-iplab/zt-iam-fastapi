@@ -19,7 +19,15 @@
         <p class="text-muted">
           Select a section from the left menu to begin managing the system.
         </p>
+        
       </div>
+      <section id="dashboard-metrics" class="row mt-4">
+        <div class="col-md-6 mb-4"><canvas id="login-method-chart"></canvas></div>
+        <div class="col-md-6 mb-4"><canvas id="auth-failures-chart"></canvas></div>
+        <div class="col-md-6 mb-4"><canvas id="transaction-type-chart"></canvas></div>
+        <div class="col-md-6 mb-4"><canvas id="flagged-transactions-chart"></canvas></div>
+        <div id="heatmap-container" class="mt-4"></div>
+      </section>      
     </section>
 
     <!-- FUND AGENT SECTION -->
@@ -344,6 +352,7 @@
   </div>
 </section>
 {% endblock %} {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
 <!--  -->
 {% endblock %}

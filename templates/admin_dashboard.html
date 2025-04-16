@@ -21,13 +21,76 @@
         </p>
         
       </div>
-      <section id="dashboard-metrics" class="row mt-4">
-        <div class="col-md-6 mb-4"><canvas id="login-method-chart"></canvas></div>
-        <div class="col-md-6 mb-4"><canvas id="auth-failures-chart"></canvas></div>
-        <div class="col-md-6 mb-4"><canvas id="transaction-type-chart"></canvas></div>
-        <div class="col-md-6 mb-4"><canvas id="flagged-transactions-chart"></canvas></div>
-        <div id="heatmap-container" class="mt-4"></div>
-      </section>      
+      <section id="dashboard-metrics" class="container-fluid mt-4">
+
+        <!-- 🔢 Metrics Charts -->
+        <div class="row">
+          <div class="col-md-6 mb-4">
+            <div class="card shadow-sm bg-dark text-white">
+              <div class="card-header border-0 bg-transparent">
+                <h6 class="mb-0"><i class="bi bi-fingerprint me-2"></i>Login Methods</h6>
+              </div>
+              <div class="card-body p-3">
+                <canvas id="login-method-chart" height="200"></canvas>
+              </div>
+            </div>
+          </div>
+      
+          <div class="col-md-6 mb-4">
+            <div class="card shadow-sm bg-dark text-white">
+              <div class="card-header border-0 bg-transparent">
+                <h6 class="mb-0"><i class="bi bi-x-octagon-fill me-2"></i>Authentication Failures</h6>
+              </div>
+              <div class="card-body p-3">
+                <canvas id="auth-failures-chart" height="200"></canvas>
+              </div>
+            </div>
+          </div>
+      
+          <div class="col-md-6 mb-4">
+            <div class="card shadow-sm bg-dark text-white">
+              <div class="card-header border-0 bg-transparent">
+                <h6 class="mb-0"><i class="bi bi-person-lines-fill me-2"></i>Transactions by Actor</h6>
+              </div>
+              <div class="card-body p-3">
+                <canvas id="transaction-type-chart" height="200"></canvas>
+              </div>
+            </div>
+          </div>
+      
+          <div class="col-md-6 mb-4">
+            <div class="card shadow-sm bg-dark text-white">
+              <div class="card-header border-0 bg-transparent">
+                <h6 class="mb-0"><i class="bi bi-flag-fill me-2"></i>Flagged vs Clean Transactions</h6>
+              </div>
+              <div class="card-body p-3">
+                <canvas id="flagged-transactions-chart" height="200"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      
+        <!-- 🌍 Location Heatmap -->
+        <div class="row">
+          <div class="col-md-12 mb-4">
+            <div class="card shadow-sm bg-dark text-white">
+              <div class="card-header border-0 bg-primary text-white">
+                <h6 class="mb-0"><i class="bi bi-globe2 me-2"></i>Location Heatmap</h6>
+              </div>
+              <div class="card-body p-2" id="heatmap-container"></div>
+            </div>
+          </div>
+        </div>
+      
+        <!-- 🚨 Anomalies -->
+        <div class="row">
+          <div class="col-md-12 mb-4">
+            <div id="anomaly-panel"></div>
+          </div>
+        </div>
+      
+      </section>
+       
     </section>
 
     <!-- FUND AGENT SECTION -->

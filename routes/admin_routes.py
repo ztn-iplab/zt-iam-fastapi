@@ -642,7 +642,7 @@ def get_real_time_logs():
 @admin_bp.route('/admin/user-auth-logs', methods=['GET'])
 @jwt_required()
 def get_user_auth_logs():
-    logs = UserAuthLog.query.order_by(UserAuthLog.auth_timestamp.desc()).limit(50).all()
+    logs = UserAuthLog.query.order_by(UserAuthLog.auth_timestamp.desc()).limit(100).all()
     result = []
     for log in logs:
         user = User.query.get(log.user_id)
@@ -800,11 +800,14 @@ def reverse_transfer(transaction_id):
         "reversed_transaction_id": reversal.id
     }), 200
 
+
 # Admin Metrics
 @admin_bp.route("/api/admin/metrics")
 @jwt_required()
 def admin_dashboard_metrics():
     from flask import request
+    from sqlalchemy import text
+    from datetime import datetime, timedelta
 
     def daterange(start_date, end_date):
         for n in range((end_date - start_date).days + 1):
@@ -823,14 +826,14 @@ def admin_dashboard_metrics():
     except Exception:
         return jsonify({"error": "Invalid date format"}), 400
 
-    # Login method breakdown (success only)
+    # ✅ Login method breakdown
     login_methods = {
         "password": UserAuthLog.query.filter_by(auth_method="password", auth_status="success").count(),
         "totp": UserAuthLog.query.filter_by(auth_method="totp", auth_status="success").count(),
         "webauthn": UserAuthLog.query.filter_by(auth_method="webauthn", auth_status="success").count()
     }
 
-    # Authentication failures padded by date range
+    # ✅ Authentication failures padded by day
     failures = (
         db.session.query(
             func.date(UserAuthLog.auth_timestamp).label('day'),
@@ -845,17 +848,15 @@ def admin_dashboard_metrics():
         .order_by('day')
         .all()
     )
-
     failure_dict = {r.day.strftime('%Y-%m-%d'): r.count for r in failures}
     padded_dates = [d.strftime('%Y-%m-%d') for d in daterange(start_date, end_date)]
     padded_counts = [failure_dict.get(d, 0) for d in padded_dates]
-
     auth_failures = {
         "dates": padded_dates,
         "counts": padded_counts
     }
 
-    # Transactions by actor (from transaction_metadata)
+    # ✅ Transaction source detection
     actor_query = text("""
         SELECT
             CASE
@@ -868,7 +869,6 @@ def admin_dashboard_metrics():
         FROM transactions
         GROUP BY actor
     """)
-
     actor_results = db.session.execute(actor_query)
     actor_counts = {row.actor: row.count for row in actor_results}
     transaction_sources = [
@@ -877,15 +877,74 @@ def admin_dashboard_metrics():
         actor_counts.get("admin", 0)
     ]
 
-    # Flagged vs clean transactions
+    # ✅ Flagged vs Clean transactions
     flagged = {
         "flagged": Transaction.query.filter(Transaction.risk_score >= 0.7).count(),
         "clean": Transaction.query.filter(Transaction.risk_score < 0.7).count()
     }
 
+    # ✅ User states
+    user_states = {
+        "active": User.query.filter_by(is_active=True).count(),
+        "inactive": User.query.filter_by(is_active=False).count(),
+        "suspended": User.query.filter(User.locked_until != None).count(),
+        "unverified": User.query.filter_by(identity_verified=False).count()
+    }
+
+
+    # ✅ SIM stats (only if SIMCard model exists)
+    sim_stats = {
+        "new": SIMCard.query.filter(SIMCard.status == "active").count(),
+        "swapped": SIMCard.query.filter(SIMCard.status == "swapped").count(),
+        "suspended": SIMCard.query.filter(SIMCard.status == "suspended").count()
+    }
+
+    # ✅ Anomaly detection
+    multi_failures = (
+        db.session.query(UserAuthLog.user_id, func.count().label("fail_count"))
+        .filter(
+            UserAuthLog.auth_status == "failed",
+            UserAuthLog.auth_timestamp >= datetime.utcnow() - timedelta(days=1)
+        )
+        .group_by(UserAuthLog.user_id)
+        .having(func.count() >= 3)
+        .all()
+    )
+    flagged_users = (
+        db.session.query(Transaction.user_id, func.count().label("flagged_count"))
+        .filter(Transaction.risk_score >= 0.7)
+        .group_by(Transaction.user_id)
+        .having(func.count() >= 1)
+        .all()
+    )
+    anomalies = {
+        "multiple_failed_logins": [
+            {"user_id": u.user_id, "count": u.fail_count} for u in multi_failures
+        ],
+        "frequent_flagged_users": [
+            {"user_id": u.user_id, "count": u.flagged_count} for u in flagged_users
+        ]
+    }
+
+    # ✅ Heatmap logs (basic location-based grouping)
+    logs = [
+        {"location": log.location or "Unknown"}
+        for log in RealTimeLog.query
+        .filter(
+            func.date(RealTimeLog.timestamp) >= start_date,
+            func.date(RealTimeLog.timestamp) <= end_date
+        )
+        .limit(1000)
+        .all()
+    ]
+
     return jsonify({
         "login_methods": login_methods,
         "auth_failures": auth_failures,
         "transaction_sources": transaction_sources,
-        "flagged": flagged
+        "flagged": flagged,
+        "user_states": user_states,
+        "sim_stats": sim_stats,
+        "anomalies": anomalies,
+        "logs": logs
     })

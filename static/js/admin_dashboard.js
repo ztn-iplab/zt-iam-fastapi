@@ -67,301 +67,396 @@ document.addEventListener("DOMContentLoaded", function () {
   // ---------------------------
   // Admin Metrics Section
   // ---------------------------
-  // ---------------------------
-  // Admin Metrics Section
-  // ---------------------------
-  (async () => {
-    const loginChart = document.getElementById("login-method-chart");
-    const authFailuresChart = document.getElementById("auth-failures-chart");
-    const transactionTypeChart = document.getElementById("transaction-type-chart");
-    const flaggedChart = document.getElementById("flagged-transactions-chart");
-    const heatmapContainer = document.getElementById("heatmap-container");
+  // Final Enhanced Admin Dashboard JavaScript with Full Feature Reintegration
 
-    let loginChartInstance, authFailuresInstance, transactionTypeInstance, flaggedInstance;
+(async () => {
+  const loginChart = document.getElementById("login-method-chart");
+  const authFailuresChart = document.getElementById("auth-failures-chart");
+  const transactionTypeChart = document.getElementById("transaction-type-chart");
+  const flaggedChart = document.getElementById("flagged-transactions-chart");
+  const heatmapContainer = document.getElementById("heatmap-container");
+  const anomalyPanel = document.getElementById("anomaly-panel");
 
-    const dateControls = document.createElement("div");
-    dateControls.className = "d-flex gap-2 align-items-center mt-2 mb-3";
-    dateControls.innerHTML = `
-      <input type="text" id="daterange" class="form-control form-control-sm" style="max-width: 250px;" placeholder="Select date range">
-      <button id="filter-date" class="btn btn-sm btn-outline-primary">🔍 Apply Filter</button>
-    `;
-    document.querySelector("#dashboard-metrics")?.prepend(dateControls);
+  let loginChartInstance, authFailuresInstance, transactionTypeInstance, flaggedInstance;
+  let lastFetchedMetrics = {};
 
-    setTimeout(() => {
-      if (window.flatpickr && document.getElementById("daterange")) {
-        flatpickr("#daterange", {
-          mode: "range",
-          dateFormat: "Y-m-d",
-          onClose: function (selectedDates, dateStr) {
-            const range = dateStr.split(" to ");
-            const from = range[0]?.trim() || null;
-            const to = range[1]?.trim() || null;
-            loadMetrics(from, to);
-          }
-        });
+  const dateControls = document.createElement("div");
+  dateControls.className = "d-flex gap-2 align-items-center mt-2 mb-3";
+  dateControls.innerHTML = `
+    <input type="text" id="daterange" class="form-control form-control-sm" style="max-width: 250px;" placeholder="Select date range">
+    <button id="filter-date" class="btn btn-sm btn-outline-primary">🔍 Apply Filter</button>
+  `;
+  document.querySelector("#dashboard-metrics")?.prepend(dateControls);
+
+  setTimeout(() => {
+    if (window.flatpickr && document.getElementById("daterange")) {
+      flatpickr("#daterange", {
+        mode: "range",
+        dateFormat: "Y-m-d",
+        onClose: function (selectedDates, dateStr) {
+          const range = dateStr.split(" to ");
+          const from = range[0]?.trim() || null;
+          const to = range[1]?.trim() || null;
+          loadMetrics(from, to);
+        }
+      });
+    }
+  }, 100);
+
+  const kpiContainer = document.createElement("div");
+  kpiContainer.className = "row mb-4";
+  document.querySelector("#dashboard-metrics")?.prepend(kpiContainer);
+
+  function updateKPIs(data) {
+  const animated = (id, value) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    let count = 0;
+    const step = Math.ceil(value / 30);
+    const interval = setInterval(() => {
+      count += step;
+      if (count >= value) {
+        el.textContent = value;
+        clearInterval(interval);
+      } else {
+        el.textContent = count;
       }
-    }, 100);
+    }, 20);
+  };
 
-    const kpiContainer = document.createElement("div");
-    kpiContainer.className = "row mb-4";
-    document.querySelector("#dashboard-metrics")?.prepend(kpiContainer);
-
-    function updateKPIs(data) {
-      kpiContainer.innerHTML = `
-        <div class="col-md-3">
-          <div class="card text-white bg-primary mb-3 text-center">
-            <div class="card-body">
-              <h5 class="card-title">Total Logins</h5>
-              <p class="card-text fs-4">${
-                data.login_methods.password +
-                data.login_methods.totp +
-                data.login_methods.webauthn
-              }</p>
-            </div>
+  kpiContainer.innerHTML = `
+    <div class="row row-cols-2 row-cols-md-4 g-3">
+      <div class="col">
+        <div class="card text-white bg-primary text-center shadow">
+          <div class="card-body">
+            <h5 class="card-title"><i class="bi bi-fingerprint me-2"></i>Total Logins</h5>
+            <p class="card-text fs-4" id="kpi-total-logins">0</p>
           </div>
         </div>
-        <div class="col-md-3">
-          <div class="card text-white bg-danger mb-3 text-center">
-            <div class="card-body">
-              <h5 class="card-title">Failed Logins (7d)</h5>
-              <p class="card-text fs-4">${data.auth_failures.counts.reduce((a, b) => a + b, 0)}</p>
-            </div>
+      </div>
+      <div class="col">
+        <div class="card text-white bg-danger text-center shadow">
+          <div class="card-body">
+            <h5 class="card-title"><i class="bi bi-x-circle-fill me-2"></i>Failed Logins (7d)</h5>
+            <p class="card-text fs-4" id="kpi-failed-logins">0</p>
           </div>
         </div>
-        <div class="col-md-3">
-          <div class="card text-white bg-warning mb-3 text-center">
-            <div class="card-body">
-              <h5 class="card-title">Flagged Txns</h5>
-              <p class="card-text fs-4">${data.flagged.flagged}</p>
-            </div>
+      </div>
+      <div class="col">
+        <div class="card text-white bg-warning text-center shadow">
+          <div class="card-body">
+            <h5 class="card-title"><i class="bi bi-flag-fill me-2"></i>Flagged Txns</h5>
+            <p class="card-text fs-4" id="kpi-flagged">0</p>
           </div>
         </div>
-        <div class="col-md-3">
-          <div class="card text-white bg-success mb-3 text-center">
-            <div class="card-body">
-              <h5 class="card-title">Clean Txns</h5>
-              <p class="card-text fs-4">${data.flagged.clean}</p>
-            </div>
+      </div>
+      <div class="col">
+        <div class="card text-white bg-success text-center shadow">
+          <div class="card-body">
+            <h5 class="card-title"><i class="bi bi-check-circle-fill me-2"></i>Clean Txns</h5>
+            <p class="card-text fs-4" id="kpi-clean">0</p>
           </div>
         </div>
-      `;
-    }
+      </div>
 
-    await loadMetrics(
-      new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().slice(0, 10),
-      new Date().toISOString().slice(0, 10)
-    );
+      <div class="col">
+        <div class="card text-white bg-dark text-center shadow">
+          <div class="card-body">
+            <h5 class="card-title"><i class="bi bi-person-check-fill me-2"></i>Active Users</h5>
+            <p class="card-text fs-4" id="kpi-users-active">0</p>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card text-white bg-secondary text-center shadow">
+          <div class="card-body">
+            <h5 class="card-title"><i class="bi bi-person-dash-fill me-2"></i>Inactive Users</h5>
+            <p class="card-text fs-4" id="kpi-users-inactive">0</p>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card text-white bg-danger text-center shadow">
+          <div class="card-body">
+            <h5 class="card-title"><i class="bi bi-lock-fill me-2"></i>Suspended Users</h5>
+            <p class="card-text fs-4" id="kpi-users-suspended">0</p>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card text-white bg-warning text-center shadow">
+          <div class="card-body">
+            <h5 class="card-title"><i class="bi bi-question-circle-fill me-2"></i>Unverified Users</h5>
+            <p class="card-text fs-4" id="kpi-users-unverified">0</p>
+          </div>
+        </div>
+      </div>
 
-    function renderHeatmap(data) {
-      if (!heatmapContainer) return;
-  
-      const locationCounts = {};
-      for (const log of data.logs || []) {
-        const loc = log.location || "Unknown";
-        locationCounts[loc] = (locationCounts[loc] || 0) + 1;
+      <div class="col">
+        <div class="card text-white bg-info text-center shadow">
+          <div class="card-body">
+            <h5 class="card-title"><i class="bi bi-sim-fill me-2"></i>Active SIMs</h5>
+            <p class="card-text fs-4" id="kpi-sims-active">0</p>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card text-white bg-warning text-center shadow">
+          <div class="card-body">
+            <h5 class="card-title"><i class="bi bi-arrow-repeat me-2"></i>Swapped SIMs</h5>
+            <p class="card-text fs-4" id="kpi-sims-swapped">0</p>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card text-white bg-danger text-center shadow">
+          <div class="card-body">
+            <h5 class="card-title"><i class="bi bi-sim-slash-fill me-2"></i>Suspended SIMs</h5>
+            <p class="card-text fs-4" id="kpi-sims-suspended">0</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  animated("kpi-total-logins", data.login_methods.password + data.login_methods.totp + data.login_methods.webauthn);
+document.getElementById("kpi-total-logins").parentElement.parentElement.onclick = () => {
+  showOnlySection("user-auth-logs");
+  function loadUserAuthLogsByUser(userId) {
+  fetch(`/admin/user-auth-logs?user_id=${userId}`)
+    .then((res) => res.json())
+    .then((data) => {
+      const tbody = document.getElementById("user-auth-logs-container");
+      tbody.innerHTML = "";
+      if (!data.length) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">No logs yet</td></tr>`;
+        return;
       }
-  
-      const entries = Object.entries(locationCounts).sort((a, b) => b[1] - a[1]);
-      heatmapContainer.innerHTML = `
-        <h5 class="text-center">🌍 Location Heatmap</h5>
-        <ul class="list-group mt-2">
-          ${entries
-            .map(
-              ([loc, count]) => `<li class="list-group-item d-flex justify-content-between align-items-center">
-                ${loc}
-                <span class="badge bg-danger rounded-pill">${count}</span>
-              </li>`
-            )
-            .join("")}
-        </ul>
-      `;
-    }
-  
-    function downloadCSV(metrics) {
-      const rows = [
-        ["Metric", "Value"],
-        ["Password Logins", metrics.login_methods.password],
-        ["TOTP Logins", metrics.login_methods.totp],
-        ["WebAuthn Logins", metrics.login_methods.webauthn],
-        ["Total Logins", metrics.login_methods.password + metrics.login_methods.totp + metrics.login_methods.webauthn],
-        ["Failed Logins (7d)", metrics.auth_failures.counts.reduce((a, b) => a + b, 0)],
-        ["Clean Transactions", metrics.flagged.clean],
-        ["Flagged Transactions", metrics.flagged.flagged]
-      ];
-      const csv = rows.map(row => row.join(",")).join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `admin_dashboard_metrics_${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-  
-    async function loadMetrics(from = null, to = null) {
-      try {
-        const params = new URLSearchParams();
-        if (from) params.append("from", from);
-        if (to) params.append("to", to);
-  
-        const res = await fetch(`/api/admin/metrics?${params.toString()}`, {
-          method: "GET",
-          credentials: "include"
-        });
-        const data = await res.json();
-  
-        updateKPIs(data);
-        renderHeatmap(data);
-  
-        [loginChartInstance, authFailuresInstance, transactionTypeInstance, flaggedInstance].forEach(chart => {
-          if (chart) chart.destroy();
-        });
-  
-        authFailuresInstance = new Chart(authFailuresChart, {
-          type: "line",
-          data: {
-            labels: data.auth_failures.dates,
-            datasets: [{
-              label: "Auth Failures",
-              data: data.auth_failures.counts,
-              fill: false,
-              borderColor: "#dc3545",
-              tension: 0.1
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-              x: {
-                ticks: {
-                  autoSkip: true,
-                  maxTicksLimit: 10
-                }
-              }
-            }
-          }
-        });
-        
-        loginChartInstance = new Chart(loginChart, {
-          type: "doughnut",
-          data: {
-            labels: ["Password", "TOTP", "WebAuthn"],
-            datasets: [{
-              label: "Login Methods",
-              data: [
-                data.login_methods.password,
-                data.login_methods.totp,
-                data.login_methods.webauthn
-              ]
-            }]
-          }
-        });
-        
-        transactionTypeInstance = new Chart(transactionTypeChart, {
-          type: "bar",
-          data: {
-            labels: ["User", "Agent", "Admin"],
-            datasets: [{
-              label: "Transactions by Actor",
-              data: data.transaction_sources,
-              backgroundColor: ["#007bff", "#28a745", "#ffc107"]
-            }]
-          }
-        });
-        
-        flaggedInstance = new Chart(flaggedChart, {
-          type: "pie",
-          data: {
-            labels: ["Clean", "Flagged"],
-            datasets: [{
-              data: [data.flagged.clean, data.flagged.flagged],
-              backgroundColor: ["#6c757d", "#dc3545"]
-            }]
-          }
-        });
-        
-        if (data.auth_failures.counts.every(count => count === 0)) {
-          Toastify({
-            text: "No failed logins found in selected date range.",
-            duration: 3000,
-            backgroundColor: "#6c757d"
-          }).showToast();
-        }
-        
-        if (data.login_methods.password + data.login_methods.totp + data.login_methods.webauthn === 0) {
-          Toastify({
-            text: "No successful logins found in selected date range.",
-            duration: 3000,
-            backgroundColor: "#6c757d"
-          }).showToast();
-        }
-        
-        if (data.transaction_sources.every(v => v === 0)) {
-          Toastify({
-            text: "No transactions found in selected date range.",
-            duration: 3000,
-            backgroundColor: "#6c757d"
-          }).showToast();
-        }
-        
-        if ((data.flagged.clean + data.flagged.flagged) === 0) {
-          Toastify({
-            text: "No transactions flagged or clean in selected range.",
-            duration: 3000,
-            backgroundColor: "#6c757d"
-          }).showToast();
-        }
-        
-        exportButton.onclick = () => downloadCSV(data);
-      } catch (err) {
-        console.error("Failed to load admin metrics:", err);
-      }
-    }
-  
-    await loadMetrics();
-  
-    let autoRefresh = true;
-    let refreshInterval = 60000;
-  
-    const toggleButton = document.createElement("button");
-    toggleButton.textContent = "⏸ Pause Auto-Refresh";
-    toggleButton.className = "btn btn-sm btn-outline-secondary mt-3 me-2";
-    toggleButton.onclick = () => {
-      autoRefresh = !autoRefresh;
-      toggleButton.textContent = autoRefresh ? "⏸ Pause Auto-Refresh" : "▶️ Resume Auto-Refresh";
-    };
-  
-    const exportButton = document.createElement("button");
-    exportButton.textContent = "⬇️ Export Metrics";
-    exportButton.className = "btn btn-sm btn-outline-success mt-3 me-2";
-  
-    const controlsDiv = document.createElement("div");
-    controlsDiv.className = "d-flex gap-2";
-    controlsDiv.appendChild(toggleButton);
-    controlsDiv.appendChild(exportButton);
-  
-    document.querySelector("#dashboard-metrics")?.prepend(controlsDiv);
-  
-    setInterval(() => {
-      if (autoRefresh) {
-        const range = document.getElementById("daterange").value.split(" to ");
-        const from = range[0]?.trim() || null;
-        const to = range[1]?.trim() || null;
-        loadMetrics(from, to);
-      }
-    }, refreshInterval);
-  
-    document.getElementById("filter-date").addEventListener("click", () => {
-      const range = document.getElementById("daterange").value.split(" to ");
-      const from = range[0]?.trim() || null;
-      const to = range[1]?.trim() || null;
-      loadMetrics(from, to);
+      data.forEach((log) => {
+        const row = `
+          <tr>
+            <td>${log.user}</td>
+            <td>${log.method}</td>
+            <td class="${log.status === 'success' ? 'text-success' : 'text-danger'}">${log.status}</td>
+            <td>${log.timestamp}</td>
+            <td>${log.ip}</td>
+            <td>${log.device}</td>
+            <td>${log.location}</td>
+            <td>${log.fails}</td>
+          </tr>
+        `;
+        tbody.innerHTML += row;
+      });
     });
-  
-  })(); 
-});
+}
 
+function filterFlaggedByUser(userId) {
+  fetch(`/admin/flagged-transactions?user_id=${userId}`)
+    .then(res => res.json())
+    .then(data => {
+      const tbody = document.getElementById("flagged-transactions");
+      tbody.innerHTML = "";
+      if (!data.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">No flagged transactions</td></tr>`;
+        return;
+      }
+      data.forEach(txn => {
+        const row = `
+          <tr>
+            <td>User #${txn.user_id}</td>
+            <td>${txn.amount}</td>
+            <td>${txn.transaction_type}</td>
+            <td>${txn.risk_score}</td>
+            <td>${txn.status}</td>
+            <td><button class="btn btn-sm btn-outline-info">View</button></td>
+          </tr>
+        `;
+        tbody.innerHTML += row;
+      });
+    });
+}
+
+loadUserAuthLogs();
+};
+  animated("kpi-failed-logins", data.auth_failures.counts.reduce((a, b) => a + b, 0));
+document.getElementById("kpi-failed-logins").parentElement.parentElement.onclick = () => {
+  showOnlySection("user-auth-logs");
+  loadUserAuthLogs("failed");
+};
+  animated("kpi-flagged", data.flagged.flagged);
+document.getElementById("kpi-flagged").parentElement.parentElement.onclick = () => {
+  showOnlySection("flagged-transactions-section");
+  loadFlaggedTransactions();
+};
+  animated("kpi-clean", data.flagged.clean);
+  animated("kpi-users-active", data.user_states.active);
+document.getElementById("kpi-users-active").parentElement.parentElement.onclick = () => {
+  showOnlySection("user-management");
+  filterUsers("active");
+};
+  animated("kpi-users-inactive", data.user_states.inactive);
+  animated("kpi-users-suspended", data.user_states.suspended);
+  animated("kpi-users-unverified", data.user_states.unverified);
+  animated("kpi-sims-active", data.sim_stats.new);
+  animated("kpi-sims-swapped", data.sim_stats.swapped);
+  animated("kpi-sims-suspended", data.sim_stats.suspended);
+}
+  function renderCharts(data) {
+    [loginChartInstance, authFailuresInstance, transactionTypeInstance, flaggedInstance].forEach(chart => chart?.destroy());
+
+    loginChartInstance = new Chart(loginChart, {
+      type: "doughnut",
+      data: {
+        labels: ["Password", "TOTP", "WebAuthn"],
+        datasets: [{
+          label: "Login Methods",
+          data: [data.login_methods.password, data.login_methods.totp, data.login_methods.webauthn],
+          backgroundColor: ["#0d6efd", "#e83e8c", "#f0ad4e"]
+        }]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    authFailuresInstance = new Chart(authFailuresChart, {
+      type: "line",
+      data: {
+        labels: data.auth_failures.dates,
+        datasets: [{ label: "Auth Failures", data: data.auth_failures.counts, borderColor: "#dc3545", tension: 0.2 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    transactionTypeInstance = new Chart(transactionTypeChart, {
+      type: "bar",
+      data: {
+        labels: ["User", "Agent", "Admin"],
+        datasets: [{ label: "Transactions by Actor", data: data.transaction_sources, backgroundColor: ["#007bff", "#28a745", "#ffc107"] }]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    flaggedInstance = new Chart(flaggedChart, {
+      type: "pie",
+      data: {
+        labels: ["Clean", "Flagged"],
+        datasets: [{ data: [data.flagged.clean, data.flagged.flagged], backgroundColor: ["#6c757d", "#dc3545"] }]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    if (data.auth_failures.counts.every(c => c === 0)) {
+      Toastify({ text: "No failed logins found in selected date range.", duration: 3000, backgroundColor: "#6c757d" }).showToast();
+    }
+    if (data.login_methods.password + data.login_methods.totp + data.login_methods.webauthn === 0) {
+      Toastify({ text: "No successful logins found in selected date range.", duration: 3000, backgroundColor: "#6c757d" }).showToast();
+    }
+    if (data.transaction_sources.every(v => v === 0)) {
+      Toastify({ text: "No transactions found in selected date range.", duration: 3000, backgroundColor: "#6c757d" }).showToast();
+    }
+    if (data.flagged.clean + data.flagged.flagged === 0) {
+      Toastify({ text: "No transactions flagged or clean in selected range.", duration: 3000, backgroundColor: "#6c757d" }).showToast();
+    }
+  }
+
+  function renderHeatmap(data) {
+    if (!heatmapContainer) return;
+    const locationCounts = {};
+    for (const log of data.logs || []) {
+      let loc = log.location || "Unknown";
+      if (loc.startsWith("{")) loc = "Map Point";
+      locationCounts[loc] = (locationCounts[loc] || 0) + 1;
+    }
+    const entries = Object.entries(locationCounts).sort((a, b) => b[1] - a[1]);
+    heatmapContainer.innerHTML = `
+      <ul class="list-group list-group-flush">
+        ${entries.map(([loc, count]) => `
+          <li class="list-group-item d-flex justify-content-between align-items-center bg-dark text-white">
+            ${loc}<span class="badge bg-danger rounded-pill">${count}</span>
+          </li>`).join("")}
+      </ul>`;
+  }
+
+  function renderAnomalies(data) {
+  if (!anomalyPanel) return;
+
+  const failed = data.anomalies.multiple_failed_logins.map(u => {
+    const timestamp = u.last_failed_at ? new Date(u.last_failed_at).toLocaleString() : "recent";
+    return `
+      <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" onclick="showOnlySection('user-auth-logs'); loadUserAuthLogsByUser(${u.user_id});">
+        <div>
+          <strong>User #${u.user_id}</strong><br><small class="text-muted">Last failed: ${timestamp}</small>
+        </div>
+        <span class="badge bg-danger">${u.count} failed</span>
+      </a>
+    `;
+  }).join("");
+
+  const flagged = data.anomalies.frequent_flagged_users.map(u => {
+    const timestamp = u.last_flagged_at ? new Date(u.last_flagged_at).toLocaleString() : "recent";
+    return `
+      <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" onclick="showOnlySection('flagged-transactions-section'); filterFlaggedByUser(${u.user_id});">
+        <div>
+          <strong>User #${u.user_id}</strong><br><small class="text-muted">Last flagged: ${timestamp}</small>
+        </div>
+        <span class="badge bg-warning text-dark">${u.count} flagged</span>
+      </a>
+    `;
+  }).join("");
+
+  anomalyPanel.innerHTML = `
+      <div class="card bg-dark text-white mb-3">
+        <div class="card-header bg-danger"><i class="bi bi-shield-lock-fill me-2"></i> Multiple Failed Logins</div>
+        <div class="card-body p-2"><ul class="list-group list-group-flush">${failed || '<li class="list-group-item">No anomalies</li>'}</ul></div>
+      </div>
+      <div class="card bg-dark text-white mb-3">
+        <div class="card-header bg-warning text-dark"><i class="bi bi-exclamation-triangle-fill me-2"></i> Flagged Transactions</div>
+        <div class="card-body p-2"><ul class="list-group list-group-flush">${flagged || '<li class="list-group-item">No anomalies</li>'}</ul></div>
+      </div>`;
+  }
+
+  function showOnlySection(id) {
+  document.querySelectorAll(".admin-section").forEach(sec => sec.style.display = "none");
+  document.getElementById(id).style.display = "block";
+}
+
+async function loadMetrics(from = null, to = null) {
+  try {
+    document.body.classList.add("loading-overlay");
+
+    const params = new URLSearchParams();
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+
+    const res = await fetch(`/api/admin/metrics?${params.toString()}`, {
+      method: "GET",
+      credentials: "include"
+    });
+    const data = await res.json();
+
+    lastFetchedMetrics = data;
+    updateKPIs(data);
+    renderCharts(data);
+    renderHeatmap(data);
+    renderAnomalies(data);
+  } catch (err) {
+    console.error("Failed to load admin metrics:", err);
+    Toastify({
+      text: "❌ Failed to load metrics",
+      duration: 4000,
+      backgroundColor: "#dc3545"
+    }).showToast();
+  } finally {
+    document.body.classList.remove("loading-overlay");
+  }
+}
+
+const today = new Date();
+const lastWeek = new Date(today);
+lastWeek.setDate(today.getDate() - 7);
+await loadMetrics(lastWeek.toISOString().slice(0, 10), today.toISOString().slice(0, 10));
+})();
+
+});
   
 function fetchHqBalance() {
   fetch("/admin/hq-balance", { credentials: "include" })
@@ -1085,26 +1180,32 @@ function loadRealTimeLogs() {
       });
     });
 }
+
 // ---------------------------
 // User Authentication logs Function
 // ---------------------------
-function loadUserAuthLogs() {
+function loadUserAuthLogs(filter = null) {
   fetch("/admin/user-auth-logs")
     .then((res) => res.json())
     .then((data) => {
       const tbody = document.getElementById("user-auth-logs-container");
       tbody.innerHTML = "";
-      if (!data.length) {
+
+      const logs = filter === "failed"
+        ? data.filter((log) => log.status.toLowerCase() === "failed")
+        : data;
+
+      if (!logs.length) {
         tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">No logs yet</td></tr>`;
         return;
       }
 
-      data.forEach((log) => {
+      logs.forEach((log) => {
         const row = `
           <tr>
             <td>${log.user}</td>
             <td>${log.method}</td>
-            <td>${log.status}</td>
+            <td class="${log.status === 'success' ? 'text-success' : 'text-danger'}">${log.status}</td>
             <td>${log.timestamp}</td>
             <td>${log.ip}</td>
             <td>${log.device}</td>

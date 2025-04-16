@@ -12,3 +12,4 @@ s_venv/
 
 # System files
 .DS_Store
+Analyzer.pcapng

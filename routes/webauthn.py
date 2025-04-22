@@ -20,7 +20,7 @@ import base64
 
 webauthn_bp = Blueprint('webauthn', __name__)
 
-rp = PublicKeyCredentialRpEntity(id="localhost", name="ZTN Local")
+rp = PublicKeyCredentialRpEntity(id="localhost.localdomain", name="ZTN Local")
 server = Fido2Server(rp)
 
 

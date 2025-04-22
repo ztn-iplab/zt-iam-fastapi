@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Reset TOTP{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block body %}
+
+<div class="home-link-container">
+  <a href="{{ url_for('index') }}" class="home-link">&larr; Back to Home</a>
+</div>
+
+<div class="auth-container">
+  <h1>Reset TOTP</h1>
+  <p class="auth-note">Please confirm your password to reset your TOTP authentication.</p>
+
+  <form id="reset-totp-form" class="auth-form">
+    <input
+      type="password"
+      name="password"
+      placeholder="Current Password"
+      class="input-field"
+      required
+    />
+    <button type="submit" class="btn btn-primary">Reset TOTP</button>
+  </form>
+</div>
+
+<script src="{{ url_for('static', filename='js/reset_totp.js') }}"></script>
+{% endblock %}

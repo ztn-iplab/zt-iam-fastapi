@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Reset WebAuthn{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block body %}
+
+<div class="home-link-container">
+  <a href="{{ url_for('index') }}" class="home-link">&larr; Back to Home</a>
+</div>
+
+<div class="auth-container">
+  <h1>Reset WebAuthn</h1>
+  <p class="auth-note">Enter your current password to remove all WebAuthn credentials.</p>
+
+  <form id="reset-webauthn-form" class="auth-form">
+    <input
+      type="password"
+      name="password"
+      placeholder="Current Password"
+      class="input-field"
+      required
+    />
+    <button type="submit" class="btn btn-primary">Reset WebAuthn</button>
+  </form>
+</div>
+
+<script src="{{ url_for('static', filename='js/reset_webauthn.js') }}"></script>
+{% endblock %}

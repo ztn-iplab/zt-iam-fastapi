@@ -3,7 +3,7 @@ from datetime import datetime
 from .import db
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy.dialects.postgresql import BYTEA 
-
+import base64
 
 #db = SQLAlchemy()
 
@@ -23,6 +23,8 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     otp_secret = db.Column(db.String(32), nullable=True)
     otp_email_label = db.Column(db.String(120), nullable=True)
+    reset_token = db.Column(db.String(128), nullable=True)
+    reset_token_expiry = db.Column(db.DateTime, nullable=True)
 
 
     # Account Status
@@ -166,8 +168,30 @@ class WebAuthnCredential(db.Model):
     credential_id = db.Column(db.LargeBinary, unique=True, nullable=False)
     public_key = db.Column(db.LargeBinary, nullable=False)
     sign_count = db.Column(db.Integer, default=0)
-    transports = db.Column(db.String)  # e.g. ["usb", "nfc", "ble", "internal"]
+    transports = db.Column(db.String)  # e.g. "usb,ble,internal"
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship('User', backref='webauthn_credentials')
 
+    # ✅ Used for allowCredentials in WebAuthn challenge
+    def as_dict(self):
+        return {
+            "type": "public-key",
+            "id": base64.urlsafe_b64encode(self.credential_id).decode("utf-8"),
+            "transports": self.transports.split(",") if self.transports else []
+        }
+
+    # ✅ Used for FIDO2 server.authenticate_complete
+    def as_webauthn_credential(self):
+        from fido2.webauthn import PublicKeyCredentialDescriptor
+        return PublicKeyCredentialDescriptor(
+            id=self.credential_id,
+            type="public-key"
+        )
+
+class PasswordHistory(db.Model):
+    __tablename__ = 'password_history'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.now())

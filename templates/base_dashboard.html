@@ -18,7 +18,7 @@
         <li><a href="#" id="show-overview-link">Overview</a></li>
         <li><a href="#" id="show-transactions-link">Transactions</a></li>
         <li><a href="#" id="show-profile-link">Profile</a></li>
-        <li><a href="#" id="show-settings-link">Settings</a></li>
+        <li><a href="{{ url_for('settings.settings_home') }}" id="show-settings-link">Settings</a></li>
         <li><a href="#" id="logout-link">Logout</a></li>
       </ul>
       {% endblock %}

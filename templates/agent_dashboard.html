@@ -5,7 +5,7 @@
   <li><a href="#" id="show-transactions">Transactions</a></li>
   <li><a href="#" id="show-sim-registration">SIM Registrations</a></li>
   <li><a href="#" id="show-profile">Profile</a></li>
-  <li><a href="#" id="show-settings">Settings</a></li>
+  <li><a href="{{ url_for('settings.settings_home') }}#profile-tab" id="show-settings">Settings</a></li>
   <li><a href="#" id="logout-link">Logout</a></li>
 </ul>
 {% endblock %} {% block dashboard_content %}
@@ -286,6 +286,10 @@
         <p>
           <strong>Country:</strong>
           <span id="user-country">{{ user.country }}</span>
+        </p>
+        <p>
+          <strong>Country:</strong>
+          <span id="user-country">{{ user.trust_score }}</span>
         </p>
       </div>
     </div>

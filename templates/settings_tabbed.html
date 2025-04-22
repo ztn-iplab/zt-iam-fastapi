@@ -1,0 +1,38 @@
+<div class="settings-wrapper">
+    <h1 class="text-2xl font-bold mb-6">⚙️ Settings</h1>
+  
+    <div class="settings-tabs">
+      <button class="tab-btn active" data-tab="profile-tab">👤 Profile</button>
+      <button class="tab-btn" data-tab="security-tab">🔐 Security</button>
+      <button class="tab-btn" data-tab="account-tab">🧨 Account</button>
+    </div>
+  
+    <!-- 👤 Profile -->
+    <div id="profile-tab" class="tab-content active">
+      <form id="personal-info-form">
+        <label>Country</label>
+        <input type="text" name="country" class="input-field" value="{{ user.country }}" />
+        <button type="submit" class="btn btn-primary mt-3">Update Info</button>
+      </form>
+    </div>
+  
+    <!-- 🔐 Security -->
+    <div id="security-tab" class="tab-content">
+      <form id="change-password-form">
+        <label>Current Password</label>
+        <input type="password" name="current_password" class="input-field" />
+        <label>New Password</label>
+        <input type="password" name="new_password" class="input-field" />
+        <label>Confirm New Password</label>
+        <input type="password" name="confirm_password" class="input-field" />
+        <button type="submit" class="btn btn-primary mt-3">Change Password</button>
+      </form>
+    </div>
+  
+    <!-- 🧨 Account -->
+    <div id="account-tab" class="tab-content">
+      <p>Request deletion of your account. This cannot be undone.</p>
+      <button id="delete-account-button" class="btn btn-danger">Request Deletion</button>
+    </div>
+  </div>
+  

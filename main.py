@@ -15,7 +15,6 @@ from routes.admin_routes import admin_bp
 from utils.decorators import role_required
 from routes.agent_routes import agent_bp
 from routes.webauthn import webauthn_bp
-
 from flask_mail import Message
 from extensions import mail
 import os
@@ -44,7 +43,7 @@ app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(user_bp)
 app.register_blueprint(wallet_bp, url_prefix='/api')
 app.register_blueprint(transaction_bp, url_prefix='/api')
-app.register_blueprint(settings_bp, url_prefix='/api')
+app.register_blueprint(settings_bp)
 app.register_blueprint(roles_bp, url_prefix='/api')
 app.register_blueprint(admin_bp)
 app.register_blueprint(agent_bp)
@@ -98,4 +97,11 @@ if __name__ == '__main__':
             print("✅ Database connected successfully!")
         except Exception as e:
             print(f"❌ Database connection failed: {e}")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+
+    # ✅ Run with HTTPS using mkcert-generated SSL certificates
+    app.run(
+        debug=True,
+        host='0.0.0.0',
+        port=5000,
+        ssl_context=('localhost.localdomain.pem', 'localhost.localdomain-key.pem')
+    )

@@ -1,5 +1,8 @@
-{% extends "base.html" %} {% block title %}Verify TOTP{% endblock %} {% block
-body_class %}auth-page{% endblock %} {% block body %}
+{% extends "base.html" %}
+{% block title %}Verify TOTP{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block body %}
+
 <div class="home-link-container">
   <a href="{{ url_for('index') }}" class="home-link">&larr; Back to Home</a>
 </div>
@@ -8,8 +11,7 @@ body_class %}auth-page{% endblock %} {% block body %}
   <h1>TOTP Verification</h1>
 
   <p class="auth-note">
-    Open your Authenticator app and enter the 6-digit code to complete your
-    login.
+    Open your Authenticator app and enter the 6-digit code to complete your login.
   </p>
 
   <div id="totp-error" class="error-message" style="display: none"></div>
@@ -27,7 +29,6 @@ body_class %}auth-page{% endblock %} {% block body %}
       required
       autofocus
     />
-
     <button type="submit" class="btn btn-primary" id="verify-btn">
       Verify
     </button>
@@ -36,66 +37,20 @@ body_class %}auth-page{% endblock %} {% block body %}
       <p>⏳ Verifying TOTP code...</p>
     </div>
   </form>
+
+  <div class="auth-note" style="margin-top: 1.5rem; text-align: center; line-height: 1.3;">
+    <p style="margin: 0;">Lost access to your Authenticator?</p>
+    <a
+      href="{{ url_for('auth.request_totp_reset_form') }}"
+      class="auth-link"
+      style="display: inline-block; margin-top: 0.3rem; font-weight: 500;"
+    >
+      Reset TOTP
+    </a>
+  </div>
+  
 </div>
 
 <script src="{{ url_for('static', filename='js/verify_totp.js') }}"></script>
 
-<style>
-  .auth-container {
-    max-width: 400px;
-    margin: 3rem auto;
-    padding: 2rem;
-    background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
-    text-align: center;
-  }
-
-  .input-field {
-    width: 100%;
-    padding: 0.75rem;
-    margin: 1rem 0;
-    font-size: 1rem;
-    border-radius: 8px;
-    border: 1px solid #ccc;
-  }
-
-  .btn-primary {
-    background-color: #1e88e5;
-    color: white;
-    padding: 0.75rem 1.5rem;
-    border: none;
-    border-radius: 8px;
-    font-size: 1rem;
-    cursor: pointer;
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .auth-note {
-    font-size: 0.95rem;
-    color: #333;
-    margin-bottom: 1.5rem;
-  }
-
-  .error-message {
-    color: red;
-    font-size: 0.95rem;
-    margin-bottom: 1rem;
-  }
-
-  .home-link-container {
-    text-align: center;
-    margin-top: 1rem;
-  }
-
-  .home-link {
-    text-decoration: none;
-    color: #1e88e5;
-    font-weight: bold;
-  }
-</style>
 {% endblock %}

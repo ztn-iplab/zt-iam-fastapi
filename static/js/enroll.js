@@ -47,7 +47,6 @@ document.addEventListener("DOMContentLoaded", () => {
       // Step 3: Allow flexible authenticators (USB, phone, fingerprint)
       options.authenticatorSelection = {
         userVerification: "required"
-        // No platform restriction => allows USB & phone too
       };
 
       // Step 4: Trigger WebAuthn prompt
@@ -95,6 +94,13 @@ document.addEventListener("DOMContentLoaded", () => {
       statusDiv.style.color = "green";
       enrollBtn.disabled = true;
 
+      // ✅ If server gives redirect, go verify
+      if (result.redirect) {
+        setTimeout(() => {
+          window.location.href = result.redirect;
+        }, 1000);  // short delay for user feedback
+      }
+
     } catch (err) {
       console.error("❌ Enrollment failed:", err);
       statusDiv.textContent = "❌ " + err.message;
@@ -103,6 +109,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // 🔄 Helpers
   function base64urlToBuffer(base64url) {
     const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
     const pad = base64.length % 4 ? 4 - (base64.length % 4) : 0;

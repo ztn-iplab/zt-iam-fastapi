@@ -135,7 +135,7 @@ class RealTimeLog(db.Model):
     __tablename__ = 'real_time_logs'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # Some logs may not be tied to users
-    action = db.Column(db.String(200), nullable=False)
+    action = db.Column(db.String(1000), nullable=False)
     timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
     ip_address = db.Column(db.String(45))
     device_info = db.Column(db.String(200))

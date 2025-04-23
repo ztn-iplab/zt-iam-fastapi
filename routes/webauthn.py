@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session, url_for
+from flask import Blueprint, request, jsonify, session, url_for, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.location import get_ip_location
 from datetime import datetime, timedelta
@@ -106,7 +106,6 @@ def complete_registration():
         auth_data = server.register_complete(state, response)
         cred_data = auth_data.credential_data
 
-        # ✅ This WILL work — serializes COSEKey using CBOR
         public_key_bytes = cbor.encode(cred_data.public_key)
 
         credential = WebAuthnCredential(
@@ -118,16 +117,27 @@ def complete_registration():
         )
 
         db.session.add(credential)
-        db.session.commit()
         session.pop("webauthn_register_state", None)
 
-        return jsonify({"message": "✅ WebAuthn credential registered."})
+        # ✅ Store pending verification state
+        session["pending_webauthn_verification"] = True
+        session["webauthn_user_id"] = str(user.id)
+
+        db.session.commit()
+
+        return jsonify({
+            "message": "✅ WebAuthn credential registered.",
+            "redirect": "/webauthn/assertion"
+        })
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"❌ Registration failed: {str(e)}"}), 500
 
+@webauthn_bp.route("/webauthn/assertion", methods=["GET"])
+def webauthn_assertion_page():
+    return render_template("verify_biometric.html")
 
 @webauthn_bp.route("/webauthn/assertion-begin", methods=["POST"])
 @jwt_required()
@@ -369,3 +379,5 @@ def complete_assertion():
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"❌ Assertion failed: {str(e)}"}), 500
+
+

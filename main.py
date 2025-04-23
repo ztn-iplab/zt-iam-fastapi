@@ -26,6 +26,9 @@ app.config.from_object(Config)
 jwt = JWTManager(app)
 mail.init_app(app) 
 
+cert_path = os.getenv("SSL_CERT_PATH")
+key_path = os.getenv("SSL_KEY_PATH")
+
 @jwt.expired_token_loader
 def expired_token_callback(jwt_header, jwt_payload):
     return jsonify({"error": "Token has expired"}), 401
@@ -98,10 +101,12 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"❌ Database connection failed: {e}")
 
-    # ✅ Run with HTTPS using mkcert-generated SSL certificates
+    if not os.path.exists(cert_path) or not os.path.exists(key_path):
+        raise RuntimeError("❌ SSL certificates not found at the paths defined in .env")
+
     app.run(
         debug=True,
         host='0.0.0.0',
         port=5000,
-        ssl_context=('localhost.localdomain.pem', 'localhost.localdomain-key.pem')
+        ssl_context=(cert_path, key_path)
     )

@@ -29,7 +29,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const data = await res.json();
 
-      // ✅ Require WebAuthn fallback if requested
       if (res.status === 202 && data.require_webauthn) {
         Toastify({
           text: "🔐 WebAuthn verification required before reset.",
@@ -39,7 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
           backgroundColor: "#2962ff"
         }).showToast();
 
-        return await performWebAuthnReset(token, newPassword); // 👈 handoff
+        return await performWebAuthnReset(token, newPassword); // just verify, then retry
       }
 
       if (!res.ok) {
@@ -62,7 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }).showToast();
 
       form.reset();
-
       setTimeout(() => {
         window.location.href = "/api/auth/login_form";
       }, 2000);
@@ -81,20 +79,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function performWebAuthnReset(token, newPassword) {
     try {
-      const challengeRes = await fetch('/api/auth/webauthn/challenge-reset', {
+      const beginRes = await fetch('/api/auth/webauthn/reset-assertion-begin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token }),
         credentials: 'include'
       });
 
-      const challengeData = await challengeRes.json();
-      if (!challengeRes.ok) throw new Error(challengeData.error);
+      const beginData = await beginRes.json();
+      if (!beginRes.ok) throw new Error(beginData.error);
 
       const publicKey = {
-        ...challengeData,
-        challenge: Uint8Array.from(atob(challengeData.challenge), c => c.charCodeAt(0)),
-        allowCredentials: challengeData.allowCredentials.map(cred => ({
+        ...beginData,
+        challenge: Uint8Array.from(atob(beginData.challenge), c => c.charCodeAt(0)),
+        allowCredentials: beginData.allowCredentials.map(cred => ({
           ...cred,
           id: Uint8Array.from(atob(cred.id), c => c.charCodeAt(0))
         }))
@@ -114,22 +112,31 @@ document.addEventListener('DOMContentLoaded', () => {
             : null
         },
         type: assertion.type,
-        token,
-        new_password: newPassword
+        token
       };
 
-      const verifyRes = await fetch('/api/auth/webauthn/verify-reset-password', {
+      const completeRes = await fetch('/api/auth/webauthn/reset-assertion-complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(credential),
+        body: JSON.stringify({ token, credential }),
         credentials: 'include'
       });
 
-      const result = await verifyRes.json();
-      if (!verifyRes.ok) throw new Error(result.error);
+      const completeData = await completeRes.json();
+      if (!completeRes.ok) throw new Error(completeData.error);
+
+      // ✅ Now retry the password reset after successful WebAuthn
+      const retryRes = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, new_password: newPassword }),
+      });
+
+      const retryData = await retryRes.json();
+      if (!retryRes.ok) throw new Error(retryData.error || "Final password reset failed.");
 
       Toastify({
-        text: result.message || "✅ Password reset complete.",
+        text: retryData.message || "✅ Password reset complete.",
         duration: 3000,
         gravity: "top",
         position: "right",

@@ -17,6 +17,7 @@ from fido2 import cbor
 from utils.email_alerts import send_admin_alert, send_user_alert
 import json
 import base64
+from utils.security import hash_token
 
 webauthn_bp = Blueprint('webauthn', __name__)
 
@@ -381,3 +382,112 @@ def complete_assertion():
         return jsonify({"error": f"❌ Assertion failed: {str(e)}"}), 500
 
 
+# ///////////////////
+# FallBack Section
+# ////////////////////
+
+@webauthn_bp.route("/webauthn/reset-assertion-begin", methods=["POST"])
+def begin_reset_assertion():
+    try:
+        data = request.get_json()
+        token = data.get("token")
+        if not token:
+            return jsonify({"error": "Missing token"}), 400
+
+        user = User.query.filter_by(reset_token=hash_token(token)).first()
+        if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
+            return jsonify({"error": "Reset token invalid or expired."}), 403
+
+        if not user.webauthn_credentials:
+            return jsonify({"error": "User has no registered WebAuthn credentials"}), 404
+
+        credentials = [
+            {
+                "id": c.credential_id,
+                "transports": c.transports.split(',') if c.transports else [],
+                "type": "public-key"
+            }
+            for c in user.webauthn_credentials
+        ]
+
+        assertion_data, state = server.authenticate_begin(credentials)
+
+        session["reset_webauthn_assertion_state"] = state
+        session["reset_user_id"] = user.id
+        session["reset_context"] = "totp"
+
+        return jsonify({"public_key": jsonify_webauthn(assertion_data["publicKey"])})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Reset WebAuthn begin failed: {str(e)}"}), 500
+
+
+
+@webauthn_bp.route("/webauthn/reset-assertion-complete", methods=["POST"])
+def complete_reset_assertion():
+    try:
+        user_id = session.get("reset_user_id")
+        state = session.get("reset_webauthn_assertion_state")
+
+        if not state or not user_id:
+            return jsonify({"error": "No reset verification in progress."}), 400
+
+        data = request.get_json()
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found."}), 404
+
+        credential_id = websafe_decode(data["credentialId"])
+        credential = WebAuthnCredential.query.filter_by(
+            user_id=user.id,
+            credential_id=credential_id
+        ).first()
+
+        if not credential:
+            return jsonify({"error": "Invalid credential."}), 401
+
+        # ✅ Build WebAuthn response object (as dict)
+            assertion = {
+                "id": data["credentialId"],
+                "rawId": websafe_decode(data["credentialId"]),
+                "type": "public-key",
+                "response": {
+                    "authenticatorData": websafe_decode(data["authenticatorData"]),
+                    "clientDataJSON": websafe_decode(data["clientDataJSON"]),
+                    "signature": websafe_decode(data["signature"]),
+                    "userHandle": websafe_decode(data["userHandle"]) if data.get("userHandle") else None
+                }
+            }
+
+            # ✅ Credential from DB
+            public_key_source = {
+                "id": credential.credential_id,
+                "public_key": credential.public_key,
+                "sign_count": credential.sign_count,
+                "transports": credential.transports.split(",") if credential.transports else [],
+                "user_handle": None,
+            }
+
+            # ✅ Final auth check (note: NO brackets on `assertion`)
+            server.authenticate_complete(
+                state,
+                assertion,
+                [public_key_source]
+            )
+
+        credential.sign_count += 1
+        db.session.commit()
+        # After token is used
+        session.pop("reset_token", None)
+
+        session["reset_webauthn_verified"] = True
+        session.pop("reset_webauthn_assertion_state", None)
+
+        return jsonify({"message": "✅ Verified via WebAuthn for reset"})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"❌ Reset WebAuthn failed: {str(e)}"}), 500

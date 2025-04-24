@@ -6,7 +6,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-
     const password = form.querySelector('[name="password"]').value;
 
     try {
@@ -19,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const data = await res.json();
 
+      // ✅ WebAuthn required → trigger it and return
       if (res.status === 202 && data.require_webauthn) {
         Toastify({
           text: "🔐 WebAuthn required. Please use your security key...",
@@ -28,9 +28,10 @@ document.addEventListener('DOMContentLoaded', () => {
           backgroundColor: "#2962ff"
         }).showToast();
 
-        return await triggerWebAuthnFlow(token);
+        return await triggerWebAuthnFlow(password);  // Will retry backend once passed
       }
 
+      // ❌ Error
       if (!res.ok) {
         Toastify({
           text: `❌ ${data.error || 'Verification failed.'}`,
@@ -42,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      // ✅ Success
       Toastify({
         text: data.message || "✅ TOTP has been reset.",
         duration: 3000,
@@ -65,67 +67,69 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  async function triggerWebAuthnFlow(token) {
+  async function triggerWebAuthnFlow(password) {
     try {
-      const challengeRes = await fetch('/api/auth/webauthn/challenge-reset', {
+      const challengeRes = await fetch('/webauthn/reset-assertion-begin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token }),
         credentials: 'include'
       });
 
-      const challengeData = await challengeRes.json();
-
-      if (!challengeRes.ok) {
-        throw new Error(challengeData.error || "Challenge failed.");
-      }
+      const beginData = await challengeRes.json();
+      if (!challengeRes.ok) throw new Error(beginData.error || "Failed to begin WebAuthn reset.");
 
       const publicKey = {
-        ...challengeData,
-        challenge: Uint8Array.from(atob(challengeData.challenge), c => c.charCodeAt(0)),
-        allowCredentials: challengeData.allowCredentials.map(cred => ({
+        ...beginData.public_key,
+        challenge: base64urlToUint8Array(beginData.public_key.challenge),
+        allowCredentials: beginData.public_key.allowCredentials.map(cred => ({
           ...cred,
-          id: Uint8Array.from(atob(cred.id), c => c.charCodeAt(0))
+          id: base64urlToUint8Array(cred.id)
         }))
       };
 
       const assertion = await navigator.credentials.get({ publicKey });
 
-      const credential = {
-        id: assertion.id,
-        rawId: btoa(String.fromCharCode(...new Uint8Array(assertion.rawId))),
-        response: {
-          authenticatorData: btoa(String.fromCharCode(...new Uint8Array(assertion.response.authenticatorData))),
-          clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(assertion.response.clientDataJSON))),
-          signature: btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature))),
-          userHandle: assertion.response.userHandle
-            ? btoa(String.fromCharCode(...new Uint8Array(assertion.response.userHandle)))
-            : null
-        },
-        type: assertion.type
+      const responsePayload = {
+        credentialId: toBase64Url(assertion.rawId),
+        authenticatorData: toBase64Url(assertion.response.authenticatorData),
+        clientDataJSON: toBase64Url(assertion.response.clientDataJSON),
+        signature: toBase64Url(assertion.response.signature),
+        userHandle: assertion.response.userHandle
+          ? toBase64Url(assertion.response.userHandle)
+          : null
       };
 
-      const verifyRes = await fetch('/api/auth/webauthn/verify-reset', {
+      const verifyRes = await fetch('/webauthn/reset-assertion-complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(credential),
+        body: JSON.stringify(responsePayload),
         credentials: 'include'
       });
 
       const result = await verifyRes.json();
+      if (!verifyRes.ok) throw new Error(result.error || "WebAuthn reset verification failed.");
 
-      if (verifyRes.ok) {
-        Toastify({
-          text: result.message || "✅ TOTP has been reset after WebAuthn.",
-          duration: 3000,
-          gravity: "top",
-          position: "right",
-          backgroundColor: "#43a047"
-        }).showToast();
-        setTimeout(() => window.location.href = "/login", 2000);
-      } else {
-        throw new Error(result.error || "WebAuthn verification failed.");
-      }
+      // ✅ Now retry the actual reset
+      const retry = await fetch('/api/auth/verify-totp-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password }),
+        credentials: 'include'
+      });
+
+      const retryResult = await retry.json();
+      if (!retry.ok) throw new Error(retryResult.error || "Final TOTP reset failed.");
+
+      Toastify({
+        text: retryResult.message,
+        duration: 3000,
+        gravity: "top",
+        position: "right",
+        backgroundColor: "#43a047"
+      }).showToast();
+
+      setTimeout(() => window.location.href = "/api/auth/login_form", 2000);
 
     } catch (err) {
       console.error("WebAuthn Error:", err);
@@ -137,5 +141,17 @@ document.addEventListener('DOMContentLoaded', () => {
         backgroundColor: "#e53935"
       }).showToast();
     }
+  }
+
+  function base64urlToUint8Array(base64urlString) {
+    const padding = '='.repeat((4 - base64urlString.length % 4) % 4);
+    const base64 = (base64urlString + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+  }
+
+  function toBase64Url(buffer) {
+    return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 });

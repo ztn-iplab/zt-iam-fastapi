@@ -7,6 +7,8 @@ from flask_jwt_extended import (
     unset_jwt_cookies,
     verify_jwt_in_request,
 )
+from fido2.server import Fido2Server
+from fido2.webauthn import PublicKeyCredentialRequestOptions
 
 from utils.security import (
     generate_token,
@@ -23,10 +25,12 @@ from utils.otp import generate_otp_code  # Import your OTP logic
 from utils.totp import verify_totp_code
 from utils.location import get_ip_location
 from utils.security import generate_challenge
-
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 import pyotp
 import qrcode
 import io
+import os
+import json
 import base64
 from flask import current_app
 from utils.auth_decorators import require_full_mfa
@@ -652,7 +656,7 @@ def reset_password():
     if not token or not new_password:
         return jsonify({"error": "Token and new password are required"}), 400
 
-    # ✅ Match against hashed reset token
+    # ✅ Look up user from hashed token
     user = User.query.filter_by(reset_token=hash_token(token)).first()
     if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
         return jsonify({"error": "Invalid or expired token"}), 400
@@ -661,7 +665,7 @@ def reset_password():
     device_info = request.user_agent.string
     location = get_ip_location(ip_address)
 
-    # ✅ Enforce Trust Score
+    # ✅ Block low-trust reset attempts
     if user.trust_score < 0.4:
         db.session.add(RealTimeLog(
             user_id=user.id,
@@ -686,57 +690,46 @@ def reset_password():
             )
         }), 403
 
-    # ✅ If user has WebAuthn credentials, require verification
-    if WebAuthnCredential.query.filter_by(user_id=user.id).count() > 0:
+    # ✅ MFA Verification Requirement Check
+    has_webauthn = WebAuthnCredential.query.filter_by(user_id=user.id).count() > 0
+    has_totp = user.otp_secret is not None and user.totp_verified
+
+    if has_webauthn:
         return jsonify({
             "require_webauthn": True,
             "message": "WebAuthn verification required before resetting password."
         }), 202
 
-    # ✅ Check password reuse
-    previous_passwords = PasswordHistory.query.filter_by(user_id=user.id).all()
-    for record in previous_passwords:
-        if check_password_hash(record.password_hash, new_password):
-            db.session.add(RealTimeLog(
-                user_id=user.id,
-                action="❌ Tried reusing a previous password during reset",
-                ip_address=ip_address,
-                device_info=device_info,
-                location=location,
-                risk_alert=True
-            ))
-            db.session.commit()
-            return jsonify({"error": "You’ve already used this password. Please choose a new one."}), 400
+    if has_totp:
+        return jsonify({
+            "require_totp": True,
+            "message": "TOTP verification required before resetting password."
+        }), 202
 
-    # ✅ Set new password
-    user.password = new_password
-    user.reset_token = None
-    user.reset_token_expiry = None
-
-    # ✅ Save to password history
-    db.session.add(PasswordHistory(
-        user_id=user.id,
-        password_hash=user.password_hash
-    ))
-
-    # ✅ Retain only last 5
-    history_records = PasswordHistory.query.filter_by(user_id=user.id).order_by(
-        PasswordHistory.created_at.desc()).all()
-    if len(history_records) > 5:
-        for old_record in history_records[5:]:
-            db.session.delete(old_record)
-
+    # ❌ User has neither TOTP nor WebAuthn, cannot proceed
     db.session.add(RealTimeLog(
         user_id=user.id,
-        action="🔐 Password reset successful",
+        action="❌ Password reset attempt blocked — no second factor enrolled",
         ip_address=ip_address,
         device_info=device_info,
         location=location,
-        risk_alert=False
+        risk_alert=True
     ))
-
+    send_admin_alert(
+        user=user,
+        event_type="Blocked Password Reset (No MFA)",
+        ip_address=ip_address,
+        device_info=device_info,
+        location=location
+    )
     db.session.commit()
-    return jsonify({"message": "Password reset successful."}), 200
+    return jsonify({
+        "error": (
+            "You must have at least one multi-factor method set up (TOTP or WebAuthn) "
+            "to complete this password reset."
+        )
+    }), 403
+
 
 
 
@@ -917,12 +910,12 @@ def verify_totp_reset_post():
     if not user.check_password(password):
         return jsonify({"error": "Incorrect password"}), 401
 
-    # ✅ Trust Score Check
-    if user.trust_score < 0.6:
-        ip = request.remote_addr
-        device_info = request.user_agent.string
-        location = get_ip_location(ip)
+    ip = request.remote_addr
+    device_info = request.user_agent.string
+    location = get_ip_location(ip)
 
+    # ✅ Trust Score Check
+    if user.trust_score < 0.5:
         db.session.add(RealTimeLog(
             user_id=user.id,
             action="⚠️ TOTP reset denied due to low trust score",
@@ -932,7 +925,6 @@ def verify_totp_reset_post():
             risk_alert=True
         ))
 
-        # ✅ Send email alert to admin
         send_admin_alert(
             user=user,
             event_type="Blocked TOTP Reset (Low Trust Score)",
@@ -950,14 +942,17 @@ def verify_totp_reset_post():
             )
         }), 403
 
-    # ✅ Optional: WebAuthn check if available
-    if WebAuthnCredential.query.filter_by(user_id=user.id).count() > 0:
+    # ✅ WebAuthn Check: only proceed if verified
+    has_webauthn = WebAuthnCredential.query.filter_by(user_id=user.id).count() > 0
+    webauthn_verified = session.get("reset_webauthn_verified")
+
+    if has_webauthn and not webauthn_verified:
         return jsonify({
             "require_webauthn": True,
             "message": "WebAuthn verification required before TOTP reset."
         }), 202
 
-    # ✅ Passed trust & password → proceed to reset
+    # ✅ Passed → reset TOTP
     user.otp_secret = None
     user.otp_email_label = None
     user.reset_token = None
@@ -972,88 +967,14 @@ def verify_totp_reset_post():
         risk_alert=False
     ))
 
+    # ✅ Clean up session
+    session.pop("reset_webauthn_verified", None)
+
     db.session.commit()
     return jsonify({"message": "TOTP has been reset. You’ll be prompted to set it up on next login."}), 200
 
-# Webauth/challenge
-@auth_bp.route('/webauthn/challenge-reset', methods=['POST'])
-def webauthn_challenge_for_totp_reset():
-    data = request.get_json()
-    token = data.get("token")
 
-    user = User.query.filter_by(reset_token=hash_token(token)).first()
-    if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
-        return jsonify({"error": "Invalid or expired token"}), 400
 
-    credentials = WebAuthnCredential.query.filter_by(user_id=user.id).all()
-    if not credentials:
-        return jsonify({"error": "No WebAuthn credentials found."}), 404
-
-    challenge = generate_challenge()
-    session["webauthn_challenge"] = challenge
-    session["webauthn_user_id"] = user.id
-    session["webauthn_token"] = token
-
-    options = {
-    "challenge": base64.urlsafe_b64encode(challenge.encode()).decode("utf-8"),
-    "rpId": "localhost.localdomain",
-    "allowCredentials": [cred.as_dict() for cred in credentials],
-    "userVerification": "preferred",
-    "timeout": 60000
-    }
-    return jsonify(options)
-
-# verify the challenge
-@auth_bp.route('/webauthn/verify-reset', methods=['POST'])
-def verify_webauthn_and_reset_totp():
-    user_id = session.get("webauthn_user_id")
-    token = session.get("webauthn_token")
-    challenge = session.get("webauthn_challenge")
-
-    if not user_id or not token or not challenge:
-        return jsonify({"error": "Session expired. Please retry the process."}), 440
-
-    user = User.query.get(user_id)
-    if not user or hash_token(token) != user.reset_token:
-        return jsonify({"error": "Invalid verification context."}), 400
-
-    credentials = WebAuthnCredential.query.filter_by(user_id=user.id).all()
-    if not credentials:
-        return jsonify({"error": "No WebAuthn credentials found."}), 404
-
-    server = Fido2Server({"id": request.host, "name": "MoMo ZTN"})
-    try:
-        options = PublicKeyCredentialRequestOptions(
-            challenge=challenge,
-            rp_id=request.host,
-            allow_credentials=[cred.as_webauthn_allow_credential() for cred in credentials]
-        )
-
-        assertion_response = request.get_json()
-        cred = server.authenticate_complete(
-            options, credentials[0].as_webauthn_credential(), assertion_response
-        )
-
-        # ✅ If all is good, finalize the reset
-        user.otp_secret = None
-        user.otp_email_label = None
-        user.reset_token = None
-        user.reset_token_expiry = None
-
-        db.session.add(RealTimeLog(
-            user_id=user.id,
-            action="✅ TOTP reset after WebAuthn verification",
-            ip_address=request.remote_addr,
-            device_info=request.user_agent.string,
-            location=get_ip_location(request.remote_addr),
-            risk_alert=False
-        ))
-        db.session.commit()
-
-        return jsonify({"message": "TOTP reset complete."}), 200
-
-    except Exception as e:
-        return jsonify({"error": f"WebAuthn verification failed: {str(e)}"}), 403
 
 # 
 @auth_bp.route('/verify-totp-reset', methods=['GET'])
@@ -1063,6 +984,8 @@ def verify_totp_reset():
         return redirect(url_for('auth.request_totp_reset_form'))
 
     return render_template("totp_reset_verification.html", token=token)
+
+
 
 # Reset WebAuthn Credential
 @auth_bp.route('/request-reset-webauthn', methods=['POST'])
@@ -1105,87 +1028,3 @@ def request_reset_webauthn():
         "redirect": "/settings"
     }), 200
 
-# Verify the Webauth and Reset the password
-@auth_bp.route('/webauthn/verify-reset-password', methods=['POST'])
-def verify_webauthn_and_reset_password():
-
-    user_id = session.get("webauthn_user_id")
-    token = session.get("webauthn_token")
-    challenge = session.get("webauthn_challenge")
-
-    if not user_id or not token or not challenge:
-        return jsonify({"error": "Session expired. Please restart the process."}), 440
-
-    data = request.get_json()
-    new_password = data.get("new_password")
-
-    if not new_password:
-        return jsonify({"error": "New password is required"}), 400
-
-    user = User.query.get(user_id)
-    if not user or hash_token(token) != user.reset_token:
-        return jsonify({"error": "Invalid or expired token"}), 400
-
-    credentials = WebAuthnCredential.query.filter_by(user_id=user.id).all()
-    if not credentials:
-        return jsonify({"error": "No WebAuthn credentials found."}), 404
-
-    # ✅ WebAuthn validation
-    try:
-        options = PublicKeyCredentialRequestOptions(
-            challenge=challenge.encode(),
-            rp_id="localhost.localdomain",
-            allow_credentials=[cred.as_webauthn_credential() for cred in credentials],
-            user_verification="preferred"
-        )
-
-        server = Fido2Server({"id": "localhost.localdomain", "name": "MoMo ZTN"})
-        cred = server.authenticate_complete(
-            options,
-            credentials[0].as_webauthn_credential(),
-            data
-        )
-
-    except Exception as e:
-        return jsonify({"error": f"WebAuthn verification failed: {str(e)}"}), 403
-
-    # ✅ Check password reuse
-    previous_passwords = PasswordHistory.query.filter_by(user_id=user.id).all()
-    for record in previous_passwords:
-        if check_password_hash(record.password_hash, new_password):
-            db.session.add(RealTimeLog(
-                user_id=user.id,
-                action="❌ Reused a previous password during WebAuthn fallback",
-                ip_address=request.remote_addr,
-                device_info=request.user_agent.string,
-                location=get_ip_location(request.remote_addr),
-                risk_alert=True
-            ))
-            db.session.commit()
-            return jsonify({"error": "You’ve already used this password. Please choose a new one."}), 400
-
-    # ✅ Apply new password
-    user.password = new_password
-    user.reset_token = None
-    user.reset_token_expiry = None
-
-    db.session.add(PasswordHistory(user_id=user.id, password_hash=user.password_hash))
-
-    # Keep only last 5 passwords
-    history = PasswordHistory.query.filter_by(user_id=user.id).order_by(
-        PasswordHistory.created_at.desc()).all()
-    if len(history) > 5:
-        for old_record in history[5:]:
-            db.session.delete(old_record)
-
-    db.session.add(RealTimeLog(
-        user_id=user.id,
-        action="✅ Password reset via WebAuthn fallback",
-        ip_address=request.remote_addr,
-        device_info=request.user_agent.string,
-        location=get_ip_location(request.remote_addr),
-        risk_alert=False
-    ))
-    db.session.commit()
-
-    return jsonify({"message": "Password reset successfully verified and completed."}), 200

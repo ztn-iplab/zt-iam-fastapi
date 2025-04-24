@@ -54,5 +54,5 @@ def verify_secondary_method(user):
     return False
 
 def generate_challenge():
-    raw = os.urandom(32)
-    return base64.urlsafe_b64encode(raw).decode('utf-8').rstrip("=")
+    return base64.b64encode(os.urandom(32)).decode("utf-8")
+

@@ -36,8 +36,8 @@ from flask import current_app
 from utils.auth_decorators import require_full_mfa
 from flask_mail import Message
 from extensions import mail
-from utils.email_alerts import send_admin_alert, send_user_alert, send_password_reset_email ,send_totp_reset_email
-
+from utils.email_alerts import send_admin_alert, send_user_alert, send_password_reset_email ,send_totp_reset_email, send_webauthn_reset_email
+import pyotp
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -671,7 +671,7 @@ def forgot_password_form():
 def reset_password_form():
     token = request.args.get("token")
     if not token:
-        return redirect(url_for('auth.forgot_password_form'))  # ✅ This now works!
+        return redirect(url_for('auth.forgot_password_form'))  
     return render_template("reset_password.html", token=token)
 
 # Reset Password
@@ -1078,7 +1078,7 @@ def verify_totp_reset():
 
 
 
-# Reset WebAuthn Credential
+# Reset WebAuthn Credential from the settings
 @auth_bp.route('/request-reset-webauthn', methods=['POST'])
 @jwt_required()
 def request_reset_webauthn():
@@ -1119,3 +1119,109 @@ def request_reset_webauthn():
         "redirect": "/settings"
     }), 200
 
+
+
+# Route to handle WebAuthn reset from outside
+# This is the route to show the WebAuthn reset request page
+@auth_bp.route('/out-request-webauthn-reset', methods=['GET'])
+def out_request_webauthn_reset_page():
+    return render_template('request_webauthn_reset.html')
+
+# Step 1: Request WebAuthn Reset (Identifier Only)
+@auth_bp.route('/out-request-webauthn-reset', methods=['POST'])
+def request_webauthn_reset():
+    data = request.get_json()
+    identifier = data.get("identifier")
+
+    if not identifier:
+        return jsonify({"error": "Identifier (email or mobile number) is required."}), 400
+
+    user = User.query.filter_by(email=identifier).first()
+    if not user:
+        sim = SIMCard.query.filter_by(mobile_number=identifier, status='active').first()
+        user = sim.user if sim else None
+
+    if not user:
+        return jsonify({"error": "No matching account found."}), 404
+
+    token = generate_token()
+    expiry = datetime.utcnow() + timedelta(minutes=15)
+
+    user.reset_token = hash_token(token)
+    user.reset_token_expiry = expiry
+    db.session.commit()
+
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        action="📨 WebAuthn reset link requested",
+        ip_address=request.remote_addr,
+        device_info=request.user_agent.string,
+        location=get_ip_location(request.remote_addr),
+        risk_alert=True
+    ))
+    db.session.commit()
+
+    send_webauthn_reset_email(user, token)
+    return jsonify({"message": "WebAuthn reset link has been sent to your email."}), 200
+
+# Getting the verifications page:
+@auth_bp.route('/out-verify-webauthn-reset/<token>', methods=['GET'])
+def out_verify_webauthn_reset_page(token):
+    return render_template("verify_webauthn_reset.html", token=token)
+
+# Step 2: Verify Token and Reset WebAuthn (Password + TOTP Required)
+@auth_bp.route('/out-verify-webauthn-reset/<token>', methods=['POST'])
+def verify_webauthn_reset(token):
+    data = request.get_json()
+    password = data.get("password")
+    totp = data.get("totp")
+
+    if not password or not totp:
+        return jsonify({"error": "Password and TOTP code are required."}), 400
+
+    user = User.query.filter_by(reset_token=hash_token(token)).first()
+
+    if not user or user.reset_token_expiry < datetime.utcnow():
+        return jsonify({"error": "Invalid or expired token."}), 403
+
+    if not user.check_password(password):
+        return jsonify({"error": "Invalid password."}), 403
+
+    if not user.otp_secret:
+        return jsonify({"error": "No TOTP configured for this account."}), 403
+
+    totp_validator = pyotp.TOTP(user.otp_secret)
+    if not totp_validator.verify(totp, valid_window=1):
+        return jsonify({"error": "Invalid TOTP code."}), 403
+
+    # Delete the User webauthn credentials
+    WebAuthnCredential.query.filter_by(user_id=user.id).delete()
+
+    # Clear token and mark WebAuthn as reset
+    user.reset_token = None
+    user.reset_token_expiry = None
+    user.passkey_required = True  # Flag to prompt re-enrollment next login
+
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        action="✅ WebAuthn reset verified",
+        ip_address=request.remote_addr,
+        device_info=request.user_agent.string,
+        location=get_ip_location(request.remote_addr),
+        risk_alert=True
+    ))
+
+    db.session.commit()
+
+    send_user_alert(
+    user,
+    "WebAuthn Reset Completed",
+    request.remote_addr,
+    get_ip_location(request.remote_addr),
+    request.user_agent.string
+    )
+
+
+    return jsonify({
+        "message": "✅ WebAuthn reset successful. Please log in and re-enroll your passkey."
+    }), 200

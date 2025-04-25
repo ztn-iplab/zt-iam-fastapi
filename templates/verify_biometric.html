@@ -26,6 +26,16 @@
       Setup Passkey or Security Key
     </a>
   </div>
+  <!-- ✨ WebAuthn Reset Link (if needed) -->
+<div style="margin-top: 20px; text-align: center;">
+  <p>
+    If you've lost access to your passkey or device, 
+    <a href="{{ url_for('auth.out_request_webauthn_reset_page') }}" style="color: #007bff; text-decoration: underline;">
+      click here
+    </a> to reset it and enroll a new one.
+  </p>
+</div>
+
 </div>
 
 <script src="{{ url_for('static', filename='js/fingerprint-login.js') }}"></script>

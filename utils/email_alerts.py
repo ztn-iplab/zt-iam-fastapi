@@ -125,3 +125,28 @@ MoMo ZTN Security Team
         print(f"📧 TOTP reset email sent to {user.email}")
     except Exception as e:
         print(f"❌ Failed to send TOTP reset email: {e}")
+
+def send_webauthn_reset_email(user, raw_token):
+    try:
+        reset_link = url_for('auth.verify_webauthn_reset', token=raw_token, _external=True)
+        subject = "🗝️ Reset Your WebAuthn Passkey"
+        body = f"""
+Dear {user.first_name},
+
+We received a request to reset your WebAuthn (passkey) setup for your MoMo ZTN account.
+
+Click the link below to verify your identity and reset your passkey:
+{reset_link}
+
+This link will expire in 15 minutes.
+
+If you did not request this, please reset your password and contact support immediately.
+
+Stay secure,  
+MoMo ZTN Security Team
+"""
+        msg = Message(subject=subject, recipients=[user.email], body=body)
+        mail.send(msg)
+        print(f"📧 WebAuthn reset email sent to {user.email}")
+    except Exception as e:
+        print(f"❌ Failed to send WebAuthn reset email: {e}")

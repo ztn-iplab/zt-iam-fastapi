@@ -24,7 +24,7 @@ from models.models import User, Wallet, db, UserRole, UserAccessControl,SIMCard,
 from utils.otp import generate_otp_code  # Import your OTP logic
 from utils.totp import verify_totp_code
 from utils.location import get_ip_location
-from utils.security import generate_challenge
+from utils.security import generate_challenge, is_strong_password
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 import pyotp
 import qrcode
@@ -509,7 +509,7 @@ def whoami():
         "role": role.lower()  # e.g., "admin", "agent", "user"
     })
 
-# Verfy your TOTP
+# Verfy your TOTP for transactions
 @auth_bp.route('/verify-totp', methods=['POST'])
 @jwt_required()
 def verify_transaction_totp():
@@ -523,6 +523,34 @@ def verify_transaction_totp():
     else:
         return jsonify({"error": "Invalid TOTP"}), 401
 
+# Verifying the totp with a fallback sent access token
+# =====================================================
+@auth_bp.route('/verify-fallback_totp', methods=['POST'])
+def verify_fallback_totp():
+    data = request.get_json()
+    token = data.get("token")
+    code = data.get("code")
+
+    if not token or not code:
+        return jsonify({"error": "Reset token and TOTP code are required"}), 400
+
+    user = User.query.filter_by(reset_token=hash_token(token)).first()
+    if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
+        return jsonify({"error": "Invalid or expired token"}), 400
+
+    if not user.otp_secret:
+        return jsonify({"error": "No TOTP method set up"}), 400
+
+    if verify_totp_code(user.otp_secret, code):
+        # Mark TOTP as verified in session for this token
+        session["reset_totp_verified"] = True
+        session["reset_token_checked"] = token
+
+        return jsonify({
+            "message": "✅ TOTP code verified successfully. You can now reset your password."
+        }), 200
+    else:
+        return jsonify({"error": "Invalid TOTP code"}), 401
 
 # Refres the access token
 @auth_bp.route('/refresh', methods=['POST'])
@@ -652,25 +680,28 @@ def reset_password():
     data = request.get_json()
     token = data.get("token")
     new_password = data.get("new_password")
+    confirm_password = data.get("confirm_password")
 
-    if not token or not new_password:
-        return jsonify({"error": "Token and new password are required"}), 400
+    if not token or not new_password or not confirm_password:
+        return jsonify({"error": "Token, new password, and confirmation are required"}), 400
 
-    # ✅ Look up user from hashed token
+    if new_password != confirm_password:
+        return jsonify({"error": "Passwords do not match"}), 400
+
     user = User.query.filter_by(reset_token=hash_token(token)).first()
     if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
         return jsonify({"error": "Invalid or expired token"}), 400
 
-    ip_address = request.remote_addr
+    ip = request.remote_addr
     device_info = request.user_agent.string
-    location = get_ip_location(ip_address)
+    location = get_ip_location(ip)
 
-    # ✅ Block low-trust reset attempts
+    # 🚫 Low trust score check
     if user.trust_score < 0.4:
         db.session.add(RealTimeLog(
             user_id=user.id,
             action="🚫 Password reset denied due to low trust score",
-            ip_address=ip_address,
+            ip_address=ip,
             device_info=device_info,
             location=location,
             risk_alert=True
@@ -678,58 +709,118 @@ def reset_password():
         send_admin_alert(
             user=user,
             event_type="Blocked Password Reset (Low Trust Score)",
-            ip_address=ip_address,
+            ip_address=ip,
             device_info=device_info,
             location=location
         )
         db.session.commit()
         return jsonify({
             "error": (
-                "This reset request looks suspicious and was blocked. "
-                "An administrator has been notified."
+                "This reset request was blocked due to suspicious activity. "
+                "An administrator has been notified for review."
             )
         }), 403
 
-    # ✅ MFA Verification Requirement Check
-    has_webauthn = WebAuthnCredential.query.filter_by(user_id=user.id).count() > 0
-    has_totp = user.otp_secret is not None and user.totp_verified
+    # 🧠 Reuse check
+    previous_passwords = PasswordHistory.query.filter_by(user_id=user.id).all()
+    for record in previous_passwords:
+        if check_password_hash(record.password_hash, new_password):
+            db.session.add(RealTimeLog(
+                user_id=user.id,
+                action="❌ Attempted to reuse an old password during reset",
+                ip_address=ip,
+                device_info=device_info,
+                location=location,
+                risk_alert=True
+            ))
+            db.session.commit()
+            return jsonify({"error": "You’ve already used this password. Please choose a new one."}), 400
 
-    if has_webauthn:
+    # 🔐 Strength check
+    if not is_strong_password(new_password):
+        return jsonify({
+            "error": (
+                "Password must be at least 8 characters long and include an uppercase letter, "
+                "lowercase letter, number, and special character."
+            )
+        }), 400
+
+    # 🔐 MFA Checks
+    has_webauthn = WebAuthnCredential.query.filter_by(user_id=user.id).count() > 0
+    has_totp = user.otp_secret is not None
+
+    if session.get("reset_token_checked") != token:
+        session["reset_webauthn_verified"] = False
+        session["reset_totp_verified"] = False
+        session["reset_token_checked"] = token
+
+    if has_webauthn and not session.get("reset_webauthn_verified"):
         return jsonify({
             "require_webauthn": True,
-            "message": "WebAuthn verification required before resetting password."
+            "message": "WebAuthn verification required before resetting your password."
         }), 202
 
-    if has_totp:
+    if has_totp and not has_webauthn and not session.get("reset_totp_verified"):
         return jsonify({
             "require_totp": True,
-            "message": "TOTP verification required before resetting password."
+            "message": "TOTP verification required before resetting your password."
         }), 202
 
-    # ❌ User has neither TOTP nor WebAuthn, cannot proceed
+    if not has_webauthn and not has_totp:
+        db.session.add(RealTimeLog(
+            user_id=user.id,
+            action="❌ Password reset blocked — no MFA configured",
+            ip_address=ip,
+            device_info=device_info,
+            location=location,
+            risk_alert=True
+        ))
+        send_admin_alert(
+            user=user,
+            event_type="Blocked Password Reset (No MFA)",
+            ip_address=ip,
+            device_info=device_info,
+            location=location
+        )
+        db.session.commit()
+        return jsonify({
+            "error": (
+                "You need to have at least one multi-factor method (TOTP or WebAuthn) "
+                "set up to reset your password."
+            )
+        }), 403
+
+    # ✅ Update password and history
+    user.password = new_password
+    db.session.add(PasswordHistory(user_id=user.id, password_hash=user.password_hash))
+
+    # Keep only last 5
+    history_records = PasswordHistory.query.filter_by(user_id=user.id).order_by(
+        PasswordHistory.created_at.desc()).all()
+    if len(history_records) > 5:
+        for old in history_records[5:]:
+            db.session.delete(old)
+
+    user.reset_token = None
+    user.reset_token_expiry = None
+
     db.session.add(RealTimeLog(
         user_id=user.id,
-        action="❌ Password reset attempt blocked — no second factor enrolled",
-        ip_address=ip_address,
+        action="✅ Password reset after MFA and checks",
+        ip_address=ip,
         device_info=device_info,
         location=location,
-        risk_alert=True
+        risk_alert=False
     ))
-    send_admin_alert(
-        user=user,
-        event_type="Blocked Password Reset (No MFA)",
-        ip_address=ip_address,
-        device_info=device_info,
-        location=location
-    )
+
+    session.pop("reset_webauthn_verified", None)
+    session.pop("reset_totp_verified", None)
+    session.pop("reset_token_checked", None)
+
     db.session.commit()
     return jsonify({
-        "error": (
-            "You must have at least one multi-factor method set up (TOTP or WebAuthn) "
-            "to complete this password reset."
-        )
-    }), 403
-
+        "message": "Your password has been successfully reset. You may now log in with your new credentials."
+    }), 200
 
 
 

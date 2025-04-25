@@ -20,11 +20,27 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    if (!isStrongPassword(newPassword)) {
+      Toastify({
+        text: "❌ Password too weak. Must be at least 8 characters with uppercase, lowercase, digit, and special character.",
+        duration: 4000,
+        gravity: "top",
+        position: "right",
+        backgroundColor: "#e53935"
+      }).showToast();
+      return;
+    }
+
     try {
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, new_password: newPassword }),
+        body: JSON.stringify({ 
+          token, 
+          new_password: newPassword,
+          confirm_password: confirmPassword 
+        }),
+        
       });
 
       const data = await res.json();
@@ -38,7 +54,19 @@ document.addEventListener('DOMContentLoaded', () => {
           backgroundColor: "#2962ff"
         }).showToast();
 
-        return await performWebAuthnReset(token, newPassword); // just verify, then retry
+        return await verifyWithWebAuthn(token, newPassword);
+      }
+
+      if (res.status === 202 && data.require_totp) {
+        Toastify({
+          text: "🔐 TOTP verification required before reset.",
+          duration: 3000,
+          gravity: "top",
+          position: "right",
+          backgroundColor: "#2962ff"
+        }).showToast();
+
+        return await verifyWithTotp(token, newPassword);
       }
 
       if (!res.ok) {
@@ -77,9 +105,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  async function performWebAuthnReset(token, newPassword) {
+  async function verifyWithWebAuthn(token, newPassword) {
     try {
-      const beginRes = await fetch('/api/auth/webauthn/reset-assertion-begin', {
+      const beginRes = await fetch('/webauthn/reset-assertion-begin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token }),
@@ -90,66 +118,40 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!beginRes.ok) throw new Error(beginData.error);
 
       const publicKey = {
-        ...beginData,
-        challenge: Uint8Array.from(atob(beginData.challenge), c => c.charCodeAt(0)),
-        allowCredentials: beginData.allowCredentials.map(cred => ({
+        ...beginData.public_key,
+        challenge: base64urlToUint8Array(beginData.public_key.challenge),
+        allowCredentials: beginData.public_key.allowCredentials.map(cred => ({
           ...cred,
-          id: Uint8Array.from(atob(cred.id), c => c.charCodeAt(0))
+          id: base64urlToUint8Array(cred.id)
         }))
       };
 
       const assertion = await navigator.credentials.get({ publicKey });
 
-      const credential = {
-        id: assertion.id,
-        rawId: btoa(String.fromCharCode(...new Uint8Array(assertion.rawId))),
-        response: {
-          authenticatorData: btoa(String.fromCharCode(...new Uint8Array(assertion.response.authenticatorData))),
-          clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(assertion.response.clientDataJSON))),
-          signature: btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature))),
-          userHandle: assertion.response.userHandle
-            ? btoa(String.fromCharCode(...new Uint8Array(assertion.response.userHandle)))
-            : null
-        },
-        type: assertion.type,
-        token
+      const responsePayload = {
+        credentialId: toBase64Url(assertion.rawId),
+        authenticatorData: toBase64Url(assertion.response.authenticatorData),
+        clientDataJSON: toBase64Url(assertion.response.clientDataJSON),
+        signature: toBase64Url(assertion.response.signature),
+        userHandle: assertion.response.userHandle
+          ? toBase64Url(assertion.response.userHandle)
+          : null
       };
 
-      const completeRes = await fetch('/api/auth/webauthn/reset-assertion-complete', {
+      const completeRes = await fetch('/webauthn/reset-assertion-complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, credential }),
+        body: JSON.stringify({ token, ...responsePayload }),
         credentials: 'include'
       });
 
       const completeData = await completeRes.json();
       if (!completeRes.ok) throw new Error(completeData.error);
 
-      // ✅ Now retry the password reset after successful WebAuthn
-      const retryRes = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, new_password: newPassword }),
-      });
-
-      const retryData = await retryRes.json();
-      if (!retryRes.ok) throw new Error(retryData.error || "Final password reset failed.");
-
-      Toastify({
-        text: retryData.message || "✅ Password reset complete.",
-        duration: 3000,
-        gravity: "top",
-        position: "right",
-        backgroundColor: "#43a047"
-      }).showToast();
-
-      form.reset();
-      setTimeout(() => {
-        window.location.href = "/api/auth/login_form";
-      }, 2000);
+      return await retryPasswordReset(token, newPassword);
 
     } catch (err) {
-      console.error("WebAuthn Reset Error:", err);
+      console.error("WebAuthn Verification Error:", err);
       Toastify({
         text: `❌ ${err.message || 'WebAuthn failed.'}`,
         duration: 3000,
@@ -158,5 +160,90 @@ document.addEventListener('DOMContentLoaded', () => {
         backgroundColor: "#e53935"
       }).showToast();
     }
+  }
+
+  async function verifyWithTotp(token, newPassword) {
+    const code = prompt("Enter your TOTP code to confirm your identity:");
+    if (!code) return;
+
+    try {
+      const res = await fetch('/api/auth/verify-fallback_totp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, code }),
+        credentials: 'include'
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "TOTP verification failed.");
+
+      return await retryPasswordReset(token, newPassword);
+
+    } catch (err) {
+      console.error("TOTP Verification Error:", err);
+      Toastify({
+        text: `❌ ${err.message || 'TOTP verification failed.'}`,
+        duration: 3000,
+        gravity: "top",
+        position: "right",
+        backgroundColor: "#e53935"
+      }).showToast();
+    }
+  }
+
+  async function retryPasswordReset(token, newPassword) {
+    const retryRes = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        token, 
+        new_password: newPassword,
+        confirm_password: confirmPassword 
+      }),
+    });
+
+    const retryData = await retryRes.json();
+    if (!retryRes.ok) throw new Error(retryData.error || "Final password reset failed.");
+
+    Toastify({
+      text: retryData.message || "✅ Password reset complete.",
+      duration: 3000,
+      gravity: "top",
+      position: "right",
+      backgroundColor: "#43a047"
+    }).showToast();
+
+    form.reset();
+    setTimeout(() => {
+      window.location.href = "/api/auth/login_form";
+    }, 2000);
+  }
+
+  function isStrongPassword(password) {
+    const minLength = 8;
+    const upperCase = /[A-Z]/;
+    const lowerCase = /[a-z]/;
+    const digit = /\d/;
+    const specialChar = /[^A-Za-z0-9]/;
+
+    return (
+      password.length >= minLength &&
+      upperCase.test(password) &&
+      lowerCase.test(password) &&
+      digit.test(password) &&
+      specialChar.test(password)
+    );
+  }
+
+  function base64urlToUint8Array(base64urlString) {
+    const padding = '='.repeat((4 - base64urlString.length % 4) % 4);
+    const base64 = (base64urlString + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+  }
+
+  function toBase64Url(buffer) {
+    return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 });

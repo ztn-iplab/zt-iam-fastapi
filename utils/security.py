@@ -6,6 +6,17 @@ from flask import request
 from utils.location import get_ip_location
 import os
 import base64
+import re
+
+def is_strong_password(password):
+    # At least 8 chars, 1 upper, 1 lower, 1 digit, 1 special
+    return (
+        len(password) >= 8 and
+        re.search(r'[A-Z]', password) and
+        re.search(r'[a-z]', password) and
+        re.search(r'[0-9]', password) and
+        re.search(r'[!@#$%^&*(),.?":{}|<>]', password)
+    )
 
 # ✅ Generate a secure random token (for password resets, TOTP resets, etc.)
 def generate_token():

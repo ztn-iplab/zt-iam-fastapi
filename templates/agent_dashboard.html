@@ -12,7 +12,8 @@
 <div class="dashboard-content">
   <!-- Overview Section -->
   <section id="content-overview" class="content-section">
-    <div class="widgets">
+    <!-- Group the first two widgets -->
+    <div class="widget-row d-flex flex-wrap gap-3">
       <!-- Wallet Widget -->
       <div class="widget wallet-widget">
         <h2>Your Wallet</h2>
@@ -23,23 +24,27 @@
       <!-- Transaction Summary -->
       <div class="widget wallet-widget">
         <h2>Transaction Summary</h2>
-        <p>
-          Total Transactions: <span id="total-transactions">Loading...</span>
-        </p>
+        <p>Total Transactions: <span id="total-transactions">Loading...</span></p>
         <p>Total SIMs Registered: <span id="total-sims">Loading...</span></p>
       </div>
+    </div>
 
-      <!-- Transaction Chart -->
-      <div class="widget chart-widget">
-        <h2>Transaction Overview</h2>
-        <label for="aggregation-type">Aggregate by:</label>
-        <select id="aggregation-type">
-          <option value="daily" selected>Daily Totals</option>
-          <option value="monthly">Monthly Summaries</option>
-        </select>
-        <canvas id="transactionChart"></canvas>
+    <!-- Put the chart widget below -->
+    <div class="row justify-content-center mt-4">
+      <div class="col-md-8">
+        <div class="widget chart-widget">
+          <h2>Transaction Overview</h2>
+          <label for="aggregation-type">Aggregate by:</label>
+          <select id="aggregation-type">
+            <option value="daily" selected>Daily Totals</option>
+            <option value="monthly">Monthly Summaries</option>
+          </select>
+          <canvas id="transactionChart" style="max-height: 300px;"></canvas>
+        </div>
       </div>
     </div>
+    
+
   </section>
 
   <!-- Transactions Section -->

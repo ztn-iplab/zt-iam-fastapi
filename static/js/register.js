@@ -5,7 +5,6 @@ document
   .addEventListener("submit", function (e) {
     e.preventDefault();
 
-    // Get the values from the registration form
     const iccid = document.getElementById("iccid").value.trim();
     const email = document.getElementById("email").value.trim();
     const firstName = document.getElementById("first-name").value.trim();
@@ -13,22 +12,22 @@ document
     const country = document.getElementById("country").value;
     const password = document.getElementById("password").value.trim();
 
-    // Ensure all required fields are provided
     if (!iccid || !email || !firstName || !password) {
-      displayError("❌ ICCID, email, first name, and password are required.");
+      showToast("❌ ICCID, email, first name, and password are required.", "error");
       return;
     }
 
-    // Password strength validation
-    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?\":{}|<>]).{8,}$/;
     if (!strongPasswordRegex.test(password)) {
-      displayError("❌ Password must be at least 8 characters and include uppercase, lowercase, number, and special character.");
+      showToast(
+        "❌ Password must be at least 8 characters and include uppercase, lowercase, number, and special character.",
+        "error"
+      );
       return;
     }
 
     console.log("Form submission intercepted");
 
-    // Send the registration data to the backend
     fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -51,22 +50,29 @@ document
       })
       .then((data) => {
         console.log("Registration successful, received data:", data);
-        // Clear any previous errors
-        displayError("");
-        // Redirect to the user's dashboard or login page
-        window.location.href = "/api/auth/login_form?registered=1";
+        showToast("✅ Registration successful! Redirecting...", "success");
+        setTimeout(() => {
+          window.location.href = "/api/auth/login_form?registered=1";
+        }, 1500);
       })
       .catch((err) => {
         console.error("Registration error:", err);
-        displayError(`❌ ${err.message}`);
+        showToast(`❌ ${err.message}`, "error");
       });
   });
 
-// 🔹 Function to display errors dynamically below the register button
-function displayError(message) {
-  const errorDiv = document.getElementById("register-error");
-  if (errorDiv) {
-    errorDiv.textContent = message;
-    errorDiv.style.display = message ? "block" : "none";
-  }
+// 🔹 Toastify wrapper
+function showToast(message, type = "info") {
+  Toastify({
+    text: message,
+    duration: 3000,
+    gravity: "top",
+    position: "right",
+    backgroundColor:
+      type === "success"
+        ? "#43a047"
+        : type === "error"
+        ? "#e53935"
+        : "#2196f3",
+  }).showToast();
 }

@@ -667,7 +667,7 @@ def forgot_password():
         risk_alert=False
     ))
     db.session.commit()
-    return jsonify({"message": "Password reset link sent"}), 200
+    return jsonify({"message": "Please check your email for a password reset link"}), 200
 
 @auth_bp.route('/forgot-password', methods=['GET'])
 def forgot_password_form():

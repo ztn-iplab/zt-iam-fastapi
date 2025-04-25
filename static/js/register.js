@@ -19,6 +19,13 @@ document
       return;
     }
 
+    // Password strength validation
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
+    if (!strongPasswordRegex.test(password)) {
+      displayError("❌ Password must be at least 8 characters and include uppercase, lowercase, number, and special character.");
+      return;
+    }
+
     console.log("Form submission intercepted");
 
     // Send the registration data to the backend

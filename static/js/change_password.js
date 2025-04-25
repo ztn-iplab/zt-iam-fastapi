@@ -19,7 +19,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }).showToast();
         return;
       }
-  
+      
+      // 💪 Check for strong password before sending request
+    const strongRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
+    if (!strongRegex.test(newPass)) {
+      Toastify({
+        text: "❌ Password must be at least 8 characters long and include uppercase, lowercase, number, and special character.",
+        duration: 4000,
+        gravity: "top",
+        position: "right",
+        backgroundColor: "#fb8c00"
+      }).showToast();
+      return;
+    }
+    
       try {
         const res = await fetch('/api/auth/change-password', {
           method: 'POST',

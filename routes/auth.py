@@ -201,6 +201,12 @@ def register():
     for field in required_fields:
         if not data.get(field):
             return jsonify({"error": f"{field.replace('_', ' ').capitalize()} is required"}), 400
+    
+    # ✅ Enforce strong password
+    if not is_strong_password(data['password']):
+        return jsonify({
+            "error": "Password must be at least 8 characters long and include uppercase, lowercase, number, and special character."
+        }), 400
 
     # 🔹 Fetch the SIM card by ICCID
     sim_card = SIMCard.query.filter_by(iccid=data['iccid']).first()
@@ -837,8 +843,11 @@ def change_password():
     # ✅ Step 1: Verify current password
     if not user.check_password(current_password):
         return jsonify({"error": "Current password is incorrect."}), 401
+    # ✅ Step 2: Check password strength
+    if not is_strong_password(new_password):
+        return jsonify({"error": "Password must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character."}), 400
 
-    # ✅ Step 2: Check if new password was previously used
+    # ✅ Step 3: Check if new password was previously used
     previous_passwords = PasswordHistory.query.filter_by(user_id=user.id).all()
     for record in previous_passwords:
         if check_password_hash(record.password_hash, new_password):
@@ -853,7 +862,7 @@ def change_password():
             db.session.commit()
             return jsonify({"error": "You’ve already used this password. Please choose a new one."}), 400
 
-    # ✅ Step 3: Update user password
+    # ✅ Step 4: Update user password
     user.password = new_password  # triggers password hashing via @password.setter
 
     # ✅ Step 4: Save current password to password history
@@ -862,7 +871,7 @@ def change_password():
         password_hash=user.password_hash
     ))
 
-    # ✅ Step 5: Keep only the last 5 password records
+    # ✅ Step 6: Keep only the last 5 password records
     history_records = PasswordHistory.query.filter_by(user_id=user.id).order_by(
         PasswordHistory.created_at.desc()).all()
 
@@ -870,7 +879,7 @@ def change_password():
         for old_record in history_records[5:]:
             db.session.delete(old_record)
 
-    # ✅ Step 6: Log the event
+    # ✅ Step 7: Log the event
     db.session.add(UserAuthLog(
         user_id=user.id,
         auth_method="password",

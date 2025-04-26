@@ -15,6 +15,7 @@ from routes.admin_routes import admin_bp
 from utils.decorators import role_required
 from routes.agent_routes import agent_bp
 from routes.webauthn import webauthn_bp
+from routes.iam_api import iam_api_bp
 from flask_mail import Message
 from extensions import mail
 import os
@@ -22,6 +23,7 @@ import os
 
 app = Flask(__name__)
 app.config.from_object(Config)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 jwt = JWTManager(app)
 mail.init_app(app) 
@@ -51,6 +53,7 @@ app.register_blueprint(roles_bp, url_prefix='/api')
 app.register_blueprint(admin_bp)
 app.register_blueprint(agent_bp)
 app.register_blueprint(webauthn_bp)
+app.register_blueprint(iam_api_bp)
 
 
 db.init_app(app)

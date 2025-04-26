@@ -10,7 +10,8 @@ from models.models import (
     Transaction,
     UserAuthLog, 
     SIMCard, 
-    RealTimeLog, 
+    RealTimeLog,
+    Tenant, 
     HeadquartersWallet)
 import random
 import json
@@ -948,3 +949,57 @@ def admin_dashboard_metrics():
         "anomalies": anomalies,
         "logs": logs
     })
+
+
+# Tenants Registration
+@admin_bp.route('/register-tenant', methods=['POST'])
+@jwt_required()
+def register_tenant():
+    user = User.query.get(get_jwt_identity())
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    user_access = UserAccessControl.query.filter_by(user_id=user.id).first()
+    if not user_access:
+        return jsonify({"error": "Unauthorized."}), 403
+
+    user_role = UserRole.query.get(user_access.role_id)
+    if not user_role or user_role.role_name.lower() != "admin":
+        return jsonify({"error": "Only admins can register tenants."}), 403
+
+    data = request.get_json()
+    name = data.get('name')
+    domain = data.get('domain')
+    custom_api_key = data.get('api_key')
+
+    if not name or not domain:
+        return jsonify({"error": "Name and domain are required."}), 400
+
+    from utils.security import generate_token
+    tenant_api_key = custom_api_key or generate_token()
+
+    new_tenant = Tenant(
+        name=name,
+        domain=domain,
+        api_key=tenant_api_key
+    )
+
+    db.session.add(new_tenant)
+
+    # 🔥 Log tenant creation to RealTimeLog
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        action=f"🏢 Registered new Tenant: {name} ({domain})",
+        ip_address=request.remote_addr,
+        device_info=request.user_agent.string,
+        location=get_ip_location(request.remote_addr),
+        risk_alert=False
+    ))
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Tenant registered successfully.",
+        "tenant_id": new_tenant.id,
+        "api_key": tenant_api_key
+    }), 201

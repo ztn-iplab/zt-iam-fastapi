@@ -1,9 +1,23 @@
 from flask_sqlalchemy import SQLAlchemy
+import sqlalchemy as sa
 from datetime import datetime
 from .import db
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy.dialects.postgresql import BYTEA 
 import base64
+from sqlalchemy.schema import UniqueConstraint
+
+class UserRole(db.Model):
+    __tablename__ = 'user_roles'
+
+    id = db.Column(db.Integer, primary_key=True)
+    role_name = db.Column(db.String(50), nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=True)
+
+    # 🔥 Add composite constraint
+    __table_args__ = (
+        UniqueConstraint('role_name', 'tenant_id', name='uq_role_per_tenant'),
+    )
 
 #db = SQLAlchemy()
 
@@ -25,6 +39,11 @@ class User(db.Model):
     otp_email_label = db.Column(db.String(120), nullable=True)
     reset_token = db.Column(db.String(128), nullable=True)
     reset_token_expiry = db.Column(db.DateTime, nullable=True)
+
+    # For tenants
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
+    is_tenant_admin = db.Column(db.Boolean, default=False)
+
 
 
     # Account Status
@@ -88,6 +107,7 @@ class UserAuthLog(db.Model):
     device_info = db.Column(db.String(200))
     failed_attempts = db.Column(db.Integer, default=0)  # Failed login tracking
     geo_trust_score = db.Column(db.Float, default=0.5)  # Trust level based on location history
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
 
 
 # 📌 Transactions (Mobile Money Operations)
@@ -104,7 +124,8 @@ class Transaction(db.Model):
     fraud_flag = db.Column(db.Boolean, default=False)
     risk_score = db.Column(db.Float, default=0.0)  # Score for fraud detection
     transaction_metadata = db.Column(db.Text, nullable=True)  # Store JSON-like metadata
-    
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
+
 
 class PendingTransaction(db.Model):
     __tablename__ = 'pending_transactions'
@@ -119,9 +140,18 @@ class PendingTransaction(db.Model):
 # 📌 Role-Based Access Control (RBAC)
 class UserRole(db.Model):
     __tablename__ = 'user_roles'
+    
     id = db.Column(db.Integer, primary_key=True)
-    role_name = db.Column(db.String(50), unique=True, nullable=False)
-    permissions = db.Column(db.JSON)  # Store permissions as JSON
+    role_name = db.Column(db.String(50), nullable=False)
+    permissions = db.Column(db.JSON)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=True)
+    
+    tenant = db.relationship('Tenant', backref='roles')
+
+    __table_args__ = (
+        sa.UniqueConstraint('role_name', 'tenant_id', name='uq_role_per_tenant'),
+        {'extend_existing': True},  # <<< ✨ THIS IS THE PATCH ✨
+    )
 
 class UserAccessControl(db.Model):
     __tablename__ = 'user_access_controls'
@@ -143,6 +173,7 @@ class RealTimeLog(db.Model):
     risk_alert = db.Column(db.Boolean, default=False)  # Flagged risky actions
      # ✅ This enables log.user to work
     user = db.relationship("User", backref="real_time_logs")
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
 
 # 📌 One time passowrd for the security purpose
 class OTPCode(db.Model):
@@ -155,6 +186,7 @@ class OTPCode(db.Model):
     expires_at = db.Column(db.DateTime, nullable=False)
 
     user = db.relationship('User', backref='otp_codes')
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
 
 class HeadquartersWallet(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -195,3 +227,37 @@ class PasswordHistory(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.now())
+
+
+# =====================================
+#          For Tenants
+# =====================================
+
+class TenantUser(db.Model):
+    __tablename__ = 'tenant_users'
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    company_email = db.Column(db.String(120), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref='tenant_users')
+    user = db.relationship('User', backref='tenant_profiles')
+
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'company_email', name='uq_tenant_user_email'),
+    )
+
+class Tenant(db.Model):
+    __tablename__ = 'tenants'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    api_key = db.Column(db.String(64), unique=True, nullable=False)
+    contact_email = db.Column(db.String(120), nullable=True)
+    plan = db.Column(db.String(50), default='free')  # e.g., free, pro, enterprise
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # 🔗 Relationships
+    users = db.relationship('User', backref='tenant', lazy=True)

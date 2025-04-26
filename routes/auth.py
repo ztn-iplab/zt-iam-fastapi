@@ -21,6 +21,7 @@ from flask_jwt_extended.exceptions import NoAuthorizationError
 from datetime import datetime, timedelta
 from werkzeug.security import check_password_hash, generate_password_hash
 from models.models import User, Wallet, db, UserRole, UserAccessControl,SIMCard, OTPCode, RealTimeLog, UserAuthLog, PasswordHistory, WebAuthnCredential
+from utils.logging_helpers import log_realtime_event, log_auth_event
 from utils.otp import generate_otp_code  # Import your OTP logic
 from utils.totp import verify_totp_code
 from utils.location import get_ip_location
@@ -51,6 +52,8 @@ def register_form():
 def login_form():
     return render_template('login.html')
 
+from utils.logging_helpers import log_realtime_event, log_auth_event
+
 @auth_bp.route('/login', methods=['POST'])
 def login_route():
     def count_recent_failures(user_id, method="password", window_minutes=5):
@@ -79,14 +82,15 @@ def login_route():
             user = sim.user
 
     if not user:
-        db.session.add(RealTimeLog(
-            user_id=None,
+        # 🛡️ Use helper here for unknown user
+        log_realtime_event(
+            user=None,
             action=f"❌ Failed login: Unknown identifier {login_input}",
             ip_address=ip_address,
             device_info=device_info,
             location=location,
             risk_alert=True
-        ))
+        )
         db.session.commit()
         return jsonify({"error": "User not found or SIM inactive"}), 404
 
@@ -98,36 +102,36 @@ def login_route():
     if not user.check_password(password):
         failed_count = recent_fails + 1
 
-        db.session.add(UserAuthLog(
-            user_id=user.id,
-            auth_method="password",
-            auth_status="failed",
+        log_auth_event(
+            user=user,
+            method="password",
+            status="failed",
             ip_address=ip_address,
-            location=location,
             device_info=device_info,
+            location=location,
             failed_attempts=failed_count
-        ))
+        )
 
-        db.session.add(RealTimeLog(
-            user_id=user.id,
+        log_realtime_event(
+            user=user,
             action=f"❌ Failed login: Invalid password ({failed_count})",
             ip_address=ip_address,
             device_info=device_info,
             location=location,
             risk_alert=(failed_count >= 3)
-        ))
+        )
 
         if failed_count >= 5:
             user.locked_until = datetime.utcnow() + timedelta(minutes=15)
 
-            db.session.add(RealTimeLog(
-                user_id=user.id,
+            log_realtime_event(
+                user=user,
                 action="🚨 Account temporarily locked due to failed login attempts",
                 ip_address=ip_address,
                 device_info=device_info,
                 location=location,
                 risk_alert=True
-            ))
+            )
 
             # ✅ Email alerts
             if user.email:
@@ -150,7 +154,6 @@ def login_route():
         db.session.commit()
         return jsonify({"error": "Invalid credentials"}), 401
 
-
     # ✅ Success
     access_token = create_access_token(identity=str(user.id))
     response = jsonify({
@@ -161,30 +164,28 @@ def login_route():
         "require_totp_reset": user.otp_secret and user.otp_email_label != user.email    
     })
 
-    db.session.add(UserAuthLog(
-        user_id=user.id,
-        auth_method="password",
-        auth_status="success",
+    log_auth_event(
+        user=user,
+        method="password",
+        status="success",
         ip_address=ip_address,
-        location=location,
         device_info=device_info,
+        location=location,
         failed_attempts=0
-    ))
+    )
 
-    db.session.add(RealTimeLog(
-        user_id=user.id,
+    log_realtime_event(
+        user=user,
         action="✅ Successful login",
         ip_address=ip_address,
         device_info=device_info,
         location=location,
         risk_alert=False
-    ))
+    )
 
     db.session.commit()
     set_access_cookies(response, access_token)
     return response, 200
-
-
 
 
 # ✅ Registering new user accounts
@@ -269,7 +270,8 @@ def register():
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Unknown"),
         location=data.get("location", "Unknown"),
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=user.tenant_id  # 🛡️ Added
     )
     db.session.add(rt_log)
 
@@ -374,7 +376,7 @@ def verify_totp_login():
     try:
         verify_jwt_in_request(locations=["cookies"])
         user_id = get_jwt_identity()
-    except NoAuthorizationError as e:
+    except NoAuthorizationError:
         return jsonify({"error": "Invalid or missing token"}), 401
 
     data = request.get_json()
@@ -412,7 +414,8 @@ def verify_totp_login():
             ip_address=ip_address,
             location=location,
             device_info=device_info,
-            failed_attempts=fail_count
+            failed_attempts=fail_count,
+            tenant_id=user.tenant_id  # 🔥 tenant_id added
         ))
 
         db.session.add(RealTimeLog(
@@ -421,11 +424,22 @@ def verify_totp_login():
             ip_address=ip_address,
             device_info=device_info,
             location=location,
-            risk_alert=True
+            risk_alert=True,
+            tenant_id=user.tenant_id  # 🔥 tenant_id added
         ))
 
         if fail_count >= 5:
             user.locked_until = datetime.utcnow() + timedelta(minutes=15)
+
+            db.session.add(RealTimeLog(
+                user_id=user.id,
+                action="🚨 TOTP temporarily locked after multiple failed attempts",
+                ip_address=ip_address,
+                device_info=device_info,
+                location=location,
+                risk_alert=True,
+                tenant_id=user.tenant_id  # 🔥 tenant_id added
+            ))
 
             # 🚨 Email alerts to admin and user
             if user.email:
@@ -445,16 +459,6 @@ def verify_totp_login():
                 device_info=device_info
             )
 
-
-            db.session.add(RealTimeLog(
-                user_id=user.id,
-                action="🚨 TOTP temporarily locked after multiple failed attempts",
-                ip_address=ip_address,
-                device_info=device_info,
-                location=location,
-                risk_alert=True
-            ))
-
         db.session.commit()
         return jsonify({"error": "Invalid or expired TOTP code"}), 401
 
@@ -466,7 +470,8 @@ def verify_totp_login():
         ip_address=ip_address,
         location=location,
         device_info=device_info,
-        failed_attempts=0
+        failed_attempts=0,
+        tenant_id=user.tenant_id  # 🔥 tenant_id added
     ))
 
     db.session.add(RealTimeLog(
@@ -475,7 +480,8 @@ def verify_totp_login():
         ip_address=ip_address,
         device_info=device_info,
         location=location,
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=user.tenant_id  # 🔥 tenant_id added
     ))
 
     db.session.commit()
@@ -498,7 +504,6 @@ def verify_totp_login():
         "user_id": user.id,
         "dashboard_url": urls.get(role, url_for("user.user_dashboard", _external=True))
     }), 200
-
 
 # Whoami 
 @auth_bp.route('/whoami', methods=['GET'])
@@ -618,7 +623,8 @@ def log_webauthn_client_failure():
         ip_address=ip,
         device_info=device_info,
         location=location,
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
     db.session.commit()
 
@@ -664,7 +670,8 @@ def forgot_password():
         ip_address=ip_address,
         device_info=device_info,
         location=location,
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
     db.session.commit()
     return jsonify({"message": "Please check your email for a password reset link"}), 200
@@ -779,7 +786,8 @@ def reset_password():
             ip_address=ip,
             device_info=device_info,
             location=location,
-            risk_alert=True
+            risk_alert=True,
+            tenant_id=user.tenant_id  # 🛡️ Added
         ))
         send_admin_alert(
             user=user,
@@ -816,7 +824,8 @@ def reset_password():
         ip_address=ip,
         device_info=device_info,
         location=location,
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
 
     session.pop("reset_webauthn_verified", None)
@@ -886,7 +895,8 @@ def change_password():
         auth_status="change",
         ip_address=request.remote_addr,
         location=get_ip_location(request.remote_addr),
-        device_info=request.user_agent.string
+        device_info=request.user_agent.string,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
 
     db.session.add(RealTimeLog(
@@ -895,17 +905,15 @@ def change_password():
         ip_address=request.remote_addr,
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
 
     db.session.commit()
     return jsonify({"message": "Password updated successfully."}), 200
 
 
-
-
-
-# Reset TOTP from settings
+# Reset TOTP from user settings
 @auth_bp.route('/request-reset-totp', methods=['POST'])
 @jwt_required()
 def request_reset_totp():
@@ -928,7 +936,8 @@ def request_reset_totp():
         auth_status="reset",
         ip_address=request.remote_addr,
         location=get_ip_location(request.remote_addr),
-        device_info=request.user_agent.string
+        device_info=request.user_agent.string,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
 
     db.session.add(RealTimeLog(
@@ -937,7 +946,8 @@ def request_reset_totp():
         ip_address=request.remote_addr,
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
-        risk_alert=True
+        risk_alert=True,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
 
     db.session.commit()
@@ -977,7 +987,8 @@ def request_totp_reset():
         ip_address=request.remote_addr,
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
-        risk_alert=True
+        risk_alert=True,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
 
     db.session.commit()
@@ -1064,7 +1075,8 @@ def verify_totp_reset_post():
         ip_address=ip,
         device_info=device_info,
         location=location,
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
 
     # ✅ Clean up session
@@ -1109,7 +1121,8 @@ def request_reset_webauthn():
         auth_status="reset",
         ip_address=request.remote_addr,
         location=get_ip_location(request.remote_addr),
-        device_info=request.user_agent.string
+        device_info=request.user_agent.string,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
 
     db.session.add(RealTimeLog(
@@ -1118,7 +1131,8 @@ def request_reset_webauthn():
         ip_address=request.remote_addr,
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
-        risk_alert=True
+        risk_alert=True,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
 
     db.session.commit()
@@ -1166,7 +1180,8 @@ def request_webauthn_reset():
         ip_address=request.remote_addr,
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
-        risk_alert=True
+        risk_alert=True,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
     db.session.commit()
 
@@ -1217,7 +1232,8 @@ def verify_webauthn_reset(token):
         ip_address=request.remote_addr,
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
-        risk_alert=True
+        risk_alert=True,
+        tenant_id=user.tenant_id  # 🛡️ Added
     ))
 
     db.session.commit()

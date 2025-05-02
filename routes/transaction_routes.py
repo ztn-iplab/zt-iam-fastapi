@@ -11,6 +11,7 @@ import time
 import threading
 import json
 from utils.fraud_engine import calculate_risk_score
+from utils.email_alerts import send_alert_email
 
 transaction_bp = Blueprint('transaction', __name__)
 
@@ -103,7 +104,8 @@ def create_transaction():
             device_info=data.get('device_info'),
             transaction_metadata=json.dumps(transaction_metadata),
             fraud_flag=fraud_flag,
-            risk_score=risk_score
+            risk_score=risk_score,
+            tenant_id=1
         )
 
         db.session.add(transaction)
@@ -119,7 +121,8 @@ def create_transaction():
             ip_address=ip_address,
             device_info=data.get('device_info'),
             location=data.get('location', 'Unknown'),
-            risk_alert=fraud_flag
+            risk_alert=fraud_flag,
+            tenant_id=1
         )
         db.session.add(rt_log)
 
@@ -197,7 +200,8 @@ def create_transaction():
             device_info=data.get('device_info'),
             transaction_metadata=json.dumps(transaction_metadata),
             fraud_flag=fraud_flag,
-            risk_score=risk_score
+            risk_score=risk_score,
+            tenant_id=1
         )
 
         db.session.add(transaction)
@@ -213,7 +217,8 @@ def create_transaction():
             ip_address=ip_address,
             device_info=data.get('device_info'),
             location=data.get('location', 'Unknown'),
-            risk_alert=fraud_flag
+            risk_alert=fraud_flag,
+            tenant_id=1
         )
         db.session.add(rt_log)
 

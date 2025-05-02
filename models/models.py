@@ -7,20 +7,6 @@ from sqlalchemy.dialects.postgresql import BYTEA
 import base64
 from sqlalchemy.schema import UniqueConstraint
 
-class UserRole(db.Model):
-    __tablename__ = 'user_roles'
-
-    id = db.Column(db.Integer, primary_key=True)
-    role_name = db.Column(db.String(50), nullable=False)
-    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=True)
-
-    # 🔥 Add composite constraint
-    __table_args__ = (
-        UniqueConstraint('role_name', 'tenant_id', name='uq_role_per_tenant'),
-    )
-
-#db = SQLAlchemy()
-
 # 📌 User Model (Identity Management)
 class User(db.Model):
     __tablename__ = 'users'

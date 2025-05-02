@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 
 admin_bp = Blueprint("admin", __name__)
 
-# ✅ FINALIZE FUNCTION (move this OUTSIDE any route)
+# ✅ FINALIZE FUNCTION 
 def finalize_reversal(app, reversal_id, sender_wallet_id, amount):
     try:
         with app.app_context():
@@ -60,7 +60,8 @@ def finalize_reversal(app, reversal_id, sender_wallet_id, amount):
                 ip_address="System",
                 device_info="Auto Processor",
                 location="Headquarters",
-                risk_alert=False
+                risk_alert=False,
+                tenant_id=1
             )
 
             db.session.add(completion_log)
@@ -168,7 +169,8 @@ def assign_role():
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Admin Panel"),
         location="Headquarters",
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=1
     )
     db.session.add(rt_log)
 
@@ -209,7 +211,8 @@ def suspend_user(user_id):
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Admin Panel"),
         location="Headquarters",
-        risk_alert=True  # ✅ You can mark this as risky
+        risk_alert=True, # ✅ You can mark this as risky
+        tenant_id=1
     )
     db.session.add(rt_log)
 
@@ -248,7 +251,8 @@ def verify_user(user_id):
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Admin Panel"),
         location="Headquarters",
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=1
     )
     db.session.add(rt_log)
 
@@ -289,7 +293,8 @@ def delete_user(user_id):
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Admin Panel"),
         location="Headquarters",
-        risk_alert=True
+        risk_alert=True,
+        tenant_id=1
     )
     db.session.add(rt_log)
 
@@ -369,7 +374,8 @@ def edit_user(user_id):
             ip_address=request.remote_addr,
             device_info=request.headers.get("User-Agent", "Admin Panel"),
             location="Headquarters",
-            risk_alert=False
+            risk_alert=False,
+            tenant_id=1
         )
         db.session.add(rt_log)
 
@@ -425,7 +431,8 @@ def generate_sim():
             ip_address=request.remote_addr,
             device_info=request.headers.get("User-Agent", "Admin Panel"),
             location="Headquarters",
-            risk_alert=False
+            risk_alert=False,
+            tenant_id=1
         )
         db.session.add(rt_log)
 
@@ -465,7 +472,8 @@ def view_user(user_id):
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Admin Panel"),
         location="Headquarters",
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=1
     )
     db.session.add(rt_log)
     db.session.commit()
@@ -548,7 +556,8 @@ def fund_agent():
             "float_source": "HQ Wallet"
         }),
         fraud_flag=False,
-        risk_score=0.0
+        risk_score=0.0,
+        tenant_id=1
     )
     db.session.add(float_tx)
 
@@ -559,7 +568,8 @@ def fund_agent():
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent"),
         location=json.dumps(location),  # ✅ FIXED: serialize location
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=1
     )
     db.session.add(rt_log)
 
@@ -683,7 +693,8 @@ def unlock_user(user_id):
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Unknown"),
         location="Admin Panel",
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=1
     )
 
     db.session.add(rt_log)
@@ -773,7 +784,8 @@ def reverse_transfer(transaction_id):
         transaction_type="reversal",
         status="pending",
         transaction_metadata=json.dumps(reversal_metadata),
-        timestamp=datetime.utcnow()
+        timestamp=datetime.utcnow(),
+        tenant_id=1
     )
 
     db.session.add(reversal)
@@ -785,7 +797,8 @@ def reverse_transfer(transaction_id):
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Admin HQ"),
         location="Headquarters",
-        risk_alert=True
+        risk_alert=True,
+        tenant_id=1
     )
     db.session.add(rt_log)
     db.session.commit()
@@ -993,7 +1006,8 @@ def register_tenant():
         ip_address=request.remote_addr,
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=1
     ))
 
     db.session.commit()

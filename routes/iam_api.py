@@ -421,34 +421,41 @@ def reset_password():
 
 # Enroll the tenants user totp
 @iam_api_bp.route('/enroll-totp', methods=['GET'])
-@jwt_required()
+@jwt_required(locations=["headers"])
 @require_api_key
 def enroll_totp():
-    user = User.query.get(get_jwt_identity())
+    user_id = get_jwt_identity()
+    tenant_id = g.tenant.id
 
+    # 🔥 Find the TenantUser association first
+    tenant_user = TenantUser.query.filter_by(
+        user_id=user_id,
+        tenant_id=tenant_id
+    ).first()
+
+    if not tenant_user:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found."}), 404
 
-    # Make sure that user belongs to the tenant calling the API
-    if user.tenant_id != g.tenant.id:
-        return jsonify({"error": "Unauthorized"}), 403
-
-
-    # 🔥 Determine if setup or reset is needed
+    # 🔥 Determine if TOTP setup or reset is needed
     reset_required = (
         user.otp_secret is None or
-        (user.otp_secret and user.otp_email_label != user.email)
+        (user.otp_secret and user.otp_email_label != tenant_user.company_email)
     )
 
     if reset_required:
         secret = pyotp.random_base32()
-        user.otp_secret = secret
-        user.otp_email_label = user.email  # Track email used for TOTP
-        db.session.commit()
+
+        # 🚨 DON'T commit yet! Save temporarily in session!
+        session['pending_totp_secret'] = secret
+        session['pending_totp_email'] = tenant_user.company_email
 
         # 🔥 Generate QR Code for the TOTP
         totp_uri = pyotp.TOTP(secret).provisioning_uri(
-            name=user.email,
+            name=tenant_user.company_email,
             issuer_name="ZTN_IAMaaS"
         )
 
@@ -464,25 +471,61 @@ def enroll_totp():
             "reset_required": True
         }), 200
 
-    # 🔥 Already configured and email matches
+    # 🔥 Already configured and company email matches
     return jsonify({
         "message": "TOTP already configured.",
         "reset_required": False
     }), 200
 
+# Confirm the totp registration
+@iam_api_bp.route('/setup-totp/confirm', methods=['POST'])
+@jwt_required(locations=["headers"])
+@require_api_key
+def confirm_totp_setup():
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify({"error": "User not found."}), 404
+
+    secret = session.get('pending_totp_secret')
+    email = session.get('pending_totp_email')
+
+    if not secret or not email:
+        return jsonify({"error": "No pending TOTP enrollment"}), 400
+
+    # 🔥 Confirm: Save secret to user only after clicking "Continue"
+    user.otp_secret = secret
+    user.otp_email_label = email
+    db.session.commit()
+
+    session.pop('pending_totp_secret', None)
+    session.pop('pending_totp_email', None)
+
+    return jsonify({"message": "✅ TOTP enrollment confirmed."}), 200
+
+
+
 # verify the tenants users totp
 @iam_api_bp.route('/verify-totp-login', methods=['POST'])
-@jwt_required()
+@jwt_required(locations=["headers"])
 @require_api_key
 def verify_totp_login():
-    user = User.query.get(get_jwt_identity())
+    user_id = get_jwt_identity()
+    tenant_id = g.tenant.id
 
+    # 🔥 Find the TenantUser association
+    tenant_user = TenantUser.query.filter_by(
+        user_id=user_id,
+        tenant_id=tenant_id
+    ).first()
+
+    if not tenant_user:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    user = User.query.get(user_id)
     if not user or not user.otp_secret:
         return jsonify({"error": "Invalid user or TOTP not configured."}), 403
-
-    # 🛡️ Immediately check that the user belongs to the tenant making the API call
-    if user.tenant_id != g.tenant.id:
-        return jsonify({"error": "Unauthorized"}), 403
 
     data = request.get_json()
     totp_code = data.get('totp')
@@ -517,12 +560,12 @@ def verify_totp_login():
             location=location,
             device_info=device_info,
             failed_attempts=fail_count,
-            tenant_id=user.tenant_id  # 🛡️ Always add tenant
+            tenant_id=tenant_id
         ))
 
         db.session.add(RealTimeLog(
             user_id=user.id,
-            tenant_id=g.tenant.id,
+            tenant_id=tenant_id,
             action=f"❌ Failed TOTP login ({fail_count} failures)",
             ip_address=ip_address,
             device_info=device_info,
@@ -530,12 +573,11 @@ def verify_totp_login():
             risk_alert=True
         ))
 
-        # 🔥 Lock account after 5 failures
         if fail_count >= 5:
             user.locked_until = datetime.utcnow() + timedelta(minutes=15)
             db.session.add(RealTimeLog(
                 user_id=user.id,
-                tenant_id=g.tenant.id,
+                tenant_id=tenant_id,
                 action="🚨 TOTP temporarily locked after multiple failed attempts",
                 ip_address=ip_address,
                 device_info=device_info,
@@ -555,12 +597,12 @@ def verify_totp_login():
         location=location,
         device_info=device_info,
         failed_attempts=0,
-        tenant_id=user.tenant_id  # 🛡️ Always add tenant
+        tenant_id=tenant_id
     ))
 
     db.session.add(RealTimeLog(
         user_id=user.id,
-        tenant_id=g.tenant.id,
+        tenant_id=tenant_id,
         action="✅ TOTP verified successfully",
         ip_address=ip_address,
         device_info=device_info,
@@ -581,20 +623,102 @@ def verify_totp_login():
     }), 200
 
 
+# Tenant user totp reset from the settings:
+@iam_api_bp.route('/request-reset-totp', methods=['POST'])
+@jwt_required()
+@require_api_key
+def request_reset_totp():
+    user = User.query.get(get_jwt_identity())
+    if not user:
+        return jsonify({"error": "User not found."}), 404
+
+    # 🔥 Make sure that user belongs to the tenant calling the API
+    if user.tenant_id != g.tenant.id:
+        return jsonify({"error": "Unauthorized access to user."}), 403
+
+    data = request.get_json()
+    password = data.get('password')
+
+    if not password:
+        return jsonify({"error": "Password is required."}), 400
+
+    if not user.check_password(password):
+        db.session.add(UserAuthLog(
+            user_id=user.id,
+            auth_method="totp",
+            auth_status="failed_reset",
+            ip_address=request.remote_addr,
+            location=get_ip_location(request.remote_addr),
+            device_info="IAMaaS API Access",
+            failed_attempts=1,
+            tenant_id=g.tenant.id
+        ))
+
+        db.session.add(RealTimeLog(
+            user_id=user.id,
+            tenant_id=g.tenant.id,
+            action="❌ Failed TOTP reset attempt: Incorrect password",
+            ip_address=request.remote_addr,
+            device_info="IAMaaS API Access",
+            location=get_ip_location(request.remote_addr),
+            risk_alert=True
+        ))
+
+        db.session.commit()
+        return jsonify({"error": "Incorrect password."}), 401
+
+    # 🔥 Clear TOTP info safely
+    user.otp_secret = None
+    user.otp_email_label = None
+
+    db.session.add(UserAuthLog(
+        user_id=user.id,
+        auth_method="totp",
+        auth_status="reset",
+        ip_address=request.remote_addr,
+        location=get_ip_location(request.remote_addr),
+        device_info="IAMaaS API Access",
+        failed_attempts=0,
+        tenant_id=g.tenant.id
+    ))
+
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        tenant_id=g.tenant.id,
+        action="🔁 TOTP reset successfully by user",
+        ip_address=request.remote_addr,
+        device_info="IAMaaS API Access",
+        location=get_ip_location(request.remote_addr),
+        risk_alert=False
+    ))
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "TOTP reset successfully. You’ll be asked to enroll TOTP again on next login."
+    }), 200
+
 
 # Enroll the tenants user webauthn
 @iam_api_bp.route('/webauthn/register-begin', methods=['POST'])
-@jwt_required()
+@jwt_required(locations=["headers"])
 @require_api_key
 def begin_webauthn_registration():
     user_id = get_jwt_identity()
+    tenant_id = g.tenant.id
+
     user = User.query.get(user_id)
 
     if not user:
         return jsonify({"error": "User not found."}), 404
 
-    # 🛡️ Ensure the user belongs to the tenant making the API call
-    if user.tenant_id != g.tenant.id:
+    # 🛡️ Confirm that user belongs to this tenant
+    tenant_user = TenantUser.query.filter_by(
+        user_id=user.id,
+        tenant_id=tenant_id
+    ).first()
+
+    if not tenant_user:
         return jsonify({"error": "Unauthorized"}), 403
 
     # 🔥 Fetch existing credentials to exclude duplicates
@@ -612,13 +736,14 @@ def begin_webauthn_registration():
         registration_data, state = server.register_begin(
             {
                 "id": str(user.id).encode(),
-                "name": user.email,
-                "displayName": f"{user.first_name} {user.last_name or ''}"
+                "name": tenant_user.company_email,  # 🛡️ Use company email as identity inside tenant
+                "displayName": f"{user.first_name} {user.last_name or ''}".strip()
             },
             credentials
         )
 
         session['webauthn_register_state'] = state
+        session['webauthn_register_user_id'] = user.id  # 🔥 Save user_id separately
 
         public_key = jsonify_webauthn(registration_data["publicKey"])
 
@@ -631,18 +756,28 @@ def begin_webauthn_registration():
         traceback.print_exc()
         return jsonify({"error": "Server failed to prepare WebAuthn registration."}), 500
 
+
 # Completing the tenants user webauthn registration
 @iam_api_bp.route('/webauthn/register-complete', methods=['POST'])
-@jwt_required()
+@jwt_required(locations=["headers"])
 @require_api_key
 def complete_webauthn_registration():
     try:
-        user = User.query.get(get_jwt_identity())
+        user_id = get_jwt_identity()
+        tenant_id = g.tenant.id
+
+        user = User.query.get(user_id)
+
         if not user:
             return jsonify({"error": "User not found."}), 404
 
         # 🛡️ Ensure the user belongs to the tenant making the API call
-        if user.tenant_id != g.tenant.id:
+        tenant_user = TenantUser.query.filter_by(
+            user_id=user.id,
+            tenant_id=tenant_id
+        ).first()
+
+        if not tenant_user:
             return jsonify({"error": "Unauthorized"}), 403
 
         data = request.get_json()
@@ -685,7 +820,7 @@ def complete_webauthn_registration():
         # 🔥 Log success
         db.session.add(RealTimeLog(
             user_id=user.id,
-            tenant_id=g.tenant.id,
+            tenant_id=tenant_id,
             action="✅ WebAuthn credential registered successfully",
             ip_address=request.remote_addr,
             device_info="IAMaaS API Access",
@@ -704,22 +839,30 @@ def complete_webauthn_registration():
         traceback.print_exc()
         return jsonify({"error": f"Registration failed: {str(e)}"}), 500
 
+
 # Tenat User Assertion begin
 @iam_api_bp.route('/webauthn/assertion-begin', methods=['POST'])
-@jwt_required()
+@jwt_required(locations=["headers"])
 @require_api_key
 def begin_webauthn_assertion():
     try:
         from fido2.webauthn import PublicKeyCredentialRequestOptions
 
         user_id = get_jwt_identity()
+        tenant_id = g.tenant.id
+
         user = User.query.get(user_id)
 
         if not user:
             return jsonify({"error": "User not found."}), 404
 
         # 🛡️ Make sure user belongs to the tenant calling the API
-        if user.tenant_id != g.tenant.id:
+        tenant_user = TenantUser.query.filter_by(
+            user_id=user.id,
+            tenant_id=tenant_id
+        ).first()
+
+        if not tenant_user:
             return jsonify({"error": "Unauthorized"}), 403
 
         if not user.webauthn_credentials:
@@ -786,8 +929,13 @@ def complete_webauthn_assertion():
         if not user:
             return jsonify({"error": "User not found."}), 404
 
-        # 🛡️ Make sure user belongs to tenant
-        if user.tenant_id != g.tenant.id:
+        # 🛡️ Make sure user belongs to the tenant
+        tenant_user = TenantUser.query.filter_by(
+            user_id=user.id,
+            tenant_id=g.tenant.id
+        ).first()
+
+        if not tenant_user:
             return jsonify({"error": "Unauthorized."}), 403
 
         credential_id = websafe_decode(data["credentialId"])
@@ -802,10 +950,9 @@ def complete_webauthn_assertion():
 
         # 🔥 Lockout check
         if user.locked_until and user.locked_until > datetime.utcnow():
-            return jsonify({"error": f"Webauthn locked. Try again after {user.locked_until}"}), 429
+            return jsonify({"error": f"WebAuthn locked. Try again after {user.locked_until}"}), 429
 
         if not credential:
-            # 🔥 Count recent failures
             threshold_time = datetime.utcnow() - timedelta(minutes=5)
             fail_count = UserAuthLog.query.filter_by(
                 user_id=user.id,
@@ -816,7 +963,6 @@ def complete_webauthn_assertion():
             if fail_count >= 5:
                 user.locked_until = datetime.utcnow() + timedelta(minutes=15)
 
-            # 🔥 Log failure
             db.session.add(UserAuthLog(
                 user_id=user.id,
                 auth_method="webauthn",
@@ -858,7 +1004,7 @@ def complete_webauthn_assertion():
             db.session.commit()
             return jsonify({"error": "Invalid WebAuthn credential."}), 401
 
-        # ✅ Build assertion payload
+        # ✅ Build final assertion data
         assertion = {
             "id": data["credentialId"],
             "rawId": websafe_decode(data["credentialId"]),
@@ -871,7 +1017,6 @@ def complete_webauthn_assertion():
             }
         }
 
-        # ✅ Credential data from DB
         public_key_source = {
             "id": credential.credential_id,
             "public_key": credential.public_key,
@@ -880,12 +1025,12 @@ def complete_webauthn_assertion():
             "user_handle": None
         }
 
-        # 🔥 Perform final WebAuthn assertion verification
+        # 🔥 Authenticate WebAuthn assertion
         server.authenticate_complete(state, assertion, [public_key_source])
 
-        # 🎯 Success
         credential.sign_count += 1
         db.session.commit()
+
         session["mfa_webauthn_verified"] = True
         session.pop("webauthn_assertion_state", None)
         session.pop("assertion_user_id", None)
@@ -893,13 +1038,17 @@ def complete_webauthn_assertion():
         access = UserAccessControl.query.filter_by(user_id=user.id).first()
         role = db.session.get(UserRole, access.role_id).role_name.lower() if access else "user"
 
-        urls = {
-            "admin": url_for("admin.admin_dashboard", _external=True),
-            "agent": url_for("agent.agent_dashboard", _external=True),
-            "user": url_for("user.user_dashboard", _external=True)
-        }
+        if user.tenant_id == 1:
+            urls = {
+                "admin": url_for("admin.admin_dashboard", _external=True),
+                "agent": url_for("agent.agent_dashboard", _external=True),
+                "user": url_for("user.user_dashboard", _external=True)
+            }
+            dashboard_url = urls.get(role, url_for("user.user_dashboard", _external=True))
+        else:
+            dashboard_url = f"https://{g.tenant.name.lower()}.yourdomain.com/dashboard"
 
-        # 🧬 Determine method from credential
+        # 🧬 Determine transport method
         transports = credential.transports.split(",") if credential.transports else []
         if "hybrid" in transports:
             method = "cross-device passkey"
@@ -910,7 +1059,7 @@ def complete_webauthn_assertion():
         else:
             method = "unknown method"
 
-        # 🔥 Log successful login
+        # 🔥 Log successful WebAuthn login
         db.session.add(RealTimeLog(
             user_id=user.id,
             tenant_id=g.tenant.id,
@@ -944,6 +1093,7 @@ def complete_webauthn_assertion():
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"❌ Assertion failed: {str(e)}"}), 500
+
 
 
 # ///////////////////////////////////

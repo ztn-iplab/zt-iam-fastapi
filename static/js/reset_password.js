@@ -10,24 +10,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const token = form.querySelector('[name="token"]').value.trim();
 
     if (newPassword !== confirmPassword) {
-      Toastify({
-        text: "❌ Passwords do not match.",
-        duration: 3000,
-        gravity: "top",
-        position: "right",
-        backgroundColor: "#e53935"
-      }).showToast();
+      showToast("❌ Passwords do not match.", "error");
       return;
     }
 
     if (!isStrongPassword(newPassword)) {
-      Toastify({
-        text: "❌ Password too weak. Must be at least 8 characters with uppercase, lowercase, digit, and special character.",
-        duration: 4000,
-        gravity: "top",
-        position: "right",
-        backgroundColor: "#e53935"
-      }).showToast();
+      showToast("❌ Password too weak. Must be at least 8 characters with uppercase, lowercase, digit, and special character.", "error");
       return;
     }
 
@@ -38,56 +26,28 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ 
           token, 
           new_password: newPassword,
-          confirm_password: confirmPassword 
+          confirm_password: confirmPassword
         }),
-        
       });
 
       const data = await res.json();
 
       if (res.status === 202 && data.require_webauthn) {
-        Toastify({
-          text: "🔐 WebAuthn verification required before reset.",
-          duration: 3000,
-          gravity: "top",
-          position: "right",
-          backgroundColor: "#2962ff"
-        }).showToast();
-
-        return await verifyWithWebAuthn(token, newPassword);
+        showToast("🔐 WebAuthn verification required before reset.", "info");
+        return await verifyWithWebAuthn(token, newPassword, confirmPassword);
       }
 
       if (res.status === 202 && data.require_totp) {
-        Toastify({
-          text: "🔐 TOTP verification required before reset.",
-          duration: 3000,
-          gravity: "top",
-          position: "right",
-          backgroundColor: "#2962ff"
-        }).showToast();
-
-        return await verifyWithTotp(token, newPassword);
+        showToast("🔐 TOTP verification required before reset.", "info");
+        return await verifyWithTotp(token, newPassword, confirmPassword);
       }
 
       if (!res.ok) {
-        Toastify({
-          text: `❌ ${data.error || 'Password reset failed.'}`,
-          duration: 3000,
-          gravity: "top",
-          position: "right",
-          backgroundColor: "#f44336"
-        }).showToast();
+        showToast(`❌ ${data.error || 'Password reset failed.'}`, "error");
         return;
       }
 
-      Toastify({
-        text: "✅ " + data.message,
-        duration: 3000,
-        gravity: "top",
-        position: "right",
-        backgroundColor: "#43a047"
-      }).showToast();
-
+      showToast("✅ " + data.message, "success");
       form.reset();
       setTimeout(() => {
         window.location.href = "/api/auth/login_form";
@@ -95,17 +55,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     } catch (err) {
       console.error("Password Reset Error:", err);
-      Toastify({
-        text: "❌ Something went wrong. Please try again.",
-        duration: 3000,
-        gravity: "top",
-        position: "right",
-        backgroundColor: "#e53935"
-      }).showToast();
+      showToast("❌ Something went wrong. Please try again.", "error");
     }
   });
 
-  async function verifyWithWebAuthn(token, newPassword) {
+  async function verifyWithWebAuthn(token, newPassword, confirmPassword) {
     try {
       const beginRes = await fetch('/webauthn/reset-assertion-begin', {
         method: 'POST',
@@ -148,21 +102,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const completeData = await completeRes.json();
       if (!completeRes.ok) throw new Error(completeData.error);
 
-      return await retryPasswordReset(token, newPassword);
+      return await retryPasswordReset(token, newPassword, confirmPassword);
 
     } catch (err) {
       console.error("WebAuthn Verification Error:", err);
-      Toastify({
-        text: `❌ ${err.message || 'WebAuthn failed.'}`,
-        duration: 3000,
-        gravity: "top",
-        position: "right",
-        backgroundColor: "#e53935"
-      }).showToast();
+      showToast(`❌ ${err.message || 'WebAuthn failed.'}`, "error");
     }
   }
 
-  async function verifyWithTotp(token, newPassword) {
+  async function verifyWithTotp(token, newPassword, confirmPassword) {
     const code = prompt("Enter your TOTP code to confirm your identity:");
     if (!code) return;
 
@@ -177,41 +125,29 @@ document.addEventListener('DOMContentLoaded', () => {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "TOTP verification failed.");
 
-      return await retryPasswordReset(token, newPassword);
+      return await retryPasswordReset(token, newPassword, confirmPassword);
 
     } catch (err) {
       console.error("TOTP Verification Error:", err);
-      Toastify({
-        text: `❌ ${err.message || 'TOTP verification failed.'}`,
-        duration: 3000,
-        gravity: "top",
-        position: "right",
-        backgroundColor: "#e53935"
-      }).showToast();
+      showToast(`❌ ${err.message || 'TOTP verification failed.'}`, "error");
     }
   }
 
-  async function retryPasswordReset(token, newPassword) {
+  async function retryPasswordReset(token, newPassword, confirmPassword) {
     const retryRes = await fetch('/api/auth/reset-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         token, 
         new_password: newPassword,
-        confirm_password: confirmPassword 
+        confirm_password: confirmPassword
       }),
     });
 
     const retryData = await retryRes.json();
     if (!retryRes.ok) throw new Error(retryData.error || "Final password reset failed.");
 
-    Toastify({
-      text: retryData.message || "✅ Password reset complete.",
-      duration: 3000,
-      gravity: "top",
-      position: "right",
-      backgroundColor: "#43a047"
-    }).showToast();
+    showToast(retryData.message || "✅ Password reset complete.", "success");
 
     form.reset();
     setTimeout(() => {
@@ -245,5 +181,20 @@ document.addEventListener('DOMContentLoaded', () => {
   function toBase64Url(buffer) {
     return btoa(String.fromCharCode(...new Uint8Array(buffer)))
       .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function showToast(message, type = "info") {
+    Toastify({
+      text: message,
+      duration: 3000,
+      gravity: "top",
+      position: "right",
+      backgroundColor:
+        type === "success"
+          ? "#43a047"
+          : type === "error"
+          ? "#e53935"
+          : "#2962ff"
+    }).showToast();
   }
 });

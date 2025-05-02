@@ -246,7 +246,7 @@ def complete_assertion():
                 location=location,
                 device_info=device_info,
                 failed_attempts=fail_count,
-                tenant_id=user.tenant_id  # 🛡️ Added
+                tenant_id=user.tenant_id or 1 # 🛡️ Added
             ))
 
             db.session.add(RealTimeLog(
@@ -256,7 +256,7 @@ def complete_assertion():
                 device_info=device_info,
                 location=location,
                 risk_alert=(fail_count >= 3),
-                tenant_id=user.tenant_id  # 🛡️ Added
+                tenant_id=user.tenant_id or 1 # 🛡️ Added
             ))
 
             if fail_count >= 5:
@@ -354,7 +354,7 @@ def complete_assertion():
             device_info=request.user_agent.string,
             location=get_ip_location(request.remote_addr),
             risk_alert=False,
-            tenant_id=user.tenant_id  # 🛡️ Added
+            tenant_id=user.tenant_id or 1 # 🛡️ Added
         ))
 
         # 🧾 UserAuthLog entry
@@ -366,7 +366,7 @@ def complete_assertion():
             device_info=request.user_agent.string,
             location=get_ip_location(request.remote_addr),
             failed_attempts=0,
-            tenant_id=user.tenant_id  # 🛡️ Added
+            tenant_id=user.tenant_id or 1 # 🛡️ Added
         ))
 
         db.session.commit()

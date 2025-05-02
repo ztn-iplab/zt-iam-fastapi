@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.models import db, User, Wallet, Transaction, SIMCard, UserAccessControl, UserRole, RealTimeLog
+from models.models import db, User, Wallet, Transaction, SIMCard, UserAccessControl, UserRole, RealTimeLog, TenantUser, Tenant
 from utils.decorators import role_required
 import random
 import json
@@ -268,7 +268,8 @@ def process_agent_transaction():
             amount=amount,
             transaction_type=transaction_type,
             status="completed",
-            transaction_metadata=json.dumps(transaction_metadata)
+            transaction_metadata=json.dumps(transaction_metadata),
+            tenant_id=1
         )
 
         rt_log = RealTimeLog(
@@ -277,7 +278,8 @@ def process_agent_transaction():
             ip_address=request.remote_addr,
             device_info=request.headers.get("User-Agent", "Unknown"),
             location=data.get("location", "Unknown"),
-            risk_alert=False
+            risk_alert=False,
+            tenant_id=1
         )
 
     elif transaction_type == "transfer":
@@ -314,7 +316,8 @@ def process_agent_transaction():
             amount=amount,
             transaction_type=transaction_type,
             status="completed",
-            transaction_metadata=json.dumps(transaction_metadata)
+            transaction_metadata=json.dumps(transaction_metadata),
+            tenant_id=1
         )
 
         rt_log = RealTimeLog(
@@ -323,7 +326,8 @@ def process_agent_transaction():
             ip_address=request.remote_addr,
             device_info=request.headers.get("User-Agent", "Unknown"),
             location=data.get("location", "Unknown"),
-            risk_alert=False
+            risk_alert=False,
+            tenant_id=1
         )
 
     elif transaction_type == "withdrawal":
@@ -342,7 +346,8 @@ def process_agent_transaction():
             amount=amount,
             transaction_type=transaction_type,
             status="completed",
-            transaction_metadata=json.dumps(transaction_metadata)
+            transaction_metadata=json.dumps(transaction_metadata),
+            tenant_id=1
         )
 
         rt_log = RealTimeLog(
@@ -351,7 +356,8 @@ def process_agent_transaction():
             ip_address=request.remote_addr,
             device_info=request.headers.get("User-Agent", "Unknown"),
             location=data.get("location", "Unknown"),
-            risk_alert=False
+            risk_alert=False,
+            tenant_id=1
         )
 
     else:
@@ -614,7 +620,8 @@ def activate_sim():
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Unknown"),
         location=data.get("location", "Unknown"),
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=1
     )
     db.session.add(rt_log)
     db.session.commit()
@@ -644,7 +651,8 @@ def suspend_sim():
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Unknown"),
         location=data.get("location", "Unknown"),
-        risk_alert=True  # 🚨 Mark as sensitive
+        risk_alert=True,  # 🚨 Mark as sensitive
+        tenant_id=1
     )
     db.session.add(rt_log)
     db.session.commit()
@@ -677,7 +685,8 @@ def reactivate_sim():
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Unknown"),
         location=data.get("location", "Unknown"),
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=1
     )
     db.session.add(rt_log)
     db.session.commit()
@@ -709,7 +718,8 @@ def delete_sim():
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Unknown"),
         location=data.get("location", "Unknown"),
-        risk_alert=True
+        risk_alert=True,
+        tenant_id=1
     )
     db.session.add(rt_log)
     db.session.commit()
@@ -794,7 +804,8 @@ def approve_user_withdrawal(transaction_id):
             ip_address=request.remote_addr,
             device_info=request.headers.get("User-Agent", "Unknown"),
             location="Agent location",  # or data.get("location") if passed
-            risk_alert=True
+            risk_alert=True,
+            tenant_id=1
         )
         db.session.add(rt_log)
         db.session.commit()
@@ -825,7 +836,8 @@ def approve_user_withdrawal(transaction_id):
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Unknown"),
         location="Agent location",  # or data.get("location") if passed
-        risk_alert=False
+        risk_alert=False,
+        tenant_id=1
     )
     db.session.add(rt_log)
     db.session.commit()
@@ -872,7 +884,8 @@ def reject_user_withdrawal(transaction_id):
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Unknown"),
         location="Agent location",  # Or data.get("location") if passed
-        risk_alert=True
+        risk_alert=True,
+        tenant_id=1
     )
     db.session.add(rt_log)
     db.session.commit()
@@ -951,7 +964,8 @@ def swap_sim():
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Unknown"),
         location=location,
-        risk_alert=True
+        risk_alert=True,
+        tenant_id=1
     )
 
     db.session.add(rt_log)

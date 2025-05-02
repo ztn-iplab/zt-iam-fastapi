@@ -64,13 +64,62 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
   // ✅ Redirect to verification
-  continueBtn.addEventListener("click", () => {
-    continueBtn.style.display = "none";
+  continueBtn.addEventListener("click", async () => {
+    const userConfirmed = confirm("🛡️ Are you sure you have scanned the QR code or registered the manual key?");
+  
+    if (!userConfirmed) {
+      console.log("🛑 User canceled TOTP confirmation.");
+      return;  // 🔥 STOP: No spinner, no request, no toast
+    }
+  
+    continueBtn.disabled = true;
+    continueBtn.textContent = "Confirming...";
+  
     const spinner = document.getElementById("spinner");
     if (spinner) spinner.style.display = "block";
-
-    setTimeout(() => {
-      window.location.href = `/api/auth/verify-totp`;
-    }, 3000);
+  
+    try {
+      const res = await fetch("/api/auth/setup-totp/confirm", {
+        method: "POST",
+        credentials: "include",  // 🛡️ Use cookie JWT
+      });
+  
+      const data = await res.json();
+  
+      if (res.ok) {
+        Toastify({
+          text: "✅ TOTP enrollment confirmed! Proceeding to verification...",
+          duration: 3000,
+          close: true,
+          gravity: "top",
+          position: "center",
+          backgroundColor: "#43a047"
+        }).showToast();
+  
+        setTimeout(() => {
+          window.location.href = `/api/auth/verify-totp`;
+        }, 1500);
+  
+      } else {
+        throw new Error(data.error || "TOTP confirmation failed.");
+      }
+  
+    } catch (err) {
+      console.error("❌ TOTP Confirm Error:", err);
+  
+      Toastify({
+        text: err.message || "Something went wrong.",
+        duration: 4000,
+        close: true,
+        gravity: "top",
+        position: "center",
+        backgroundColor: "red"
+      }).showToast();
+  
+      continueBtn.disabled = false;
+      continueBtn.textContent = "Continue";
+      if (spinner) spinner.style.display = "none";
+    }
   });
+  
 });

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Verify SIM Swap{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block body %}
+<div class="auth-container">
+  <h1>SIM Swap Verification</h1>
+  <p class="auth-note">Please verify your identity to complete the SIM swap.</p>
+
+  <form id="verify-sim-swap-form" class="auth-form">
+    <input type="hidden" name="token" value="{{ token }}" />
+
+    <label>Password</label>
+    <input type="password" name="password" required class="input-field" style="text-align: center;" />
+
+    <label>Authentication Code (TOTP)</label>
+    <input type="text" name="totp_code" required class="input-field" style="text-align: center;" />
+
+    <button type="submit" class="btn btn-primary mt-2">Verify</button>
+  </form>
+</div>
+
+<!-- <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById("verify-sim-swap-form");
+    const token = form.querySelector('[name="token"]').value;
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const password = form.querySelector('[name="password"]').value;
+      const totp_code = form.querySelector('[name="totp_code"]').value;
+
+      try {
+        const res = await fetch("/api/auth/verify-sim-swap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, password, totp_code }),
+          credentials: "include",
+        });
+
+        const data = await res.json();
+
+        if (res.status === 202 && data.require_webauthn) {
+          Toastify({
+            text: "🔐 WebAuthn required. Please verify with your passkey...",
+            duration: 3000,
+            gravity: "top",
+            position: "right",
+            backgroundColor: "#2962ff",
+          }).showToast();
+          return await triggerWebAuthnForSimSwap(password, totp_code);
+        }
+
+        if (!res.ok) {
+          Toastify({
+            text: `❌ ${data.error || "Verification failed."}`,
+            duration: 3000,
+            gravity: "top",
+            position: "right",
+            backgroundColor: "#e53935",
+          }).showToast();
+          return;
+        }
+
+        Toastify({
+          text: data.message || "✅ SIM swap complete!",
+          duration: 3000,
+          gravity: "top",
+          position: "right",
+          backgroundColor: "#43a047",
+        }).showToast();
+
+        form.reset();
+        setTimeout(() => (window.location.href = "/login"), 2000);
+      } catch (err) {
+        console.error("SIM swap error:", err);
+        Toastify({
+          text: "❌ Something went wrong.",
+          duration: 3000,
+          gravity: "top",
+          position: "right",
+          backgroundColor: "#e53935",
+        }).showToast();
+      }
+    });
+  });
+</script> -->
+<script src="{{ url_for('static', filename='js/verify_sim_swap.js') }}"></script>
+{% endblock %}

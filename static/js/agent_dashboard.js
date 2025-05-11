@@ -554,88 +554,120 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-   // ✅ Function SIM SWAPPING
-   function showSwapSIMModal(oldIccid, mobileNumber) {
-    document.getElementById("old-iccid").value = oldIccid;
-    document.getElementById("swap-network").value = "";
-  
-    const iccidDropdown = document.getElementById("swap-new-iccid");
-    iccidDropdown.innerHTML = "<option value=''>Loading available ICCIDs...</option>";
-  
-    // 🔄 Fetch unregistered SIMs
-    fetch("/agent/sim-registrations", {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        iccidDropdown.innerHTML = "<option value=''>Select ICCID</option>";
-  
-        if (data?.sims?.length) {
-          const unregistered = data.sims.filter((sim) => sim.status === "unregistered");
-  
-          if (!unregistered.length) {
-            iccidDropdown.innerHTML = "<option value=''>⚠️ No unregistered SIMs found</option>";
-          }
-  
-          unregistered.forEach((sim) => {
-            const option = document.createElement("option");
-            option.value = sim.iccid;
+// ✅ Function SIM SWAPPING (Patched with pending check and Toastify)
+function showSwapSIMModal(oldIccid, mobileNumber) {
+  document.getElementById("old-iccid").value = oldIccid;
+  document.getElementById("swap-network").value = "";
+
+  const iccidDropdown = document.getElementById("swap-new-iccid");
+  iccidDropdown.innerHTML = "<option value=''>Loading available ICCIDs...</option>";
+
+  // 🔄 Fetch unregistered SIMs with pending flag
+  fetch("/agent/sim-registrations", {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      iccidDropdown.innerHTML = "<option value=''>Select ICCID</option>";
+
+      if (data?.sims?.length) {
+        const unregistered = data.sims.filter((sim) => sim.status === "unregistered");
+
+        if (!unregistered.length) {
+          iccidDropdown.innerHTML = "<option value=''>⚠️ No unregistered SIMs found</option>";
+        }
+
+        unregistered.forEach((sim) => {
+          const option = document.createElement("option");
+          option.value = sim.iccid;
+
+          if (sim.pending_swap) {
+            option.disabled = true;
+            option.textContent = `${sim.iccid} (${sim.network_provider}) ⏳ Pending Approval`;
+          } else {
             option.textContent = `${sim.iccid} (${sim.network_provider})`;
-            iccidDropdown.appendChild(option);
-          });
-        }
-      })
-      .catch((err) => {
-        iccidDropdown.innerHTML = "<option value=''>⚠️ Failed to load ICCIDs</option>";
-        console.error("❌ Error loading unregistered SIMs:", err);
-      });
-  
-    const modal = new bootstrap.Modal(document.getElementById("swapSimModal"));
-    modal.show();
-  }
-  
-  document.getElementById("swap-sim-form").addEventListener("submit", function (e) {
-    e.preventDefault();
-  
-    const old_iccid = document.getElementById("old-iccid").value;
-    const new_iccid = document.getElementById("swap-new-iccid").value;
-    const network_provider = document.getElementById("swap-network").value;
-  
-    if (!new_iccid || !network_provider) {
-      alert("Please select a valid ICCID and network provider.");
-      return;
-    }
-  
-    fetch("/agent/swap-sim", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        old_iccid,
-        new_iccid,
-        network_provider,
-        location: "Unknown",
-      }),
+          }
+
+          iccidDropdown.appendChild(option);
+        });
+      }
     })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.message) {
-          alert(data.message);
-          const modal = bootstrap.Modal.getInstance(document.getElementById("swapSimModal"));
-          modal.hide();
-          fetchSimRegistrationHistory(); // 🔁 Refresh
-        } else {
-          alert(data.error || "Something went wrong.");
-        }
-      })
-      .catch((err) => {
-        console.error("❌ SIM swap failed:", err);
-        alert("❌ Failed to perform SIM swap.");
-      });
-  });
-  
+    .catch((err) => {
+      iccidDropdown.innerHTML = "<option value=''>⚠️ Failed to load ICCIDs</option>";
+      console.error("❌ Error loading unregistered SIMs:", err);
+    });
+
+  const modal = new bootstrap.Modal(document.getElementById("swapSimModal"));
+  modal.show();
+}
+
+// ✅ Submit handler with secure flow
+document.getElementById("swap-sim-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+
+  const old_iccid = document.getElementById("old-iccid").value;
+  const new_iccid = document.getElementById("swap-new-iccid").value;
+  const network_provider = document.getElementById("swap-network").value;
+
+  if (!new_iccid || !network_provider) {
+    Toastify({
+      text: "⚠️ Please select a valid ICCID and network provider.",
+      duration: 3000,
+      gravity: "top",
+      position: "right",
+      backgroundColor: "#f57c00"
+    }).showToast();
+    return;
+  }
+
+  fetch("/agent/request-sim-swap", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      old_iccid,
+      new_iccid,
+      network_provider,
+      location: "Unknown",
+    }),
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      if (data.message) {
+        Toastify({
+          text: data.message,
+          duration: 3500,
+          gravity: "top",
+          position: "right",
+          backgroundColor: "#43a047"
+        }).showToast();
+
+        const modal = bootstrap.Modal.getInstance(document.getElementById("swapSimModal"));
+        modal.hide();
+        fetchSimRegistrationHistory(); // 🔁 Refresh list
+      } else {
+        Toastify({
+          text: data.error || "❌ Something went wrong.",
+          duration: 3000,
+          gravity: "top",
+          position: "right",
+          backgroundColor: "#e53935"
+        }).showToast();
+      }
+    })
+    .catch((err) => {
+      console.error("❌ SIM swap request failed:", err);
+      Toastify({
+        text: "❌ Failed to send SIM swap request.",
+        duration: 3000,
+        gravity: "top",
+        position: "right",
+        backgroundColor: "#e53935"
+      }).showToast();
+    });
+});
 
   // ✅ Function to fetch and display the SIMs registered by the agent.
   function fetchSimRegistrationHistory() {

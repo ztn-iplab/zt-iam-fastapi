@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models.models import db, User,UserAccessControl, UserRole, SIMCard
-from utils.decorators import role_required
+from utils.decorators import role_required, session_protected
 from utils.decorators import require_totp_setup
 from utils.auth_decorators import require_full_mfa
 
@@ -11,6 +11,7 @@ user_bp = Blueprint('user', __name__)
 #User Dashboard
 @user_bp.route("/user/dashboard")
 @jwt_required()
+@session_protected()
 @require_totp_setup
 @require_full_mfa
 def user_dashboard():  # ✅ Function name must be "user_dashboard"
@@ -26,6 +27,7 @@ def user_dashboard():  # ✅ Function name must be "user_dashboard"
 #Create User
 @user_bp.route('/users', methods=['POST'])
 @jwt_required()
+
 def create_user():
     # User creation logic
     data = request.get_json()
@@ -50,6 +52,7 @@ def create_user():
 # Get the current user details
 @user_bp.route('/user', methods=['GET'])
 @jwt_required()
+@session_protected()
 def get_user():
     user_id = int(get_jwt_identity())
     user = User.query.get(user_id)
@@ -88,6 +91,7 @@ def get_user():
 # Update the current user details
 @user_bp.route('/user', methods=['PUT'])
 @jwt_required()
+@session_protected()
 def update_user():
     user_id = int(get_jwt_identity())
     data = request.get_json()
@@ -111,6 +115,7 @@ def update_user():
 # Delete the current user account
 @user_bp.route('/user', methods=['DELETE'])
 @jwt_required()
+@session_protected()
 def delete_user():
     user_id = int(get_jwt_identity())
     user = User.query.get(user_id)
@@ -124,6 +129,7 @@ def delete_user():
 # Profile route
 @user_bp.route('/user/profile', methods=['GET'])
 @jwt_required()
+@session_protected()
 def profile():
     current_user_id = get_jwt_identity()  # Extract user ID from JWT
     user = User.query.get(current_user_id)  # Fetch user from DB
@@ -142,6 +148,7 @@ def profile():
 #Request Deletion
 @user_bp.route('/user/request_deletion', methods=['POST'])
 @jwt_required()
+@session_protected()
 def request_deletion():
     user_id = int(get_jwt_identity())
     user = User.query.get(user_id)
@@ -160,6 +167,7 @@ def request_deletion():
     # ✅ API: Fetch Basic User Info by Mobile Number
 @user_bp.route('/user-info/<string:mobile_number>', methods=['GET'])
 @jwt_required()
+@session_protected()
 def get_user_info(mobile_number):
     sim = SIMCard.query.filter_by(mobile_number=mobile_number).first()
     
@@ -177,5 +185,6 @@ def get_user_info(mobile_number):
 # set up the TOTP for transactions
 @user_bp.route('/setup-totp')
 @jwt_required()
+@session_protected()
 def show_totp_setup():
     return render_template('setup_totp.html')

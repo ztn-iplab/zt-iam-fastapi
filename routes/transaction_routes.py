@@ -8,10 +8,10 @@ from datetime import datetime
 import json
 import threading
 import time
-import threading
 import json
 from utils.fraud_engine import calculate_risk_score
 from utils.email_alerts import send_alert_email
+from utils.decorators import role_required, session_protected
 
 transaction_bp = Blueprint('transaction', __name__)
 
@@ -30,6 +30,7 @@ def update_transaction_status(app, transaction_id, new_status):
 
 @transaction_bp.route('/transactions', methods=['POST'])
 @jwt_required()
+@session_protected()
 def create_transaction():
     logged_in_user = int(get_jwt_identity())
     data = request.get_json()
@@ -250,6 +251,7 @@ def create_transaction():
 # The Transactions history
 @transaction_bp.route('/transactions', methods=['GET'])
 @jwt_required()
+@session_protected()
 def get_transactions():
     logged_in_user = int(get_jwt_identity())
 
@@ -348,6 +350,7 @@ def get_transactions():
 # Update a specific transaction (only if it belongs to the logged-in user)
 @transaction_bp.route('/transactions/<int:transaction_id>', methods=['PUT'])
 @jwt_required()
+@session_protected()
 def update_transaction(transaction_id):
     logged_in_user = int(get_jwt_identity())
     transaction = Transaction.query.get(transaction_id)
@@ -371,6 +374,7 @@ def update_transaction(transaction_id):
 # Delete a specific transaction (only if it belongs to the logged-in user)
 @transaction_bp.route('/transactions/<int:transaction_id>', methods=['DELETE'])
 @jwt_required()
+@session_protected()
 def delete_transaction(transaction_id):
     logged_in_user = int(get_jwt_identity())
     transaction = Transaction.query.get(transaction_id)
@@ -385,6 +389,7 @@ def delete_transaction(transaction_id):
 # ✅ USER INITIATES WITHDRAWAL
 @transaction_bp.route('/user/initiated-withdrawal', methods=['POST'])
 @jwt_required()
+@session_protected()
 def user_initiate_withdrawal():
     user_id = int(get_jwt_identity())
     data = request.get_json()
@@ -426,6 +431,7 @@ def user_initiate_withdrawal():
 
 @transaction_bp.route('/verify-transaction-otp', methods=['POST'])
 @jwt_required()
+@session_protected()
 def verify_transaction_otp():
     data = request.get_json()
     otp_input = data.get('otp')

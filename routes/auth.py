@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, render_template, redirect, url_for, make_response, session, current_app
+from flask import Blueprint, request, jsonify, render_template, redirect, url_for, make_response, session, current_app, flash
 from flask_jwt_extended import (
     create_access_token,
     set_access_cookies,
@@ -20,7 +20,7 @@ from utils.security import (
 from flask_jwt_extended.exceptions import NoAuthorizationError
 from datetime import datetime, timedelta
 from werkzeug.security import check_password_hash, generate_password_hash
-from models.models import User, Wallet, db, UserRole, UserAccessControl,SIMCard, OTPCode, RealTimeLog, UserAuthLog, PasswordHistory, WebAuthnCredential
+from models.models import User, Wallet, db, UserRole, UserAccessControl,SIMCard, OTPCode, RealTimeLog, UserAuthLog, PasswordHistory, WebAuthnCredential, PendingSIMSwap
 from utils.logging_helpers import log_realtime_event, log_auth_event
 from utils.otp import generate_otp_code  # Import your OTP logic
 from utils.totp import verify_totp_code
@@ -33,12 +33,16 @@ import io
 import os
 import json
 import base64
+import hashlib
 from flask import current_app
 from utils.auth_decorators import require_full_mfa
 from flask_mail import Message
 from extensions import mail
 from utils.email_alerts import send_admin_alert, send_user_alert, send_password_reset_email ,send_totp_reset_email, send_webauthn_reset_email
 import pyotp
+from utils.security import get_request_fingerprint
+from utils.logger import app_logger
+import secrets
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -82,6 +86,8 @@ def login_route():
             user = sim.user
 
     if not user:
+        app_logger.warning(f"[USER-ENUM] login_input={login_input} ip={ip_address}")
+
         # 🛡️ Use helper here for unknown user
         log_realtime_event(
             user=None,
@@ -102,6 +108,8 @@ def login_route():
 
     if not user.check_password(password):
         failed_count = recent_fails + 1
+        app_logger.warning(f"[LOGIN-FAILED] user_id={user.id} failed_attempts={failed_count} ip={ip_address}")
+        app_logger.warning("[LOGIN-FAILED] user_id=123 ip=192.168.2.100")
 
         log_auth_event(
             user=user,
@@ -123,6 +131,7 @@ def login_route():
         )
 
         if failed_count >= 5:
+            app_logger.warning(f"[ACCOUNT-LOCKED] user_id={user.id} ip={ip_address}")
             user.locked_until = datetime.utcnow() + timedelta(minutes=15)
 
             log_realtime_event(
@@ -156,7 +165,14 @@ def login_route():
         return jsonify({"error": "Invalid credentials"}), 401
 
     # ✅ Success
-    access_token = create_access_token(identity=str(user.id))
+    fp = get_request_fingerprint()
+    access_token = create_access_token(
+        identity=str(user.id),
+        additional_claims={"fp": fp}
+    )
+    # ✅ Success
+    app_logger.info(f"[LOGIN] user_id={user.id} ip={ip_address}")
+
     response = jsonify({
         "message": "Login successful",
         "user_id": user.id,
@@ -1285,3 +1301,108 @@ def verify_webauthn_reset(token):
     return jsonify({
         "message": "✅ WebAuthn reset successful. Please log in and re-enroll your passkey."
     }), 200
+
+
+@auth_bp.route("/verify-sim-swap", methods=["GET", "POST"])
+def verify_sim_swap():
+    token = request.args.get("token") if request.method == "GET" else request.json.get("token")
+    if not token:
+        return jsonify({"error": "Missing token."}), 400
+
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    pending = PendingSIMSwap.query.filter_by(token_hash=token_hash).first()
+
+    if not pending or pending.expires_at < datetime.utcnow():
+        return jsonify({"error": "This SIM swap link is invalid or has expired."}), 410
+
+    user = User.query.get(pending.user_id)
+    if not user:
+        return jsonify({"error": "User not found."}), 404
+
+    # GET: Render form
+    if request.method == "GET":
+        return render_template("verify_sim_swap.html", token=token, user=user)
+
+    # POST: Step 1 - Validate password + TOTP
+    password = request.json.get("password")
+    totp_code = request.json.get("totp_code")
+    webauthn_done = request.json.get("webauthn_done", False)
+
+    if not user.check_password(password):
+        db.session.add(RealTimeLog(
+            user_id=user.id,
+            action="❌ SIM swap verification failed (bad password)",
+            ip_address=request.remote_addr,
+            device_info=request.headers.get("User-Agent", "Unknown"),
+            location=get_ip_location(request.remote_addr),
+            risk_alert=True,
+            tenant_id=1
+        ))
+        db.session.commit()
+        return jsonify({"error": "Incorrect password."}), 401
+
+    if not verify_totp(user, totp_code):
+        db.session.add(RealTimeLog(
+            user_id=user.id,
+            action="❌ SIM swap verification failed (bad TOTP)",
+            ip_address=request.remote_addr,
+            device_info=request.headers.get("User-Agent", "Unknown"),
+            location=get_ip_location(request.remote_addr),
+            risk_alert=True,
+            tenant_id=1
+        ))
+        db.session.commit()
+        return jsonify({"error": "Invalid TOTP code."}), 401
+
+    if not session.get("reset_webauthn_verified"):
+        return jsonify({"require_webauthn": True}), 202
+
+    # ✅ Finalize SIM swap
+    old_sim = SIMCard.query.filter_by(iccid=pending.old_iccid).first()
+    new_sim = SIMCard.query.filter_by(iccid=pending.new_iccid).first()
+
+    if not old_sim or not new_sim:
+        return jsonify({"error": "SIMs not found."}), 404
+
+    # ✅ Preserve user's mobile number
+    preserved_mobile_number = old_sim.mobile_number
+
+    # ✅ Generate safe SWP suffix for old SIM
+    while True:
+        suffix = f"SWP_{int(datetime.utcnow().timestamp())}_{secrets.token_hex(2)}"
+        if len(suffix) > 20:
+            suffix = suffix[:20]
+        if not SIMCard.query.filter_by(mobile_number=suffix).first():
+            break
+
+    # ✅ Update old SIM
+    old_sim.status = "swapped"
+    old_sim.mobile_number = suffix
+
+    # ✅ Assign new SIM with preserved number
+    new_sim.status = "active"
+    new_sim.user_id = user.id
+    new_sim.mobile_number = preserved_mobile_number
+    new_sim.registration_date = datetime.utcnow()
+    new_sim.registered_by = f"user-{user.id}"
+
+    # ✅ Log success
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        action=f"✅ Verified SIM Swap {old_sim.iccid} ➡️ {new_sim.iccid}",
+        ip_address=request.remote_addr,
+        device_info=request.headers.get("User-Agent", "Unknown"),
+        location=get_ip_location(request.remote_addr),
+        risk_alert=False,
+        tenant_id=1
+    ))
+
+    # ✅ Clean up session and pending
+    db.session.delete(pending)
+    session.pop("reset_webauthn_verified", None)
+    session.pop("reset_user_id", None)
+    session.pop("reset_webauthn_assertion_state", None)
+
+    db.session.commit()
+
+    return jsonify({"message": "✅ SIM swap completed successfully."}), 200

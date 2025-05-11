@@ -71,6 +71,20 @@ class SIMCard(db.Model):
     # Many-to-One relationship with User (One user can have multiple SIMs)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
+# 📌 Sim Swapping operations
+class PendingSIMSwap(db.Model):
+    __tablename__ = "pending_sim_swap"
+
+    id = db.Column(db.Integer, primary_key=True)
+    token_hash = db.Column(db.String(128), nullable=False, unique=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    old_iccid = db.Column(db.String(32), nullable=False)
+    new_iccid = db.Column(db.String(32), nullable=False)
+    requested_by = db.Column(db.String(64))  # agent_id or email
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime)
+    is_verified = db.Column(db.Boolean, default=False)
+
 # 📌 Wallet Model (User Balance & Transactions)
 class Wallet(db.Model):
     __tablename__ = 'wallets'

@@ -150,3 +150,28 @@ MoMo ZTN Security Team
         print(f"📧 WebAuthn reset email sent to {user.email}")
     except Exception as e:
         print(f"❌ Failed to send WebAuthn reset email: {e}")
+
+
+
+def send_sim_swap_verification_email(user, raw_token):
+    try:
+        reset_link = url_for('auth.verify_sim_swap', token=raw_token, _external=True)
+        subject = "🔐 SIM Swap Verification Required"
+        body = f"""
+Dear {user.first_name},
+
+A request was made to swap the SIM card linked to your account.
+
+To proceed, please verify your identity by clicking the link below:
+{reset_link}
+
+This link will expire in 15 minutes. If you did not initiate this, please reset your password immediately and report the incident.
+
+Stay secure,  
+MoMo ZTN Security Team
+"""
+        msg = Message(subject=subject, recipients=[user.email], body=body)
+        mail.send(msg)
+        print(f"📧 SIM swap verification email sent to {user.email}")
+    except Exception as e:
+        print(f"❌ Failed to send SIM swap email: {e}")

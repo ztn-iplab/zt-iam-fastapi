@@ -2,11 +2,13 @@ from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models.models import db, User, RealTimeLog
 from utils.location import get_ip_location
+from utils.decorators import role_required, session_protected
 
 settings_bp = Blueprint('settings', __name__, url_prefix='/settings')
 
 @settings_bp.route('/', methods=['GET'])
 @jwt_required()
+@session_protected()
 def settings():
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
@@ -15,16 +17,19 @@ def settings():
 
 @settings_bp.route('/change-password')
 @jwt_required()
+@session_protected()
 def change_password():
     return render_template('change_password.html')
 
 @settings_bp.route('/reset-totp')
 @jwt_required()
+@session_protected()
 def reset_totp():
     return render_template('reset_totp.html')
 
 @settings_bp.route('/reset-webauthn')
 @jwt_required()
+@session_protected()
 def reset_webauthn():
     return render_template('reset_webauthn.html')
 
@@ -32,6 +37,7 @@ def reset_webauthn():
 
 @settings_bp.route('/settings/update-profile', methods=['POST'])
 @jwt_required()
+@session_protected()
 def update_profile():
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
@@ -57,6 +63,7 @@ def update_profile():
 
 @settings_bp.route('/settings/request-deletion', methods=['POST'])
 @jwt_required()
+@session_protected()
 def request_account_deletion():
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
@@ -90,6 +97,7 @@ def request_account_deletion():
 
 @settings_bp.route('/')
 @jwt_required()
+@session_protected()
 def settings_home():
     user = User.query.get(get_jwt_identity())
     role = 'user'  # or 'admin' or 'agent', however you determine this

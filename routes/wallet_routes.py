@@ -1,12 +1,14 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models.models import db, Wallet
+from utils.decorators import role_required, session_protected
 
 wallet_bp = Blueprint('wallet', __name__)
 
 # Get Wallet (Only the Logged-in User)
 @wallet_bp.route('/wallets', methods=['GET'])
 @jwt_required()
+@session_protected()
 def get_wallet():
     logged_in_user = int(get_jwt_identity())
 
@@ -24,6 +26,7 @@ def get_wallet():
 # Update Wallet Balance (Only for the Logged-in User)
 @wallet_bp.route('/wallets', methods=['PUT'])
 @jwt_required()
+@session_protected()
 def update_wallet():
     logged_in_user = int(get_jwt_identity())
     data = request.get_json()
@@ -55,6 +58,7 @@ def update_wallet():
 # DELETE endpoint: Delete the wallet for the logged-in user
 @wallet_bp.route('/wallets', methods=['DELETE'])
 @jwt_required()
+@session_protected()
 def delete_wallet():
     logged_in_user = int(get_jwt_identity())
     wallet = Wallet.query.filter_by(user_id=logged_in_user).first()

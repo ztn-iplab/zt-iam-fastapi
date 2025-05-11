@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, session, url_for, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.location import get_ip_location
+from utils.decorators import role_required, session_protected
 from datetime import datetime, timedelta
 from fido2.server import Fido2Server
 from fido2.utils import websafe_decode, websafe_encode
@@ -10,7 +11,7 @@ from fido2.webauthn import (
     AuthenticatorData,
     AuthenticatorAssertionResponse
 )
-from models.models import db, User, WebAuthnCredential, UserAccessControl, UserRole, RealTimeLog, UserAuthLog
+from models.models import db, User, WebAuthnCredential, UserAccessControl, UserRole, RealTimeLog, UserAuthLog, PendingSIMSwap
 from enum import Enum
 from fido2.cose import ES256
 from fido2 import cbor
@@ -47,6 +48,7 @@ def jsonify_webauthn(data):
 
 @webauthn_bp.route("/webauthn/register-begin", methods=["POST"])
 @jwt_required()
+@session_protected()
 def begin_registration():
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
@@ -80,6 +82,7 @@ def begin_registration():
 
 @webauthn_bp.route("/webauthn/register-complete", methods=["POST"])
 @jwt_required()
+@session_protected()
 def complete_registration():
     try:
         data = request.get_json()
@@ -142,6 +145,7 @@ def webauthn_assertion_page():
 
 @webauthn_bp.route("/webauthn/assertion-begin", methods=["POST"])
 @jwt_required()
+@session_protected()
 def begin_assertion():
     try:
         from fido2.webauthn import PublicKeyCredentialRequestOptions
@@ -197,6 +201,7 @@ def begin_assertion():
 
 @webauthn_bp.route("/webauthn/assertion-complete", methods=["POST"])
 @jwt_required()
+@session_protected()
 def complete_assertion():
     from fido2.utils import websafe_decode
     try:
@@ -395,12 +400,26 @@ def begin_reset_assertion():
     try:
         data = request.get_json()
         token = data.get("token")
+        context = data.get("context", "totp")
+
         if not token:
             return jsonify({"error": "Missing token"}), 400
 
-        user = User.query.filter_by(reset_token=hash_token(token)).first()
-        if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
-            return jsonify({"error": "Reset token invalid or expired."}), 403
+        user = None
+
+        if context == "sim_swap":
+            token_hash = hash_token(token)
+            pending = PendingSIMSwap.query.filter_by(token_hash=token_hash).first()
+            if not pending or pending.expires_at < datetime.utcnow():
+                return jsonify({"error": "SIM swap token invalid or expired."}), 403
+            user = User.query.get(pending.user_id)
+        else:
+            user = User.query.filter_by(reset_token=hash_token(token)).first()
+            if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
+                return jsonify({"error": "Reset token invalid or expired."}), 403
+
+        if not user:
+            return jsonify({"error": "User not found."}), 404
 
         if not user.webauthn_credentials:
             return jsonify({"error": "User has no registered WebAuthn credentials"}), 404
@@ -418,7 +437,7 @@ def begin_reset_assertion():
 
         session["reset_webauthn_assertion_state"] = state
         session["reset_user_id"] = user.id
-        session["reset_context"] = "totp"
+        session["reset_context"] = context
 
         return jsonify({"public_key": jsonify_webauthn(assertion_data["publicKey"])})
 
@@ -434,6 +453,7 @@ def complete_reset_assertion():
     try:
         user_id = session.get("reset_user_id")
         state = session.get("reset_webauthn_assertion_state")
+        context = session.get("reset_context")
 
         if not state or not user_id:
             return jsonify({"error": "No reset verification in progress."}), 400
@@ -483,13 +503,14 @@ def complete_reset_assertion():
 
         credential.sign_count += 1
         db.session.commit()
-        # After token is used
-        session.pop("reset_token", None)
 
         session["reset_webauthn_verified"] = True
         session.pop("reset_webauthn_assertion_state", None)
 
-        return jsonify({"message": "✅ Verified via WebAuthn for reset"})
+        return jsonify({
+            "message": "✅ Verified via WebAuthn for reset",
+            "context": context
+        })
 
     except Exception as e:
         import traceback

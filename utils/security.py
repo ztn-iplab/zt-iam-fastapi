@@ -8,6 +8,7 @@ import os
 import base64
 import re
 
+
 def is_strong_password(password):
     # At least 8 chars, 1 upper, 1 lower, 1 digit, 1 special
     return (
@@ -33,7 +34,7 @@ def verify_token(token, hashed):
     return hash_token(token) == hashed
 
 
-# ✅ TOTP Verification: Verifies the OTP input against the user's secret
+# ✅ TOTP Verification: Verifies the TOTP input against the user's secret
 def verify_totp(user, otp_input):
     if not user.otp_secret:
         return False
@@ -66,4 +67,26 @@ def verify_secondary_method(user):
 
 def generate_challenge():
     return base64.b64encode(os.urandom(32)).decode("utf-8")
+
+
+
+
+import hashlib
+from flask import request, has_request_context
+
+def get_request_fingerprint():
+    """
+    Generates a secure fingerprint for the request to defend against session hijacking.
+    This uses IP and normalized User-Agent. Can be extended to include cookies, language, or device hints.
+    """
+    if not has_request_context():
+        return "no-request-context"
+
+    # Prefer X-Forwarded-For if behind reverse proxy (optional)
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+    ua = request.headers.get("User-Agent", "unknown").lower().strip()
+
+    # Normalize and hash
+    raw_fp = f"{ip}|{ua}"
+    return hashlib.sha256(raw_fp.encode()).hexdigest()
 

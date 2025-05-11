@@ -1,11 +1,15 @@
 from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.models import db, User, Wallet, Transaction, SIMCard, UserAccessControl, UserRole, RealTimeLog, TenantUser, Tenant
-from utils.decorators import role_required
+from models.models import db, User, Wallet, Transaction, SIMCard, UserAccessControl, UserRole, RealTimeLog, TenantUser, Tenant, PendingSIMSwap
+from utils.decorators import role_required,session_protected
 import random
 import json
 from datetime import datetime, timedelta
 from utils.auth_decorators import require_full_mfa
+import secrets
+import hashlib
+from utils.email_alerts import send_sim_swap_verification_email
+
 
 agent_bp = Blueprint("agent", __name__)
 
@@ -54,6 +58,7 @@ def expire_pending_withdrawals():
 # ✅ Function to generate a new sim card
 @agent_bp.route("/agent/generate_sim", methods=["POST"])
 @jwt_required()
+@session_protected()
 def generate_sim():
     """Generate a unique SIM number and ICCID but do not register it yet."""
     data = request.get_json()
@@ -80,6 +85,7 @@ def generate_sim():
 # ✅ API: Register SIM Card (Agents Only)
 @agent_bp.route("/agent/register_sim", methods=["POST"])
 @jwt_required()
+@session_protected()
 def register_sim():
     logged_in_user = get_jwt_identity()
     agent = User.query.get(logged_in_user)
@@ -132,6 +138,7 @@ def register_sim():
 # ✅ API: Fetch SIM Registration History
 @agent_bp.route("/agent/sim-registrations", methods=["GET"])
 @jwt_required()
+@session_protected()
 def fetch_sim_registration_history():
     agent_id = get_jwt_identity()
 
@@ -175,6 +182,7 @@ def fetch_sim_registration_history():
 # ✅ Agent Dashboard (HTML Page)
 @agent_bp.route("/agent/dashboard", methods=["GET"])
 @jwt_required()
+@session_protected()
 @role_required(["agent"])
 @require_full_mfa
 def agent_dashboard():
@@ -190,6 +198,7 @@ def agent_dashboard():
 # ✅ Agent Transaction
 @agent_bp.route("/agent/transaction", methods=["POST"])
 @jwt_required()
+@session_protected()
 @role_required(["agent"])
 def process_agent_transaction():
     user_id = get_jwt_identity()
@@ -382,6 +391,7 @@ def process_agent_transaction():
 # ✅ API: Fetch Agent's Transaction History
 @agent_bp.route('/agent/transactions', methods=['GET'])
 @jwt_required()
+@session_protected()
 @role_required(['agent'])
 def get_agent_transactions():
     agent_id = int(get_jwt_identity())
@@ -488,6 +498,7 @@ def get_agent_transactions():
 # ✅ API: Fetch Agent Wallet Info
 @agent_bp.route("/agent/wallet", methods=["GET"])
 @jwt_required()
+@session_protected()
 @role_required(["agent"])
 def agent_wallet():
     """Return agent's wallet balance, ensuring deposits are restricted"""
@@ -898,83 +909,130 @@ def reject_user_withdrawal(transaction_id):
 
 
 # SIM SWAPPING
-@agent_bp.route("/agent/swap-sim", methods=["POST"])
+# @agent_bp.route("/agent/swap-sim", methods=["POST"])
+# @jwt_required()
+# @role_required(["agent"])
+# def swap_sim():
+#     data = request.get_json()
+
+#     old_iccid = data.get("old_iccid")
+#     new_iccid = data.get("new_iccid")
+#     network_provider = data.get("network_provider")
+#     location = data.get("location", "Unknown")
+
+#     if not old_iccid or not new_iccid or not network_provider:
+#         return jsonify({"error": "Missing required fields"}), 400
+
+#     agent_id = int(get_jwt_identity())
+
+#     # ✅ 1. Validate old SIM
+#     old_sim = SIMCard.query.filter_by(iccid=old_iccid).first()
+#     if not old_sim or old_sim.status != "active":
+#         return jsonify({"error": "Old SIM not found or not active"}), 404
+
+#     # ✅ 2. Validate new SIM
+#     new_sim = SIMCard.query.filter_by(iccid=new_iccid).first()
+#     if not new_sim:
+#         return jsonify({"error": "The selected new ICCID does not exist in the system."}), 404
+#     if new_sim.status != "unregistered":
+#         return jsonify({"error": "The selected ICCID is not available for activation."}), 400
+
+#     # ✅ 3. Enforce same network provider
+#     if old_sim.network_provider != new_sim.network_provider:
+#         return jsonify({
+#             "error": f"SIM swap denied: Cannot swap from {old_sim.network_provider} to {new_sim.network_provider}."
+#         }), 400
+
+#     # ✅ 4. Prevent frequent swaps of same number
+#     recent_swap = SIMCard.query.filter_by(
+#         mobile_number=old_sim.mobile_number,
+#         status="swapped"
+#     ).order_by(SIMCard.registration_date.desc()).first()
+
+#     if recent_swap:
+#         time_since_last = datetime.utcnow() - recent_swap.registration_date
+#         if time_since_last.total_seconds() < 120:
+#             return jsonify({"error": "SIM was recently swapped. Please wait before swapping again."}), 429
+
+#     # ✅ 5. Backup mobile number
+#     old_mobile_number = old_sim.mobile_number
+
+#     # ✅ 6. Mark old SIM as swapped
+#     old_sim.status = "swapped"
+#     old_sim.mobile_number = f"SWP_{int(datetime.utcnow().timestamp())}"
+
+#     # ✅ 7. Assign new SIM
+#     new_sim.status = "active"
+#     new_sim.user_id = old_sim.user_id
+#     new_sim.mobile_number = old_mobile_number
+#     new_sim.registration_date = datetime.utcnow()
+#     new_sim.registered_by = str(agent_id)  # For tracking in history
+
+#     # ✅ 8. Log real-time
+#     rt_log = RealTimeLog(
+#         user_id=agent_id,
+#         action=f"🔄 SIM swapped for {old_mobile_number}: {old_iccid} ➡️ {new_iccid}",
+#         ip_address=request.remote_addr,
+#         device_info=request.headers.get("User-Agent", "Unknown"),
+#         location=location,
+#         risk_alert=True,
+#         tenant_id=1
+#     )
+
+#     db.session.add(rt_log)
+#     db.session.commit()
+
+#     return jsonify({
+#         "message": "🔄 SIM swap successful",
+#         "mobile_number": old_mobile_number,
+#         "old_iccid": old_iccid,
+#         "new_iccid": new_iccid
+#     }), 200
+
+@agent_bp.route("/agent/request-sim-swap", methods=["POST"])
 @jwt_required()
 @role_required(["agent"])
-def swap_sim():
+def request_sim_swap():
     data = request.get_json()
-
     old_iccid = data.get("old_iccid")
     new_iccid = data.get("new_iccid")
-    network_provider = data.get("network_provider")
     location = data.get("location", "Unknown")
+    agent_id = get_jwt_identity()
 
-    if not old_iccid or not new_iccid or not network_provider:
-        return jsonify({"error": "Missing required fields"}), 400
-
-    agent_id = int(get_jwt_identity())
-
-    # ✅ 1. Validate old SIM
+    # Step 1: Validate both SIMs
     old_sim = SIMCard.query.filter_by(iccid=old_iccid).first()
-    if not old_sim or old_sim.status != "active":
-        return jsonify({"error": "Old SIM not found or not active"}), 404
-
-    # ✅ 2. Validate new SIM
     new_sim = SIMCard.query.filter_by(iccid=new_iccid).first()
-    if not new_sim:
-        return jsonify({"error": "The selected new ICCID does not exist in the system."}), 404
-    if new_sim.status != "unregistered":
-        return jsonify({"error": "The selected ICCID is not available for activation."}), 400
 
-    # ✅ 3. Enforce same network provider
+    if not old_sim or not new_sim:
+        return jsonify({"error": "SIM not found"}), 404
+    if old_sim.status != "active" or new_sim.status != "unregistered":
+        return jsonify({"error": "SIM status invalid"}), 400
     if old_sim.network_provider != new_sim.network_provider:
-        return jsonify({
-            "error": f"SIM swap denied: Cannot swap from {old_sim.network_provider} to {new_sim.network_provider}."
-        }), 400
+        return jsonify({"error": "Mismatched network providers"}), 400
 
-    # ✅ 4. Prevent frequent swaps of same number
-    recent_swap = SIMCard.query.filter_by(
-        mobile_number=old_sim.mobile_number,
-        status="swapped"
-    ).order_by(SIMCard.registration_date.desc()).first()
+    user_id = old_sim.user_id
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found for old SIM"}), 404
 
-    if recent_swap:
-        time_since_last = datetime.utcnow() - recent_swap.registration_date
-        if time_since_last.total_seconds() < 120:
-            return jsonify({"error": "SIM was recently swapped. Please wait before swapping again."}), 429
+    # Step 2: Generate token and save pending swap
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
 
-    # ✅ 5. Backup mobile number
-    old_mobile_number = old_sim.mobile_number
-
-    # ✅ 6. Mark old SIM as swapped
-    old_sim.status = "swapped"
-    old_sim.mobile_number = f"SWP_{int(datetime.utcnow().timestamp())}"
-
-    # ✅ 7. Assign new SIM
-    new_sim.status = "active"
-    new_sim.user_id = old_sim.user_id
-    new_sim.mobile_number = old_mobile_number
-    new_sim.registration_date = datetime.utcnow()
-    new_sim.registered_by = str(agent_id)  # For tracking in history
-
-    # ✅ 8. Log real-time
-    rt_log = RealTimeLog(
-        user_id=agent_id,
-        action=f"🔄 SIM swapped for {old_mobile_number}: {old_iccid} ➡️ {new_iccid}",
-        ip_address=request.remote_addr,
-        device_info=request.headers.get("User-Agent", "Unknown"),
-        location=location,
-        risk_alert=True,
-        tenant_id=1
+    pending = PendingSIMSwap(
+        token_hash=token_hash,
+        user_id=user_id,
+        old_iccid=old_iccid,
+        new_iccid=new_iccid,
+        requested_by=str(agent_id),
+        expires_at=datetime.utcnow() + timedelta(minutes=15)
     )
-
-    db.session.add(rt_log)
+    db.session.add(pending)
     db.session.commit()
 
-    return jsonify({
-        "message": "🔄 SIM swap successful",
-        "mobile_number": old_mobile_number,
-        "old_iccid": old_iccid,
-        "new_iccid": new_iccid
-    }), 200
+    # Step 3: Send email
+    send_sim_swap_verification_email(user, raw_token)
 
+    return jsonify({
+        "message": "🔐 A verification email has been sent to the user. Awaiting approval."
+    }), 200

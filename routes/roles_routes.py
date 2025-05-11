@@ -1,11 +1,13 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from models.models import db, User, UserRole, UserAccessControl
+from utils.decorators import session_protected
 
 roles_bp = Blueprint('roles', __name__)
 
 @roles_bp.route('/roles', methods=['GET'])
 @jwt_required()
+@session_protected()
 def get_roles():
     roles = UserRole.query.all()
     roles_data = [{
@@ -17,6 +19,7 @@ def get_roles():
 
 @roles_bp.route('/user/<int:user_id>', methods=['GET'])
 @jwt_required()
+@session_protected()
 def get_user_role(user_id):
     user_access = UserAccessControl.query.filter_by(user_id=user_id).first()
     if not user_access:
@@ -28,6 +31,7 @@ def get_user_role(user_id):
 
 @roles_bp.route('/assign_role', methods=['POST'])
 @jwt_required()
+@session_protected()
 def assign_role():
     data = request.get_json()
     user_id = data.get("user_id")

@@ -21,6 +21,7 @@ from datetime import datetime
 from threading import Timer
 from utils.auth_decorators import require_full_mfa
 from datetime import datetime, timedelta
+from utils.decorators import session_protected
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -75,6 +76,7 @@ def finalize_reversal(app, reversal_id, sender_wallet_id, amount):
 #Admin Dashboard
 @admin_bp.route('/admin/dashboard')
 @jwt_required()
+@session_protected()
 @role_required(['admin'])
 @require_full_mfa
 def admin_dashboard():
@@ -100,6 +102,7 @@ def admin_dashboard():
 # ✅ List all users (Admin Only)
 @admin_bp.route("/admin/users", methods=["GET"])
 @jwt_required()
+@session_protected()
 @role_required(["admin"])
 def get_all_users():
     """Only admins can view all users"""
@@ -135,6 +138,7 @@ def get_all_users():
 # ✅ Assign Role to User (Fixed for New Approach)
 @admin_bp.route("/admin/assign_role", methods=["POST"])
 @jwt_required()
+@session_protected()
 @role_required(["admin"])
 def assign_role():
     """Admins assign roles to users"""
@@ -182,6 +186,7 @@ def assign_role():
 # Suspend the user
 @admin_bp.route("/admin/suspend_user/<int:user_id>", methods=["PUT"])
 @jwt_required()
+@session_protected()
 @role_required(["admin"])
 def suspend_user(user_id):
     """Suspend a user by setting is_active=False and marking for deletion."""
@@ -224,6 +229,7 @@ def suspend_user(user_id):
 # verify or restore the user account
 @admin_bp.route("/admin/verify_user/<int:user_id>", methods=["PUT"])
 @jwt_required()
+@session_protected()
 @role_required(["admin"])
 def verify_user(user_id):
     """Verify a user by reactivating their account and canceling the deletion request."""
@@ -264,6 +270,7 @@ def verify_user(user_id):
 # Permanent deletion of the user
 @admin_bp.route("/admin/delete_user/<int:user_id>", methods=["DELETE"])
 @jwt_required()
+@session_protected()
 @role_required(["admin"])
 def delete_user(user_id):
     """Permanently delete a user and all associated records after a deletion request."""
@@ -320,6 +327,7 @@ def delete_user(user_id):
 # ✅ Admin Updates a User's Information
 @admin_bp.route("/admin/edit_user/<int:user_id>", methods=["PUT"])
 @jwt_required()
+@session_protected()
 @role_required(["admin"])
 def edit_user(user_id):
     """Allow an admin to edit user details, including email & SIM-linked mobile number."""
@@ -404,6 +412,7 @@ def generate_unique_iccid():
 # 📌 ✅ API: Generate New SIM for User Registration
 @admin_bp.route("/admin/generate_sim", methods=["GET"])
 @jwt_required()
+@session_protected()
 @role_required(["admin"])
 def generate_sim():
     """Admin generates a new SIM card for a user."""
@@ -451,6 +460,7 @@ def generate_sim():
 # View User Details
 @admin_bp.route("/admin/view_user/<int:user_id>", methods=["GET"])
 @jwt_required()
+@session_protected()
 def view_user(user_id):
     """Admin views user details and action buttons based on status."""
 
@@ -500,6 +510,7 @@ def view_user(user_id):
 # Sending froats to agents
 @admin_bp.route('/admin/fund-agent', methods=['POST'])
 @jwt_required()
+@session_protected()
 @role_required(['admin'])
 def fund_agent():
     data = request.get_json()
@@ -582,6 +593,7 @@ def fund_agent():
 # HeadQuater's Balance
 @admin_bp.route('/admin/hq-balance', methods=['GET'])
 @jwt_required()
+@session_protected()
 @role_required(['admin'])
 def get_hq_balance():
     hq_wallet = HeadquartersWallet.query.first()
@@ -592,6 +604,7 @@ def get_hq_balance():
 
 @admin_bp.route('/admin/float-history', methods=['GET'])
 @jwt_required()
+@session_protected()
 @role_required(['admin'])
 def float_history():
     transactions = Transaction.query.filter_by(transaction_type='float_received').order_by(Transaction.timestamp.desc()).limit(20).all()
@@ -611,6 +624,7 @@ def float_history():
 # FLagged Transactions
 @admin_bp.route('/admin/flagged-transactions', methods=['GET'])
 @jwt_required()
+@session_protected()
 def get_flagged_transactions():
     flagged = Transaction.query.filter_by(fraud_flag=True).order_by(Transaction.timestamp.desc()).all()
     result = []
@@ -631,6 +645,7 @@ def get_flagged_transactions():
 # Real time Logs
 @admin_bp.route("/admin/real-time-logs", methods=["GET"])
 @jwt_required()
+@session_protected()
 @role_required(["admin"])
 def get_real_time_logs():
     logs = RealTimeLog.query.order_by(RealTimeLog.timestamp.desc()).limit(50).all()
@@ -652,6 +667,7 @@ def get_real_time_logs():
 
 @admin_bp.route('/admin/user-auth-logs', methods=['GET'])
 @jwt_required()
+@session_protected()
 def get_user_auth_logs():
     logs = UserAuthLog.query.order_by(UserAuthLog.auth_timestamp.desc()).limit(100).all()
     result = []
@@ -671,6 +687,7 @@ def get_user_auth_logs():
 
 @admin_bp.route('/admin/unlock-user/<int:user_id>', methods=['PATCH'])
 @jwt_required()
+@session_protected()
 @role_required(['admin'])
 def unlock_user(user_id):
     user = User.query.get(user_id)
@@ -706,6 +723,7 @@ def unlock_user(user_id):
 # Admin View all transactions
 @admin_bp.route("/admin/all-transactions", methods=["GET"])
 @jwt_required()
+@session_protected()
 @role_required(["admin"])
 def all_transactions():
     transactions = Transaction.query.order_by(Transaction.timestamp.desc()).all()
@@ -730,6 +748,7 @@ def all_transactions():
 # ✅ ROUTE (cleaned + safe)
 @admin_bp.route("/admin/reverse-transfer/<int:transaction_id>", methods=["POST"])
 @jwt_required()
+@session_protected()
 @role_required(["admin"])
 def reverse_transfer(transaction_id):
     transaction = Transaction.query.get(transaction_id)
@@ -818,6 +837,7 @@ def reverse_transfer(transaction_id):
 # Admin Metrics
 @admin_bp.route("/api/admin/metrics")
 @jwt_required()
+@session_protected()
 def admin_dashboard_metrics():
     from flask import request
     from sqlalchemy import text
@@ -967,6 +987,7 @@ def admin_dashboard_metrics():
 # Tenants Registration
 @admin_bp.route('/register-tenant', methods=['POST'])
 @jwt_required()
+@session_protected()
 def register_tenant():
     user = User.query.get(get_jwt_identity())
     if not user:

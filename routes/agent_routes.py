@@ -6,6 +6,7 @@ import random
 import json
 from datetime import datetime, timedelta
 from utils.auth_decorators import require_full_mfa
+from utils.decorators import session_protected
 import secrets
 import hashlib
 from utils.email_alerts import send_sim_swap_verification_email
@@ -610,6 +611,7 @@ def view_sim(iccid):
 
 @agent_bp.route("/agent/activate_sim", methods=["POST"])
 @jwt_required()
+@session_protected()
 def activate_sim():
     
     data = request.get_json()

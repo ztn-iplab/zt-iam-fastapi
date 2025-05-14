@@ -75,18 +75,20 @@ import hashlib
 from flask import request, has_request_context
 
 def get_request_fingerprint():
-    """
-    Generates a secure fingerprint for the request to defend against session hijacking.
-    This uses IP and normalized User-Agent. Can be extended to include cookies, language, or device hints.
-    """
     if not has_request_context():
         return "no-request-context"
 
-    # Prefer X-Forwarded-For if behind reverse proxy (optional)
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+    # 🛡 Trust real client IP forwarded by NGINX
+    ip = (
+        request.headers.get("X-Real-IP")
+        or request.headers.get("X-Forwarded-For")
+        or request.remote_addr
+        or "unknown"
+    )
+
     ua = request.headers.get("User-Agent", "unknown").lower().strip()
 
-    # Normalize and hash
     raw_fp = f"{ip}|{ua}"
     return hashlib.sha256(raw_fp.encode()).hexdigest()
+
 

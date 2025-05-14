@@ -1,0 +1,11 @@
+s_venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.log
+*.crt
+*.key
+.git/
+.env

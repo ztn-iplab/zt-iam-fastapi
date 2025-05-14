@@ -138,7 +138,7 @@ def get_all_users():
 # ✅ Assign Role to User (Fixed for New Approach)
 @admin_bp.route("/admin/assign_role", methods=["POST"])
 @jwt_required()
-@session_protected()
+# @session_protected()
 @role_required(["admin"])
 def assign_role():
     """Admins assign roles to users"""

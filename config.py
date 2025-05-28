@@ -4,8 +4,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    # SQLALCHEMY_DATABASE_URI = "postgresql://ztn:ztn%40sim@localhost:5432/ztn_db"
-    SQLALCHEMY_DATABASE_URI = "postgresql://ztn:ztn%40sim@db:5432/ztn_db"
+    # SQLALCHEMY_DATABASE_URI = "postgresql://ztn:ztn%40sim@localhost:5432/ztn_db" #for normal localhost
+    #SQLALCHEMY_DATABASE_URI = "postgresql://ztn:ztn%40sim@db:5432/ztn_db" #for docker
+    SQLALCHEMY_DATABASE_URI = "postgresql://ztn:ztn%40sim@10.88.0.2:5432/ztn_db" #for podman
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
     JWT_ACCESS_COOKIE_NAME= 'access_token_cookie'

@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:14
+    image: docker.io/library/postgres:14
     container_name: ztn_db
     environment:
       POSTGRES_USER: ztn
@@ -10,12 +10,15 @@ services:
       POSTGRES_DB: ztn_db
     volumes:
       - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - ztn_net
 
   ztn_app:
     build: .
     container_name: ztn_momo_app
     expose:
-      - "8000"                     # Internal access only
+      - "8000"
     env_file:
       - .env
     depends_on:
@@ -24,9 +27,11 @@ services:
       - ./certs:/etc/ssl/certs:ro
       - ./private:/etc/ssl/private:ro
     restart: unless-stopped
+    networks:
+      - ztn_net
 
   nginx:
-    image: nginx:alpine
+    image: docker.io/library/nginx:alpine
     container_name: ztn_nginx
     ports:
       - "443:443"
@@ -37,6 +42,12 @@ services:
       - ./certs:/etc/ssl/certs:ro
       - ./private:/etc/ssl/private:ro
     restart: unless-stopped
+    networks:
+      - ztn_net
 
 volumes:
   pgdata:
+
+networks:
+  ztn_net:
+    name: ztn_ms_default

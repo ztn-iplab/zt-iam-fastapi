@@ -1,9 +1,10 @@
+import os
 import logging
 
-# ==========================
-# 🔐 ZTN_MoMo Logging Setup
-# ==========================
-ztn_log_path = '/var/log/ztn_momo.log'
+log_dir = os.path.join(os.path.dirname(__file__), '..', 'logs')
+os.makedirs(log_dir, exist_ok=True)
+
+ztn_log_path = os.path.abspath(os.path.join(log_dir, 'ztn_momo.log'))
 
 app_logger = logging.getLogger('ztn_momo')
 app_logger.setLevel(logging.INFO)
@@ -17,7 +18,4 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 app_logger.addHandler(console_handler)
 
-# Test log to verify setup
 app_logger.info("✅ Logging to ztn_momo.log initialized.")
-app_logger.info("[ZTN_MOMO_TEST] Confirming visibility in Wazuh dashboard.")
-

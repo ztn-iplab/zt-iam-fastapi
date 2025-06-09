@@ -35,11 +35,18 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         data = await res.json();
       } catch (jsonErr) {
-        const rawText = await res.text();
-        console.error("❌ Failed to parse JSON:", jsonErr, "\nRaw:", rawText);
-        throw new Error("Unexpected server response. Please try again.");
+        if (!res.ok) {
+          // Server error, likely returned plain text instead of JSON
+          const rawText = await res.text();  // ✅ Only happens if .json() failed
+          console.error("❌ Server returned non-JSON response:", rawText);
+          throw new Error(rawText || "Internal server error. Please try again later.");
+        } else {
+          // JSON parse failed but response was OK — weird case
+          console.error("❌ JSON parse error on valid response:", jsonErr);
+          throw new Error("Unexpected response format.");
+        }
       }
-
+      
       if (!res.ok) {
         throw new Error(
           data.error || "Login failed. Please check your credentials."

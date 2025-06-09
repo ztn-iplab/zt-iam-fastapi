@@ -19,22 +19,22 @@ def is_strong_password(password):
         re.search(r'[!@#$%^&*(),.?":{}|<>]', password)
     )
 
-# ✅ Generate a secure random token (for password resets, TOTP resets, etc.)
+# Generate a secure random token (for password resets, TOTP resets, etc.)
 def generate_token():
     return secrets.token_urlsafe(32)
 
 
-# ✅ Securely hash a token before saving it to the DB
+# Securely hash a token before saving it to the DB
 def hash_token(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-# ✅ Verify that a raw token matches the hashed token from the DB
+# Verify that a raw token matches the hashed token from the DB
 def verify_token(token, hashed):
     return hash_token(token) == hashed
 
 
-# ✅ TOTP Verification: Verifies the TOTP input against the user's secret
+# TOTP Verification: Verifies the TOTP input against the user's secret
 def verify_totp(user, otp_input):
     if not user.otp_secret:
         return False
@@ -44,7 +44,7 @@ def verify_totp(user, otp_input):
         return False
 
 
-# 🧠 Placeholder for fallback verification (SMS/WebAuthn/Device Fingerprint)
+# Placeholder for fallback verification (SMS/WebAuthn/Device Fingerprint)
 def verify_secondary_method(user):
     """
     For ZTN-based secondary verification fallback. You can enhance this:
@@ -78,7 +78,7 @@ def get_request_fingerprint():
     if not has_request_context():
         return "no-request-context"
 
-    # 🛡 Trust real client IP forwarded by NGINX
+    # Trust real client IP forwarded by NGINX
     ip = (
         request.headers.get("X-Real-IP")
         or request.headers.get("X-Forwarded-For")

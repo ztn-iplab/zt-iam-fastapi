@@ -6,6 +6,7 @@ def generate_totp_secret():
 def get_totp_uri(secret, email, issuer="ZTN_MOMO_SIM"):
     return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name=issuer)
 
-def verify_totp_code(secret, code):
+def verify_totp_code(secret, code, valid_window=0):
     totp = pyotp.TOTP(secret)
-    return totp.verify(code)
+    return totp.verify(code, valid_window=valid_window)
+

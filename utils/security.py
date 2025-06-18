@@ -7,6 +7,8 @@ from utils.location import get_ip_location
 import os
 import base64
 import re
+import hashlib
+from flask import request, has_request_context
 
 
 def is_strong_password(password):
@@ -71,8 +73,7 @@ def generate_challenge():
 
 
 
-import hashlib
-from flask import request, has_request_context
+
 
 def get_request_fingerprint():
     if not has_request_context():

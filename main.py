@@ -21,7 +21,7 @@ from extensions import mail
 import os
 from utils.logger import app_logger
 from werkzeug.middleware.proxy_fix import ProxyFix
-
+from flask_cors import CORS
 
 # ==========================
 # 🔧 Flask App Setup
@@ -31,6 +31,7 @@ app.config.from_object(Config)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
+CORS(app, supports_credentials=True, origins=["https://127.0.0.1:5000"])
 jwt = JWTManager(app)
 mail.init_app(app) 
 

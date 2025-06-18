@@ -160,6 +160,10 @@ class UserAccessControl(db.Model):
     role_id = db.Column(db.Integer, db.ForeignKey('user_roles.id'), nullable=False)
     access_level = db.Column(db.String(20), default='read')  # read, write, admin
 
+    # 🔥 Fix: Define the relationship to access role.role_name
+    role = db.relationship('UserRole', backref='user_access_controls')
+
+
 # 📌 Real-Time Logs (Tracks User Behavior & Security)
 class RealTimeLog(db.Model):
     __tablename__ = 'real_time_logs'
@@ -197,6 +201,7 @@ class WebAuthnCredential(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False) 
     credential_id = db.Column(db.LargeBinary, unique=True, nullable=False)
     public_key = db.Column(db.LargeBinary, nullable=False)
     sign_count = db.Column(db.Integer, default=0)
@@ -228,6 +233,18 @@ class PasswordHistory(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.now())
 
+class PendingTOTP(db.Model):
+    __tablename__ = 'pending_totps'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    tenant_id = db.Column(db.Integer, nullable=False)
+    secret = db.Column(db.String(32), nullable=False)
+    email = db.Column(db.String(255), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'tenant_id', name='uq_user_tenant_pending_totp'),
+    )
 
 # =====================================
 #          For Tenants
@@ -241,6 +258,10 @@ class TenantUser(db.Model):
     company_email = db.Column(db.String(120), nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # 🔐 New: Per-tenant TOTP
+    otp_secret = db.Column(db.String(64), nullable=True)
+    otp_email_label = db.Column(db.String(120), nullable=True)
 
     tenant = db.relationship('Tenant', backref='tenant_users')
     user = db.relationship('User', backref='tenant_profiles')

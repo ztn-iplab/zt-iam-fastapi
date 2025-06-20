@@ -30,6 +30,7 @@ from fido2.webauthn import (
 import json
 from utils.api_key import require_api_key
 from utils.totp import verify_totp_code
+from fido2 import cbor
 
 
 
@@ -40,6 +41,24 @@ iam_api_bp = Blueprint('iam_api', __name__, url_prefix='/api/v1/auth')
 rp = PublicKeyCredentialRpEntity(id="localhost.localdomain", name="ZTN Local")
 server = Fido2Server(rp)
 
+def jsonify_webauthn(data):
+    """
+    Recursively convert bytes in publicKeyCredentialCreationOptions to base64url-encoded strings.
+    This is needed because WebAuthn spec uses ArrayBuffers which must be encoded for JSON.
+    """
+    import base64
+
+    def convert(value):
+        if isinstance(value, bytes):
+            return base64.urlsafe_b64encode(value).rstrip(b'=').decode('utf-8')
+        elif isinstance(value, dict):
+            return {k: convert(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [convert(v) for v in value]
+        else:
+            return value
+
+    return convert(data)
 
 @iam_api_bp.route('/register', methods=['POST'])
 @require_api_key
@@ -557,8 +576,8 @@ def verify_totp_login():
     location = get_ip_location(ip_address)
 
     # 🔐 Dev-only logs (remove before production)
-    print("📟 Expected TOTP:", pyotp.TOTP(tenant_user.otp_secret).now())
-    print("📥 Provided TOTP:", totp_code)
+    # print("📟 Expected TOTP:", pyotp.TOTP(tenant_user.otp_secret).now())
+    # print("📥 Provided TOTP:", totp_code)
 
     # 🔒 Lockout check
     if user.locked_until and user.locked_until > datetime.utcnow():
@@ -735,21 +754,17 @@ def begin_webauthn_registration():
     user_id = get_jwt_identity()
     tenant_id = g.tenant.id
 
-    # 🔒 Get user and confirm existence
+    # 🔒 Load user
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found."}), 404
 
-    # 🔒 Confirm user is associated with this tenant
-    tenant_user = TenantUser.query.filter_by(
-        user_id=user.id,
-        tenant_id=tenant_id
-    ).first()
-
+    # 🔒 Ensure tenant match
+    tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=tenant_id).first()
     if not tenant_user:
         return jsonify({"error": "Unauthorized"}), 403
 
-    # 🔐 Fetch tenant-scoped WebAuthn credentials to exclude from re-registration
+    # 🛡️ Exclude tenant-specific credentials
     credentials = [
         {
             "id": c.credential_id,
@@ -760,7 +775,7 @@ def begin_webauthn_registration():
     ]
 
     try:
-        # 🔧 Initiate tenant-aware WebAuthn registration
+        # 🔐 Begin WebAuthn registration
         registration_data, state = server.register_begin(
             {
                 "id": str(user.id).encode(),
@@ -770,20 +785,20 @@ def begin_webauthn_registration():
             credentials
         )
 
-        session['webauthn_register_state'] = state
-        session['webauthn_register_user_id'] = user.id
-        session['webauthn_register_tenant_id'] = tenant_id  # ✅ Save tenant scope
-
+        # ✅ JSONify registration options
         public_key = jsonify_webauthn(registration_data["publicKey"])
 
+        # ✅ Return both publicKey and state in response
         return jsonify({
-            "public_key": public_key
+            "public_key": public_key,
+            "state": state  # 🔥 Send state to client
         }), 200
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"error": "Server failed to prepare WebAuthn registration."}), 500
+
 
 
 
@@ -796,30 +811,24 @@ def complete_webauthn_registration():
         user_id = get_jwt_identity()
         tenant_id = g.tenant.id
 
+        # 🔍 Load user + tenant context
         user = User.query.get(user_id)
         if not user:
             return jsonify({"error": "User not found."}), 404
 
-        # 🛡️ Ensure user belongs to this tenant
-        tenant_user = TenantUser.query.filter_by(
-            user_id=user.id,
-            tenant_id=tenant_id
-        ).first()
+        tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=tenant_id).first()
         if not tenant_user:
             return jsonify({"error": "Unauthorized"}), 403
 
-        # 🧠 Ensure session state is valid
-        state = session.get('webauthn_register_state')
-        session_user_id = session.get('webauthn_register_user_id')
-
-        if not state or session_user_id != user.id:
-            return jsonify({"error": "WebAuthn registration session is invalid or expired."}), 400
-
         data = request.get_json()
-        if data["id"] != data["rawId"]:
-            return jsonify({"error": "id does not match rawId"}), 400
 
-        # 📥 Wrap response
+        if not data or "state" not in data:
+            return jsonify({"error": "Missing WebAuthn registration state."}), 400
+
+        if data["id"] != data["rawId"]:
+            return jsonify({"error": "Credential ID mismatch."}), 400
+
+        # 🧩 Wrap response data
         response = {
             "id": data["id"],
             "rawId": data["rawId"],
@@ -830,12 +839,12 @@ def complete_webauthn_registration():
             }
         }
 
-        # ✅ Finish registration
-        auth_data = server.register_complete(state, response)
+        # 🔐 Finalize registration with the passed state
+        auth_data = server.register_complete(data["state"], response)
         cred_data = auth_data.credential_data
         public_key_bytes = cbor.encode(cred_data.public_key)
 
-        # 💾 Save credential with tenant info
+        # 💾 Save the credential
         credential = WebAuthnCredential(
             user_id=user.id,
             tenant_id=tenant_id,
@@ -846,15 +855,11 @@ def complete_webauthn_registration():
         )
         db.session.add(credential)
 
-        # 🧹 Cleanup session
-        session.pop('webauthn_register_state', None)
-        session.pop('webauthn_register_user_id', None)
-
-        # 🛡️ Audit log
+        # 📘 Audit log
         db.session.add(RealTimeLog(
             user_id=user.id,
             tenant_id=tenant_id,
-            action="✅ WebAuthn credential registered successfully",
+            action="✅ WebAuthn credential registered",
             ip_address=request.remote_addr,
             device_info="IAMaaS API Access",
             location=get_ip_location(request.remote_addr),
@@ -870,7 +875,9 @@ def complete_webauthn_registration():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": f"Registration failed: {str(e)}"}), 500
+        return jsonify({
+            "error": f"Registration failed: {str(e)}"
+        }), 500
 
 
 # Tenat User Assertion begin
@@ -879,16 +886,14 @@ def complete_webauthn_registration():
 @require_api_key
 def begin_webauthn_assertion():
     try:
-        from fido2.webauthn import PublicKeyCredentialRequestOptions
-
         user_id = get_jwt_identity()
         tenant_id = g.tenant.id
 
+        # 🧍 Fetch user and confirm tenant membership
         user = User.query.get(user_id)
         if not user:
-            return jsonify({"error": "User not found."}), 404
+            return jsonify({"error": "User not found"}), 404
 
-        # 🛡️ Ensure the user is part of this tenant
         tenant_user = TenantUser.query.filter_by(
             user_id=user.id,
             tenant_id=tenant_id
@@ -896,67 +901,83 @@ def begin_webauthn_assertion():
         if not tenant_user:
             return jsonify({"error": "Unauthorized"}), 403
 
-        # 🔐 Only use credentials for this tenant
+        # 📦 Only get WebAuthn credentials tied to this tenant
         tenant_credentials = WebAuthnCredential.query.filter_by(
             user_id=user.id,
             tenant_id=tenant_id
         ).all()
 
         if not tenant_credentials:
-            return jsonify({"error": "No registered WebAuthn credentials for this tenant."}), 404
+            return jsonify({"error": "No registered WebAuthn credentials found."}), 404
 
-        # 🔄 Prepare credentials list
         credentials = [
             {
                 "id": cred.credential_id,
-                "transports": cred.transports.split(',') if cred.transports else [],
-                "type": "public-key"
+                "type": "public-key",
+                "transports": cred.transports.split(',') if cred.transports else []
             }
             for cred in tenant_credentials
         ]
 
-        # 🚀 Begin authentication challenge
+        # 🔐 Generate challenge
         assertion_data, state = server.authenticate_begin(credentials)
 
-        # 🧠 Store state for assertion completion
         session["webauthn_assertion_state"] = state
         session["assertion_user_id"] = user.id
+        session["assertion_tenant_id"] = tenant_id
         session["mfa_webauthn_verified"] = False
 
-        # 📦 Reformat `publicKey` options for frontend
-        options: PublicKeyCredentialRequestOptions = assertion_data.public_key
-
-        public_key_dict = {
-            "challenge": websafe_encode(options.challenge),
-            "rpId": options.rp_id,
+        public_key = assertion_data.public_key
+        response_payload = {
+            "challenge": websafe_encode(public_key.challenge),
+            "rpId": public_key.rp_id,
+            "userVerification": public_key.user_verification,
+            "timeout": public_key.timeout,
             "allowCredentials": [
                 {
                     "type": c.type.value,
                     "id": websafe_encode(c.id),
                     "transports": [t.value for t in c.transports] if c.transports else []
-                }
-                for c in options.allow_credentials or []
-            ],
-            "userVerification": options.user_verification,
-            "timeout": options.timeout,
+                } for c in (public_key.allow_credentials or [])
+            ]
         }
 
-        return jsonify({"public_key": public_key_dict}), 200
+        return jsonify({
+            "public_key": response_payload,
+            "state": state,
+            "user_id": user.id
+        }), 200
+
+
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"Assertion begin failed: {str(e)}"}), 500
 
+
 # Tenant User Webauthn Assertion complete
 @iam_api_bp.route('/webauthn/assertion-complete', methods=['POST'])
-@jwt_required()
+@jwt_required(locations=["headers"])
 @require_api_key
 def complete_webauthn_assertion():
     from fido2.utils import websafe_decode
 
     try:
         data = request.get_json()
+        
+        # 🩹 Restore session manually (if using API call with JWT)
+        if "webauthn_assertion_state" not in session or "assertion_user_id" not in session:
+            user_id = get_jwt_identity()
+            user = User.query.get(user_id)
+            if not user:
+                return jsonify({"error": "User not found."}), 404
+
+            # 🧠 Restore manually
+            session["assertion_user_id"] = user.id
+            session["webauthn_assertion_state"] = data.get("state")
+        
+        # ✅ Now fetch the restored values
         state = session.get("webauthn_assertion_state")
         user_id = session.get("assertion_user_id")
         tenant_id = g.tenant.id
@@ -964,16 +985,18 @@ def complete_webauthn_assertion():
         if not state or not user_id:
             return jsonify({"error": "No assertion in progress."}), 400
 
+        # ✅ Unpack and rebuild valid state
+        state = {
+            "challenge": state.get("challenge"),
+            "user_verification": state.get("user_verification")
+        }
+
+
         user = User.query.get(user_id)
         if not user:
             return jsonify({"error": "User not found."}), 404
 
-        # 🛡️ Confirm user-tenant relationship
-        tenant_user = TenantUser.query.filter_by(
-            user_id=user.id,
-            tenant_id=tenant_id
-        ).first()
-
+        tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=tenant_id).first()
         if not tenant_user:
             return jsonify({"error": "Unauthorized."}), 403
 
@@ -988,11 +1011,9 @@ def complete_webauthn_assertion():
         location = get_ip_location(ip_address)
         device_info = "IAMaaS API Access"
 
-        # 🔒 Lockout check
         if user.locked_until and user.locked_until > datetime.utcnow():
             return jsonify({"error": f"WebAuthn locked. Try again after {user.locked_until}"}), 429
 
-        # ❌ No credential found
         if not credential:
             threshold_time = datetime.utcnow() - timedelta(minutes=5)
             fail_count = UserAuthLog.query.filter_by(
@@ -1045,41 +1066,69 @@ def complete_webauthn_assertion():
             db.session.commit()
             return jsonify({"error": "Invalid WebAuthn credential."}), 401
 
-        # ✅ Build assertion and verify
-        assertion = {
-            "id": data["credentialId"],
-            "rawId": credential_id,
-            "type": "public-key",
-            "response": {
-                "authenticatorData": websafe_decode(data["authenticatorData"]),
-                "clientDataJSON": websafe_decode(data["clientDataJSON"]),
-                "signature": websafe_decode(data["signature"]),
-                "userHandle": websafe_decode(data["userHandle"]) if data.get("userHandle") else None
+        # 🛡 Ensure data is a proper dictionary
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid request payload. Expected a JSON object."}), 400
+
+        required_keys = {"credentialId", "authenticatorData", "clientDataJSON", "signature"}
+        missing_keys = required_keys - data.keys()
+        if missing_keys:
+            return jsonify({"error": f"Missing fields: {', '.join(missing_keys)}"}), 400
+
+        
+
+       # ✅ Build WebAuthn response object (as dict)
+            assertion = {
+                "id": data["credentialId"],
+                "rawId": websafe_decode(data["credentialId"]),
+                "type": "public-key",
+                "response": {
+                    "authenticatorData": websafe_decode(data["authenticatorData"]),
+                    "clientDataJSON": websafe_decode(data["clientDataJSON"]),
+                    "signature": websafe_decode(data["signature"]),
+                    "userHandle": websafe_decode(data["userHandle"]) if data.get("userHandle") else None
+                }
             }
-        }
 
-        public_key_source = {
-            "id": credential.credential_id,
-            "public_key": credential.public_key,
-            "sign_count": credential.sign_count,
-            "transports": credential.transports.split(",") if credential.transports else [],
-            "user_handle": None
-        }
+            # ✅ Credential from DB
+            public_key_source = {
+                "id": credential.credential_id,
+                "public_key": credential.public_key,
+                "sign_count": credential.sign_count,
+                "transports": credential.transports.split(",") if credential.transports else [],
+                "user_handle": None,
+            }
 
-        # 🔥 Perform authentication
-        server.authenticate_complete(state, assertion, [public_key_source])
+            # ✅ Final auth check (note: NO brackets on `assertion`)
+            server.authenticate_complete(
+                state,
+                assertion,
+                [public_key_source]
+            )
 
-        credential.sign_count += 1
-        db.session.commit()
 
         session["mfa_webauthn_verified"] = True
         session.pop("webauthn_assertion_state", None)
         session.pop("assertion_user_id", None)
 
-        # 🎯 Get role and dashboard
-        access = UserAccessControl.query.filter_by(user_id=user.id).first()
-        role = db.session.get(UserRole, access.role_id).role_name.lower() if access else "user"
+        
+        # ✅ Get tenant-specific role for the user
+        tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=tenant_id).first()
 
+        role = "user"  # default fallback
+        if tenant_user:
+            access = UserAccessControl.query.join(UserRole).filter(
+                UserAccessControl.user_id == tenant_user.user_id,
+                UserRole.id == UserAccessControl.role_id,
+                UserRole.tenant_id == tenant_id
+            ).first()
+
+            if access and access.role:
+                role = access.role.role_name.lower()
+
+        print("🧪 Resolved tenant role:", role)
+
+        # ✅ Dashboard resolution
         if tenant_id == 1:
             urls = {
                 "admin": url_for("admin.admin_dashboard", _external=True),
@@ -1088,9 +1137,12 @@ def complete_webauthn_assertion():
             }
             dashboard_url = urls.get(role, url_for("user.user_dashboard", _external=True))
         else:
-            dashboard_url = f"https://{g.tenant.name.lower()}.yourdomain.com/dashboard"
+            if "localhost" in request.host or "127.0.0.1" in request.host:
+                dashboard_url = f"https://localhost.localdomain:5000/{role}/dashboard"
+            else:
+                dashboard_url = f"https://{g.tenant.name.lower()}.yourdomain.com/{role}/dashboard"
 
-        # 📟 Determine method
+
         transports = credential.transports.split(",") if credential.transports else []
         if "hybrid" in transports:
             method = "cross-device passkey"
@@ -1101,7 +1153,6 @@ def complete_webauthn_assertion():
         else:
             method = "unknown method"
 
-        # 📋 Log successful login
         db.session.add(RealTimeLog(
             user_id=user.id,
             tenant_id=tenant_id,
@@ -1134,7 +1185,9 @@ def complete_webauthn_assertion():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": f"❌ Assertion failed: {str(e)}"}), 500
+        return jsonify({
+            "error": f"❌ Assertion failed: {str(e)}"
+        }), 500
 
 
 # ///////////////////////////////////

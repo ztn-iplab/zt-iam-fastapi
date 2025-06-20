@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, redirect, url_for, send_from_directory, request
+from flask import Flask, render_template, jsonify, redirect, url_for, send_from_directory, request, session
 from config import Config
 from sqlalchemy import text
 from flask_migrate import Migrate
@@ -31,7 +31,7 @@ app.config.from_object(Config)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-CORS(app, supports_credentials=True, origins=["https://127.0.0.1:5000"])
+CORS(app, supports_credentials=True, origins=os.getenv("CORS_ORIGINS", "*").split(","))
 jwt = JWTManager(app)
 mail.init_app(app) 
 
@@ -91,19 +91,24 @@ def not_found_error(error):
     app_logger.warning(f"[404] Resource not found: {request.path}")
     return jsonify({"error": "Resource not found."}), 404
 
-@app.route('/send-test-email')
-def send_test_email():
-    msg = Message(subject="🚀 Flask Mail Test",
-                  recipients=["patrick.mutabazi.pj1@g.ext.naist.jp"],
-                  body="Hey buddy! This is a test email from your Flask app.")
-    mail.send(msg)
-    app_logger.info("[MAIL] Test email sent to patrick.mutabazi.pj1@g.ext.naist.jp")
-    return jsonify({"message": "Test email sent successfully!"})
+@app.after_request
+def ensure_session_saved(response):
+    session.modified = True
+    return response
+    
+@app.before_request
+def sync_access_token_cookie_to_session():
+    if "access_token" not in session:
+        cookie_token = request.cookies.get("access_token_cookie")
+        if cookie_token:
+            session["access_token"] = cookie_token
+
 
 @app.route('/debug-jwt')
 def debug_jwt():
     app_logger.debug(f"[DEBUG] JWT Debug route hit. Cookies: {request.cookies}")
     return "Check your terminal!"
+
 
 # ==========================
 # 🚀 App Main Function

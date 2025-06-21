@@ -869,8 +869,9 @@ def complete_webauthn_registration():
         db.session.commit()
 
         return jsonify({
-            "message": "✅ WebAuthn credential registered successfully."
-        }), 200
+            "message": "✅ WebAuthn registered successfully. Proceed to verification.",
+            "redirect": "/auth/verify-webauthn"
+        })
 
     except Exception as e:
         import traceback
@@ -1177,7 +1178,7 @@ def complete_webauthn_assertion():
         db.session.commit()
 
         return jsonify({
-            "message": "✅ Biometric/passkey login successful",
+            "message": "✅ Login successful",
             "user_id": user.id,
             "dashboard_url": dashboard_url
         }), 200

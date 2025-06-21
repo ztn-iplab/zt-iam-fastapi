@@ -22,12 +22,12 @@ class Config:
     JWT_REFRESH_TOKEN_EXPIRES = 30 * 60  # 30 minutes
     JWT_COOKIE_SAMESITE = "Lax"  #  "Strict", but Lax is ideal for login flows
 
-    # Flask Session Settings (needed for WebAuthn state)
-    SESSION_COOKIE_NAME = "ztn_iam_session"
-    SESSION_COOKIE_DOMAIN = "localhost.localdomain"  # Allow same domain across ports
-    SESSION_COOKIE_PATH = "/"
-    SESSION_COOKIE_SAMESITE = "None"  # Required for cross-origin + credentials
-    SESSION_COOKIE_SECURE = False  # 🔒 Set to True in production
+    # # Flask Session Settings (needed for WebAuthn state)
+    # SESSION_COOKIE_NAME = "ztn_iam_session"
+    # SESSION_COOKIE_DOMAIN = "localhost.localdomain"  # Allow same domain across ports
+    # SESSION_COOKIE_PATH = "/"
+    # SESSION_COOKIE_SAMESITE = "None"  # Required for cross-origin + credentials
+    # SESSION_COOKIE_SECURE = False  # 🔒 Set to True in production
 
     SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "fallback-in-dev")
 

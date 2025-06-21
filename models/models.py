@@ -156,7 +156,7 @@ class UserRole(db.Model):
 class UserAccessControl(db.Model):
     __tablename__ = 'user_access_controls'
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True)
     role_id = db.Column(db.Integer, db.ForeignKey('user_roles.id'), nullable=False)
     access_level = db.Column(db.String(20), default='read')  # read, write, admin
 
@@ -272,13 +272,15 @@ class TenantUser(db.Model):
 
 class Tenant(db.Model):
     __tablename__ = 'tenants'
-    
+
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
+    name = db.Column(db.String(100), nullable=False, unique=True)  
     api_key = db.Column(db.String(64), unique=True, nullable=False)
-    contact_email = db.Column(db.String(120), nullable=True)
-    plan = db.Column(db.String(50), default='free')  # e.g., free, pro, enterprise
+    contact_email = db.Column(db.String(120), nullable=False, unique=False)
+    plan = db.Column(db.String(50), default='free')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # 🔗 Relationships
+    is_active = db.Column(db.Boolean, default=True)  
+
+    # Relationships
     users = db.relationship('User', backref='tenant', lazy=True)
+

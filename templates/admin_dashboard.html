@@ -7,6 +7,7 @@
   <li><a href="#" id="show-real-time-logs">Real-Time Logs</a></li>
   <li><a href="#" id="show-user-auth-logs">User Auth Logs</a></li>
   <li><a href="#" id="show-fund-agent">Fund Agent</a></li>
+  <li><a href="#" id="show-tenant-management">Tenants Management</a></li>
   <li><a href="#" id="logout-link">Logout</a></li>
 </ul>
 {% endblock %} {% block dashboard_content %}
@@ -19,49 +20,58 @@
         <p class="text-muted">
           Select a section from the left menu to begin managing the system.
         </p>
-        
       </div>
       <section id="dashboard-metrics" class="container-fluid mt-4">
-
         <!-- 🔢 Metrics Charts -->
         <div class="row">
           <div class="col-md-6 mb-4">
             <div class="card shadow-sm bg-dark text-white">
               <div class="card-header border-0 bg-transparent">
-                <h6 class="mb-0"><i class="bi bi-fingerprint me-2"></i>Login Methods</h6>
+                <h6 class="mb-0">
+                  <i class="bi bi-fingerprint me-2"></i>Login Methods
+                </h6>
               </div>
               <div class="card-body p-3">
                 <canvas id="login-method-chart" height="200"></canvas>
               </div>
             </div>
           </div>
-      
+
           <div class="col-md-6 mb-4">
             <div class="card shadow-sm bg-dark text-white">
               <div class="card-header border-0 bg-transparent">
-                <h6 class="mb-0"><i class="bi bi-x-octagon-fill me-2"></i>Authentication Failures</h6>
+                <h6 class="mb-0">
+                  <i class="bi bi-x-octagon-fill me-2"></i>Authentication
+                  Failures
+                </h6>
               </div>
               <div class="card-body p-3">
                 <canvas id="auth-failures-chart" height="200"></canvas>
               </div>
             </div>
           </div>
-      
+
           <div class="col-md-6 mb-4">
             <div class="card shadow-sm bg-dark text-white">
               <div class="card-header border-0 bg-transparent">
-                <h6 class="mb-0"><i class="bi bi-person-lines-fill me-2"></i>Transactions by Actor</h6>
+                <h6 class="mb-0">
+                  <i class="bi bi-person-lines-fill me-2"></i>Transactions by
+                  Actor
+                </h6>
               </div>
               <div class="card-body p-3">
                 <canvas id="transaction-type-chart" height="200"></canvas>
               </div>
             </div>
           </div>
-      
+
           <div class="col-md-6 mb-4">
             <div class="card shadow-sm bg-dark text-white">
               <div class="card-header border-0 bg-transparent">
-                <h6 class="mb-0"><i class="bi bi-flag-fill me-2"></i>Flagged vs Clean Transactions</h6>
+                <h6 class="mb-0">
+                  <i class="bi bi-flag-fill me-2"></i>Flagged vs Clean
+                  Transactions
+                </h6>
               </div>
               <div class="card-body p-3">
                 <canvas id="flagged-transactions-chart" height="200"></canvas>
@@ -69,28 +79,28 @@
             </div>
           </div>
         </div>
-      
+
         <!-- 🌍 Location Heatmap -->
         <div class="row">
           <div class="col-md-12 mb-4">
             <div class="card shadow-sm bg-dark text-white">
               <div class="card-header border-0 bg-primary text-white">
-                <h6 class="mb-0"><i class="bi bi-globe2 me-2"></i>Location Heatmap</h6>
+                <h6 class="mb-0">
+                  <i class="bi bi-globe2 me-2"></i>Location Heatmap
+                </h6>
               </div>
               <div class="card-body p-2" id="heatmap-container"></div>
             </div>
           </div>
         </div>
-      
+
         <!-- 🚨 Anomalies -->
         <div class="row">
           <div class="col-md-12 mb-4">
             <div id="anomaly-panel"></div>
           </div>
         </div>
-      
       </section>
-       
     </section>
 
     <!-- FUND AGENT SECTION -->
@@ -189,7 +199,11 @@
     </section>
 
     <!-- All Transactions Section -->
-    <section id="all-transactions-section" class="admin-section" style="display:none;">
+    <section
+      id="all-transactions-section"
+      class="admin-section"
+      style="display: none"
+    >
       <h3>All Transactions</h3>
       <table class="admin-table">
         <thead>
@@ -206,7 +220,6 @@
         <tbody id="all-transactions-body"></tbody>
       </table>
     </section>
-
 
     <!-- Admin View User Modal -->
     <div
@@ -392,6 +405,138 @@
       <h3>Real-Time Logs</h3>
       <div id="real-time-logs-container"></div>
     </section>
+
+    <!-- Tenant Management Section -->
+    <section
+      id="tenant-management-section"
+      class="admin-section"
+      style="display: none"
+    >
+      <h3 class="mb-4 text-center">🏢 Register New Tenant</h3>
+
+      <!-- Centered Form -->
+      <div class="d-flex justify-content-center">
+        <form
+          id="register-tenant-form"
+          class="card p-4 shadow-sm bg-light"
+          style="width: 100%; max-width: 600px"
+        >
+          <!-- Tenant Name -->
+          <div class="mb-3">
+            <label for="tenant-name" class="form-label text-dark"
+              >Tenant Name</label
+            >
+            <input
+              type="text"
+              id="tenant-name"
+              class="form-control"
+              placeholder="e.g. Alpha Telecom Ltd"
+              required
+            />
+          </div>
+
+          <!-- Contact Email -->
+          <div class="mb-3">
+            <label for="tenant-contact" class="form-label text-dark"
+              >Contact Email</label
+            >
+            <input
+              type="email"
+              id="tenant-contact"
+              class="form-control"
+              placeholder="e.g. admin@alpha-telecom.com"
+              required
+            />
+          </div>
+
+          <!-- Optional API Key -->
+          <div class="mb-3">
+            <label for="tenant-api-key" class="form-label">
+              Custom API Key
+              <span class="text-muted small"
+                >(Leave blank to auto-generate)</span
+              >
+            </label>
+            <input
+              type="text"
+              id="tenant-api-key"
+              class="form-control"
+              placeholder="Optional custom key"
+            />
+          </div>
+
+          <!-- Submit -->
+          <button type="submit" class="btn btn-primary w-100">
+            ➕ Register Tenant
+          </button>
+        </form>
+      </div>
+
+      <!-- 🔽 Tenant List Table -->
+      <table class="admin-table" id="tenant-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Contact Email</th>
+            <th>Plan</th>
+            <th>Status</th>
+            <th>Created At</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tenant-table-body">
+          <tr><td colspan="6">Loading tenants...</td></tr>
+        </tbody>
+      </table>
+      <!-- Result Box (must be inside tenant management section) -->
+      <div id="register-tenant-result" class="mt-4 text-center"></div>
+
+    </section>
+     
+        <!-- Edit Tenant Modal -->
+    <div
+      class="modal"
+      id="editTenantModal"
+      tabindex="-1"
+      aria-labelledby="editTenantModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content shadow-sm">
+          <div class="modal-header">
+            <h5 class="modal-title" id="editTenantModalLabel">✏️ Edit Tenant</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <form id="edit-tenant-form">
+              <input type="hidden" id="edit-tenant-id" />
+              <div class="mb-3">
+                <label for="edit-tenant-email" class="form-label">Contact Email</label>
+                <input type="email" class="form-control" id="edit-tenant-email" required />
+              </div>
+              <div class="mb-3">
+                <label for="edit-tenant-plan" class="form-label">Plan</label>
+                <select class="form-select" id="edit-tenant-plan" required>
+                  <option value="free">Free</option>
+                  <option value="pro">Pro</option>
+                  <option value="enterprise">Enterprise</option>
+                </select>
+              </div>
+              <div class="modal-footer px-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
 
     <!-- User Auth Logs Section -->
     <section id="user-auth-logs" class="admin-section" style="display: none">

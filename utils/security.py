@@ -70,11 +70,6 @@ def verify_secondary_method(user):
 def generate_challenge():
     return base64.b64encode(os.urandom(32)).decode("utf-8")
 
-
-
-
-
-
 def get_request_fingerprint():
     if not has_request_context():
         return "no-request-context"
@@ -93,3 +88,8 @@ def get_request_fingerprint():
     return hashlib.sha256(raw_fp.encode()).hexdigest()
 
 
+def generate_custom_api_key(tenant_name):
+    # Sanitize tenant name (remove special chars), uppercase, and shorten
+    prefix = re.sub(r'\W+', '', tenant_name).upper()[:12]
+    suffix = secrets.token_hex(6)  # 12 hex chars
+    return f"{prefix}-{suffix}"

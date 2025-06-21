@@ -22,6 +22,8 @@ from threading import Timer
 from utils.auth_decorators import require_full_mfa
 from datetime import datetime, timedelta
 from utils.decorators import session_protected
+from utils.email_alerts import send_tenant_api_key_email, send_rotated_api_key_email
+from utils.location import get_ip_location
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -985,7 +987,7 @@ def admin_dashboard_metrics():
 
 
 # Tenants Registration
-@admin_bp.route('/register-tenant', methods=['POST'])
+@admin_bp.route('/admin/register-tenant', methods=['POST'])
 @jwt_required()
 @session_protected()
 def register_tenant():
@@ -1003,19 +1005,29 @@ def register_tenant():
 
     data = request.get_json()
     name = data.get('name')
-    domain = data.get('domain')
+    contact_email = data.get('contact_email')
     custom_api_key = data.get('api_key')
 
-    if not name or not domain:
-        return jsonify({"error": "Name and domain are required."}), 400
+    # Prevent duplicate tenant name
+    existing_name = Tenant.query.filter_by(name=name).first()
 
-    from utils.security import generate_token
-    tenant_api_key = custom_api_key or generate_token()
+    if existing_name:
+        return jsonify({"error": "A tenant with this name already exists."}), 409
+
+    if not name:
+        return jsonify({"error": "Tenant name is required."}), 400
+
+    if not contact_email:
+        return jsonify({"error": "Contact email is required."}), 400
+
+    from utils.security import generate_custom_api_key
+
+    tenant_api_key = custom_api_key or generate_custom_api_key(name)
 
     new_tenant = Tenant(
         name=name,
-        domain=domain,
-        api_key=tenant_api_key
+        api_key=tenant_api_key,
+        contact_email=contact_email
     )
 
     db.session.add(new_tenant)
@@ -1023,18 +1035,135 @@ def register_tenant():
     # 🔥 Log tenant creation to RealTimeLog
     db.session.add(RealTimeLog(
         user_id=user.id,
-        action=f"🏢 Registered new Tenant: {name} ({domain})",
+        action=f"🏢 Registered new Tenant: {name}",
         ip_address=request.remote_addr,
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
         risk_alert=False,
-        tenant_id=1
+        tenant_id=1  # Optional: update later to link the actual new_tenant.id
     ))
 
     db.session.commit()
 
+    # ✅ Email API key to tenant contact
+    email_sent = False
+    try:
+        send_tenant_api_key_email(name, tenant_api_key, contact_email)
+        email_sent = True
+    except Exception as e:
+        print(f"❌ Email delivery failed for tenant contact: {e}")
+
     return jsonify({
         "message": "Tenant registered successfully.",
         "tenant_id": new_tenant.id,
-        "api_key": tenant_api_key
+        "api_key": tenant_api_key,
+        "email_sent": email_sent  # ✅ inform frontend
     }), 201
+
+
+# ✅ Rotate Tenant API Key
+@admin_bp.route('/admin/rotate-api-key/<int:tenant_id>', methods=['POST'])
+@jwt_required()
+@session_protected()
+def rotate_api_key(tenant_id):
+    admin_user = User.query.get(get_jwt_identity())
+    if not admin_user:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    tenant = Tenant.query.get(tenant_id)
+    if not tenant or tenant.name.lower() == "dummytenant":
+        return jsonify({"error": "Cannot rotate key for this tenant."}), 403
+
+    from utils.security import generate_custom_api_key
+    old_key = tenant.api_key
+    new_key = generate_custom_api_key(tenant.name)
+
+    tenant.api_key = new_key
+    tenant.api_key_rotated_at = datetime.utcnow()
+
+    db.session.add(RealTimeLog(
+        user_id=admin_user.id,
+        action=f"🔁 Rotated API Key for Tenant: {tenant.name}",
+        ip_address=request.remote_addr,
+        device_info=request.user_agent.string,
+        location=get_ip_location(request.remote_addr),
+        tenant_id=tenant.id
+    ))
+
+    db.session.commit()
+
+    try:
+        send_rotated_api_key_email(tenant.name, new_key, tenant.contact_email)
+    except Exception as e:
+        print(f"❌ Failed to send rotated API key to tenant contact: {e}")
+
+    return jsonify({"message": "API key rotated successfully."}), 200
+
+
+@admin_bp.route('/admin/tenants', methods=['GET'])
+@jwt_required()
+@session_protected()
+def list_tenants():
+    # Exclude the Master Tenant from the list
+    tenants = Tenant.query.filter(Tenant.name != "Master Tenant").order_by(Tenant.created_at.desc()).all()
+    
+    return jsonify([
+        {
+            "id": t.id,
+            "name": t.name,
+            "contact_email": t.contact_email,
+            "plan": t.plan,
+            "is_active": t.is_active,
+            "created_at": t.created_at.strftime("%Y-%m-%d %H:%M")
+        } for t in tenants
+    ])
+
+@admin_bp.route('/admin/toggle-tenant/<int:tenant_id>', methods=['POST'])
+@jwt_required()
+@session_protected()
+def toggle_tenant(tenant_id):
+    tenant = Tenant.query.get_or_404(tenant_id)
+    tenant.is_active = not tenant.is_active
+    db.session.commit()
+    return jsonify({"message": f"Tenant {'enabled' if tenant.is_active else 'suspended'}."})
+
+@admin_bp.route('/admin/delete-tenant/<int:tenant_id>', methods=['DELETE'])
+@jwt_required()
+@session_protected()
+def delete_tenant(tenant_id):
+    tenant = Tenant.query.get_or_404(tenant_id)
+    db.session.delete(tenant)
+    db.session.commit()
+    return jsonify({"message": "Tenant deleted."})
+
+
+@admin_bp.route('/admin/update-tenant/<int:tenant_id>', methods=['PUT'])
+@jwt_required()
+@session_protected()
+def update_tenant(tenant_id):
+    user = User.query.get(get_jwt_identity())
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    user_access = UserAccessControl.query.filter_by(user_id=user.id).first()
+    user_role = UserRole.query.get(user_access.role_id) if user_access else None
+    if not user_role or user_role.role_name.lower() != "admin":
+        return jsonify({"error": "Only admins can update tenants."}), 403
+
+    tenant = Tenant.query.get(tenant_id)
+    if not tenant or tenant.name.lower() == "dummytenant":
+        return jsonify({"error": "Tenant not found or not editable."}), 404
+
+    data = request.get_json()
+    new_email = data.get("contact_email")
+    new_plan = data.get("plan")
+
+    if new_email:
+        tenant.contact_email = new_email.strip()
+    if new_plan:
+        tenant.plan = new_plan.strip()
+
+    db.session.commit()
+
+    return jsonify({"message": "Tenant updated successfully."}), 200
+

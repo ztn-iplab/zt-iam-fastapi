@@ -30,6 +30,7 @@ document.addEventListener("DOMContentLoaded", function () {
     "show-user-auth-logs": "user-auth-logs",
     "show-fund-agent": "fund-agent-section",
     "show-all-transactions": "all-transactions-section",
+    "show-tenant-management": "tenant-management-section", // ✅ Added
   };
 
   Object.entries(sectionMap).forEach(([menuId, sectionId]) => {
@@ -56,6 +57,11 @@ document.addEventListener("DOMContentLoaded", function () {
       if (sectionId === "user-auth-logs") {
         loadUserAuthLogs();
       }
+
+      if (sectionId === "tenant-management-section") {
+        bindRegisterTenantForm();
+        loadTenants(); 
+      }
     });
   });
 
@@ -69,62 +75,67 @@ document.addEventListener("DOMContentLoaded", function () {
   // ---------------------------
   // Final Enhanced Admin Dashboard JavaScript with Full Feature Reintegration
 
-(async () => {
-  const loginChart = document.getElementById("login-method-chart");
-  const authFailuresChart = document.getElementById("auth-failures-chart");
-  const transactionTypeChart = document.getElementById("transaction-type-chart");
-  const flaggedChart = document.getElementById("flagged-transactions-chart");
-  const heatmapContainer = document.getElementById("heatmap-container");
-  const anomalyPanel = document.getElementById("anomaly-panel");
+  (async () => {
+    const loginChart = document.getElementById("login-method-chart");
+    const authFailuresChart = document.getElementById("auth-failures-chart");
+    const transactionTypeChart = document.getElementById(
+      "transaction-type-chart"
+    );
+    const flaggedChart = document.getElementById("flagged-transactions-chart");
+    const heatmapContainer = document.getElementById("heatmap-container");
+    const anomalyPanel = document.getElementById("anomaly-panel");
 
-  let loginChartInstance, authFailuresInstance, transactionTypeInstance, flaggedInstance;
-  let lastFetchedMetrics = {};
+    let loginChartInstance,
+      authFailuresInstance,
+      transactionTypeInstance,
+      flaggedInstance;
+    let lastFetchedMetrics = {};
 
-  const dateControls = document.createElement("div");
-  dateControls.className = "d-flex gap-2 align-items-center mt-2 mb-3";
-  dateControls.innerHTML = `
+    const dateControls = document.createElement("div");
+    dateControls.className = "d-flex gap-2 align-items-center mt-2 mb-3";
+    dateControls.innerHTML = `
     <input type="text" id="daterange" class="form-control form-control-sm" style="max-width: 250px;" placeholder="Select date range">
     <button id="filter-date" class="btn btn-sm btn-outline-primary">🔍 Apply Filter</button>
   `;
-  document.querySelector("#dashboard-metrics")?.prepend(dateControls);
+    document.querySelector("#dashboard-metrics")?.prepend(dateControls);
 
-  setTimeout(() => {
-    if (window.flatpickr && document.getElementById("daterange")) {
-      flatpickr("#daterange", {
-        mode: "range",
-        dateFormat: "Y-m-d",
-        onClose: function (selectedDates, dateStr) {
-          const range = dateStr.split(" to ");
-          const from = range[0]?.trim() || null;
-          const to = range[1]?.trim() || null;
-          loadMetrics(from, to);
-        }
-      });
-    }
-  }, 100);
-
-  const kpiContainer = document.createElement("div");
-  kpiContainer.className = "row mb-4";
-  document.querySelector("#dashboard-metrics")?.prepend(kpiContainer);
-
-  function updateKPIs(data) {
-  const animated = (id, value) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    let count = 0;
-    const step = Math.ceil(value / 30);
-    const interval = setInterval(() => {
-      count += step;
-      if (count >= value) {
-        el.textContent = value;
-        clearInterval(interval);
-      } else {
-        el.textContent = count;
+    setTimeout(() => {
+      if (window.flatpickr && document.getElementById("daterange")) {
+        flatpickr("#daterange", {
+          mode: "range",
+          dateFormat: "Y-m-d",
+          onClose: function (selectedDates, dateStr) {
+            const range = dateStr.split(" to ");
+            const from = range[0]?.trim() || null;
+            const to = range[1]?.trim() || null;
+            loadMetrics(from, to);
+          },
+        });
       }
-    }, 20);
-  };
+    }, 100);
 
-  kpiContainer.innerHTML = `
+    const kpiContainer = document.createElement("div");
+    kpiContainer.className = "row mb-4";
+    document.querySelector("#dashboard-metrics")?.prepend(kpiContainer);
+
+    function updateKPIs(data) {
+      const animated = (id, value) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        let count = 0;
+        const step = Math.ceil(value / 30);
+        const interval = setInterval(() => {
+          count += step;
+          if (count >= value) {
+            el.textContent = value;
+            clearInterval(interval);
+          } else {
+            el.textContent = count;
+          }
+        }, 20);
+      };
+
+      kpiContainer.innerHTML = `
     <div class="row row-cols-2 row-cols-md-4 g-3">
       <div class="col">
         <div class="card text-white bg-primary text-center shadow">
@@ -219,25 +230,34 @@ document.addEventListener("DOMContentLoaded", function () {
     </div>
   `;
 
-  animated("kpi-total-logins", data.login_methods.password + data.login_methods.totp + data.login_methods.webauthn);
-document.getElementById("kpi-total-logins").parentElement.parentElement.onclick = () => {
-  showOnlySection("user-auth-logs");
-  function loadUserAuthLogsByUser(userId) {
-  fetch(`/admin/user-auth-logs?user_id=${userId}`)
-    .then((res) => res.json())
-    .then((data) => {
-      const tbody = document.getElementById("user-auth-logs-container");
-      tbody.innerHTML = "";
-      if (!data.length) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">No logs yet</td></tr>`;
-        return;
-      }
-      data.forEach((log) => {
-        const row = `
+      animated(
+        "kpi-total-logins",
+        data.login_methods.password +
+          data.login_methods.totp +
+          data.login_methods.webauthn
+      );
+      document.getElementById(
+        "kpi-total-logins"
+      ).parentElement.parentElement.onclick = () => {
+        showOnlySection("user-auth-logs");
+        function loadUserAuthLogsByUser(userId) {
+          fetch(`/admin/user-auth-logs?user_id=${userId}`)
+            .then((res) => res.json())
+            .then((data) => {
+              const tbody = document.getElementById("user-auth-logs-container");
+              tbody.innerHTML = "";
+              if (!data.length) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">No logs yet</td></tr>`;
+                return;
+              }
+              data.forEach((log) => {
+                const row = `
           <tr>
             <td>${log.user}</td>
             <td>${log.method}</td>
-            <td class="${log.status === 'success' ? 'text-success' : 'text-danger'}">${log.status}</td>
+            <td class="${
+              log.status === "success" ? "text-success" : "text-danger"
+            }">${log.status}</td>
             <td>${log.timestamp}</td>
             <td>${log.ip}</td>
             <td>${log.device}</td>
@@ -245,23 +265,23 @@ document.getElementById("kpi-total-logins").parentElement.parentElement.onclick 
             <td>${log.fails}</td>
           </tr>
         `;
-        tbody.innerHTML += row;
-      });
-    });
-}
+                tbody.innerHTML += row;
+              });
+            });
+        }
 
-function filterFlaggedByUser(userId) {
-  fetch(`/admin/flagged-transactions?user_id=${userId}`)
-    .then(res => res.json())
-    .then(data => {
-      const tbody = document.getElementById("flagged-transactions");
-      tbody.innerHTML = "";
-      if (!data.length) {
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">No flagged transactions</td></tr>`;
-        return;
-      }
-      data.forEach(txn => {
-        const row = `
+        function filterFlaggedByUser(userId) {
+          fetch(`/admin/flagged-transactions?user_id=${userId}`)
+            .then((res) => res.json())
+            .then((data) => {
+              const tbody = document.getElementById("flagged-transactions");
+              tbody.innerHTML = "";
+              if (!data.length) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">No flagged transactions</td></tr>`;
+                return;
+              }
+              data.forEach((txn) => {
+                const row = `
           <tr>
             <td>User #${txn.user_id}</td>
             <td>${txn.amount}</td>
@@ -271,117 +291,185 @@ function filterFlaggedByUser(userId) {
             <td><button class="btn btn-sm btn-outline-info">View</button></td>
           </tr>
         `;
-        tbody.innerHTML += row;
+                tbody.innerHTML += row;
+              });
+            });
+        }
+
+        loadUserAuthLogs();
+      };
+      animated(
+        "kpi-failed-logins",
+        data.auth_failures.counts.reduce((a, b) => a + b, 0)
+      );
+      document.getElementById(
+        "kpi-failed-logins"
+      ).parentElement.parentElement.onclick = () => {
+        showOnlySection("user-auth-logs");
+        loadUserAuthLogs("failed");
+      };
+      animated("kpi-flagged", data.flagged.flagged);
+      document.getElementById(
+        "kpi-flagged"
+      ).parentElement.parentElement.onclick = () => {
+        showOnlySection("flagged-transactions-section");
+        loadFlaggedTransactions();
+      };
+      animated("kpi-clean", data.flagged.clean);
+      animated("kpi-users-active", data.user_states.active);
+      document.getElementById(
+        "kpi-users-active"
+      ).parentElement.parentElement.onclick = () => {
+        showOnlySection("user-management");
+        filterUsers("active");
+      };
+      animated("kpi-users-inactive", data.user_states.inactive);
+      animated("kpi-users-suspended", data.user_states.suspended);
+      animated("kpi-users-unverified", data.user_states.unverified);
+      animated("kpi-sims-active", data.sim_stats.new);
+      animated("kpi-sims-swapped", data.sim_stats.swapped);
+      animated("kpi-sims-suspended", data.sim_stats.suspended);
+    }
+    function renderCharts(data) {
+      [
+        loginChartInstance,
+        authFailuresInstance,
+        transactionTypeInstance,
+        flaggedInstance,
+      ].forEach((chart) => chart?.destroy());
+
+      loginChartInstance = new Chart(loginChart, {
+        type: "doughnut",
+        data: {
+          labels: ["Password", "TOTP", "WebAuthn"],
+          datasets: [
+            {
+              label: "Login Methods",
+              data: [
+                data.login_methods.password,
+                data.login_methods.totp,
+                data.login_methods.webauthn,
+              ],
+              backgroundColor: ["#0d6efd", "#e83e8c", "#f0ad4e"],
+            },
+          ],
+        },
+        options: { responsive: true, maintainAspectRatio: false },
       });
-    });
-}
 
-loadUserAuthLogs();
-};
-  animated("kpi-failed-logins", data.auth_failures.counts.reduce((a, b) => a + b, 0));
-document.getElementById("kpi-failed-logins").parentElement.parentElement.onclick = () => {
-  showOnlySection("user-auth-logs");
-  loadUserAuthLogs("failed");
-};
-  animated("kpi-flagged", data.flagged.flagged);
-document.getElementById("kpi-flagged").parentElement.parentElement.onclick = () => {
-  showOnlySection("flagged-transactions-section");
-  loadFlaggedTransactions();
-};
-  animated("kpi-clean", data.flagged.clean);
-  animated("kpi-users-active", data.user_states.active);
-document.getElementById("kpi-users-active").parentElement.parentElement.onclick = () => {
-  showOnlySection("user-management");
-  filterUsers("active");
-};
-  animated("kpi-users-inactive", data.user_states.inactive);
-  animated("kpi-users-suspended", data.user_states.suspended);
-  animated("kpi-users-unverified", data.user_states.unverified);
-  animated("kpi-sims-active", data.sim_stats.new);
-  animated("kpi-sims-swapped", data.sim_stats.swapped);
-  animated("kpi-sims-suspended", data.sim_stats.suspended);
-}
-  function renderCharts(data) {
-    [loginChartInstance, authFailuresInstance, transactionTypeInstance, flaggedInstance].forEach(chart => chart?.destroy());
+      authFailuresInstance = new Chart(authFailuresChart, {
+        type: "line",
+        data: {
+          labels: data.auth_failures.dates,
+          datasets: [
+            {
+              label: "Auth Failures",
+              data: data.auth_failures.counts,
+              borderColor: "#dc3545",
+              tension: 0.2,
+            },
+          ],
+        },
+        options: { responsive: true, maintainAspectRatio: false },
+      });
 
-    loginChartInstance = new Chart(loginChart, {
-      type: "doughnut",
-      data: {
-        labels: ["Password", "TOTP", "WebAuthn"],
-        datasets: [{
-          label: "Login Methods",
-          data: [data.login_methods.password, data.login_methods.totp, data.login_methods.webauthn],
-          backgroundColor: ["#0d6efd", "#e83e8c", "#f0ad4e"]
-        }]
-      },
-      options: { responsive: true, maintainAspectRatio: false }
-    });
+      transactionTypeInstance = new Chart(transactionTypeChart, {
+        type: "bar",
+        data: {
+          labels: ["User", "Agent", "Admin"],
+          datasets: [
+            {
+              label: "Transactions by Actor",
+              data: data.transaction_sources,
+              backgroundColor: ["#007bff", "#28a745", "#ffc107"],
+            },
+          ],
+        },
+        options: { responsive: true, maintainAspectRatio: false },
+      });
 
-    authFailuresInstance = new Chart(authFailuresChart, {
-      type: "line",
-      data: {
-        labels: data.auth_failures.dates,
-        datasets: [{ label: "Auth Failures", data: data.auth_failures.counts, borderColor: "#dc3545", tension: 0.2 }]
-      },
-      options: { responsive: true, maintainAspectRatio: false }
-    });
+      flaggedInstance = new Chart(flaggedChart, {
+        type: "pie",
+        data: {
+          labels: ["Clean", "Flagged"],
+          datasets: [
+            {
+              data: [data.flagged.clean, data.flagged.flagged],
+              backgroundColor: ["#6c757d", "#dc3545"],
+            },
+          ],
+        },
+        options: { responsive: true, maintainAspectRatio: false },
+      });
 
-    transactionTypeInstance = new Chart(transactionTypeChart, {
-      type: "bar",
-      data: {
-        labels: ["User", "Agent", "Admin"],
-        datasets: [{ label: "Transactions by Actor", data: data.transaction_sources, backgroundColor: ["#007bff", "#28a745", "#ffc107"] }]
-      },
-      options: { responsive: true, maintainAspectRatio: false }
-    });
-
-    flaggedInstance = new Chart(flaggedChart, {
-      type: "pie",
-      data: {
-        labels: ["Clean", "Flagged"],
-        datasets: [{ data: [data.flagged.clean, data.flagged.flagged], backgroundColor: ["#6c757d", "#dc3545"] }]
-      },
-      options: { responsive: true, maintainAspectRatio: false }
-    });
-
-    if (data.auth_failures.counts.every(c => c === 0)) {
-      Toastify({ text: "No failed logins found in selected date range.", duration: 3000, backgroundColor: "#6c757d" }).showToast();
+      if (data.auth_failures.counts.every((c) => c === 0)) {
+        Toastify({
+          text: "No failed logins found in selected date range.",
+          duration: 3000,
+          backgroundColor: "#6c757d",
+        }).showToast();
+      }
+      if (
+        data.login_methods.password +
+          data.login_methods.totp +
+          data.login_methods.webauthn ===
+        0
+      ) {
+        Toastify({
+          text: "No successful logins found in selected date range.",
+          duration: 3000,
+          backgroundColor: "#6c757d",
+        }).showToast();
+      }
+      if (data.transaction_sources.every((v) => v === 0)) {
+        Toastify({
+          text: "No transactions found in selected date range.",
+          duration: 3000,
+          backgroundColor: "#6c757d",
+        }).showToast();
+      }
+      if (data.flagged.clean + data.flagged.flagged === 0) {
+        Toastify({
+          text: "No transactions flagged or clean in selected range.",
+          duration: 3000,
+          backgroundColor: "#6c757d",
+        }).showToast();
+      }
     }
-    if (data.login_methods.password + data.login_methods.totp + data.login_methods.webauthn === 0) {
-      Toastify({ text: "No successful logins found in selected date range.", duration: 3000, backgroundColor: "#6c757d" }).showToast();
-    }
-    if (data.transaction_sources.every(v => v === 0)) {
-      Toastify({ text: "No transactions found in selected date range.", duration: 3000, backgroundColor: "#6c757d" }).showToast();
-    }
-    if (data.flagged.clean + data.flagged.flagged === 0) {
-      Toastify({ text: "No transactions flagged or clean in selected range.", duration: 3000, backgroundColor: "#6c757d" }).showToast();
-    }
-  }
 
-  function renderHeatmap(data) {
-    if (!heatmapContainer) return;
-    const locationCounts = {};
-    for (const log of data.logs || []) {
-      let loc = log.location || "Unknown";
-      if (loc.startsWith("{")) loc = "Map Point";
-      locationCounts[loc] = (locationCounts[loc] || 0) + 1;
-    }
-    const entries = Object.entries(locationCounts).sort((a, b) => b[1] - a[1]);
-    heatmapContainer.innerHTML = `
+    function renderHeatmap(data) {
+      if (!heatmapContainer) return;
+      const locationCounts = {};
+      for (const log of data.logs || []) {
+        let loc = log.location || "Unknown";
+        if (loc.startsWith("{")) loc = "Map Point";
+        locationCounts[loc] = (locationCounts[loc] || 0) + 1;
+      }
+      const entries = Object.entries(locationCounts).sort(
+        (a, b) => b[1] - a[1]
+      );
+      heatmapContainer.innerHTML = `
       <ul class="list-group list-group-flush">
-        ${entries.map(([loc, count]) => `
+        ${entries
+          .map(
+            ([loc, count]) => `
           <li class="list-group-item d-flex justify-content-between align-items-center bg-dark text-white">
             ${loc}<span class="badge bg-danger rounded-pill">${count}</span>
-          </li>`).join("")}
+          </li>`
+          )
+          .join("")}
       </ul>`;
-  }
+    }
 
-  function renderAnomalies(data) {
-  if (!anomalyPanel) return;
+    function renderAnomalies(data) {
+      if (!anomalyPanel) return;
 
-  const failed = data.anomalies.multiple_failed_logins.map(u => {
-    const timestamp = u.last_failed_at ? new Date(u.last_failed_at).toLocaleString() : "recent";
-    return `
+      const failed = data.anomalies.multiple_failed_logins
+        .map((u) => {
+          const timestamp = u.last_failed_at
+            ? new Date(u.last_failed_at).toLocaleString()
+            : "recent";
+          return `
       <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" onclick="showOnlySection('user-auth-logs'); loadUserAuthLogsByUser(${u.user_id});">
         <div>
           <strong>User #${u.user_id}</strong><br><small class="text-muted">Last failed: ${timestamp}</small>
@@ -389,11 +477,15 @@ document.getElementById("kpi-users-active").parentElement.parentElement.onclick 
         <span class="badge bg-danger">${u.count} failed</span>
       </a>
     `;
-  }).join("");
+        })
+        .join("");
 
-  const flagged = data.anomalies.frequent_flagged_users.map(u => {
-    const timestamp = u.last_flagged_at ? new Date(u.last_flagged_at).toLocaleString() : "recent";
-    return `
+      const flagged = data.anomalies.frequent_flagged_users
+        .map((u) => {
+          const timestamp = u.last_flagged_at
+            ? new Date(u.last_flagged_at).toLocaleString()
+            : "recent";
+          return `
       <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" onclick="showOnlySection('flagged-transactions-section'); filterFlaggedByUser(${u.user_id});">
         <div>
           <strong>User #${u.user_id}</strong><br><small class="text-muted">Last flagged: ${timestamp}</small>
@@ -401,63 +493,72 @@ document.getElementById("kpi-users-active").parentElement.parentElement.onclick 
         <span class="badge bg-warning text-dark">${u.count} flagged</span>
       </a>
     `;
-  }).join("");
+        })
+        .join("");
 
-  anomalyPanel.innerHTML = `
+      anomalyPanel.innerHTML = `
       <div class="card bg-dark text-white mb-3">
         <div class="card-header bg-danger"><i class="bi bi-shield-lock-fill me-2"></i> Multiple Failed Logins</div>
-        <div class="card-body p-2"><ul class="list-group list-group-flush">${failed || '<li class="list-group-item">No anomalies</li>'}</ul></div>
+        <div class="card-body p-2"><ul class="list-group list-group-flush">${
+          failed || '<li class="list-group-item">No anomalies</li>'
+        }</ul></div>
       </div>
       <div class="card bg-dark text-white mb-3">
         <div class="card-header bg-warning text-dark"><i class="bi bi-exclamation-triangle-fill me-2"></i> Flagged Transactions</div>
-        <div class="card-body p-2"><ul class="list-group list-group-flush">${flagged || '<li class="list-group-item">No anomalies</li>'}</ul></div>
+        <div class="card-body p-2"><ul class="list-group list-group-flush">${
+          flagged || '<li class="list-group-item">No anomalies</li>'
+        }</ul></div>
       </div>`;
-  }
+    }
 
-  function showOnlySection(id) {
-  document.querySelectorAll(".admin-section").forEach(sec => sec.style.display = "none");
-  document.getElementById(id).style.display = "block";
-}
+    function showOnlySection(id) {
+      document
+        .querySelectorAll(".admin-section")
+        .forEach((sec) => (sec.style.display = "none"));
+      document.getElementById(id).style.display = "block";
+    }
 
-async function loadMetrics(from = null, to = null) {
-  try {
-    document.body.classList.add("loading-overlay");
+    async function loadMetrics(from = null, to = null) {
+      try {
+        document.body.classList.add("loading-overlay");
 
-    const params = new URLSearchParams();
-    if (from) params.append("from", from);
-    if (to) params.append("to", to);
+        const params = new URLSearchParams();
+        if (from) params.append("from", from);
+        if (to) params.append("to", to);
 
-    const res = await fetch(`/api/admin/metrics?${params.toString()}`, {
-      method: "GET",
-      credentials: "include"
-    });
-    const data = await res.json();
+        const res = await fetch(`/api/admin/metrics?${params.toString()}`, {
+          method: "GET",
+          credentials: "include",
+        });
+        const data = await res.json();
 
-    lastFetchedMetrics = data;
-    updateKPIs(data);
-    renderCharts(data);
-    renderHeatmap(data);
-    renderAnomalies(data);
-  } catch (err) {
-    console.error("Failed to load admin metrics:", err);
-    Toastify({
-      text: "❌ Failed to load metrics",
-      duration: 4000,
-      backgroundColor: "#dc3545"
-    }).showToast();
-  } finally {
-    document.body.classList.remove("loading-overlay");
-  }
-}
+        lastFetchedMetrics = data;
+        updateKPIs(data);
+        renderCharts(data);
+        renderHeatmap(data);
+        renderAnomalies(data);
+      } catch (err) {
+        console.error("Failed to load admin metrics:", err);
+        Toastify({
+          text: "❌ Failed to load metrics",
+          duration: 4000,
+          backgroundColor: "#dc3545",
+        }).showToast();
+      } finally {
+        document.body.classList.remove("loading-overlay");
+      }
+    }
 
-const today = new Date();
-const lastWeek = new Date(today);
-lastWeek.setDate(today.getDate() - 7);
-await loadMetrics(lastWeek.toISOString().slice(0, 10), today.toISOString().slice(0, 10));
-})();
-
+    const today = new Date();
+    const lastWeek = new Date(today);
+    lastWeek.setDate(today.getDate() - 7);
+    await loadMetrics(
+      lastWeek.toISOString().slice(0, 10),
+      today.toISOString().slice(0, 10)
+    );
+  })();
 });
-  
+
 function fetchHqBalance() {
   fetch("/admin/hq-balance", { credentials: "include" })
     .then((res) => res.json())
@@ -543,6 +644,312 @@ function bindFundAgentForm() {
   }
 }
 
+// -------------------------------
+// Funcction for Tenant Management
+// -------------------------------
+//
+function bindRegisterTenantForm() {
+  const tenantForm = document.getElementById("register-tenant-form");
+
+  if (tenantForm && !tenantForm.dataset.bound) {
+    tenantForm.dataset.bound = "true";
+
+    tenantForm.addEventListener("submit", async function (e) {
+      e.preventDefault();
+
+      const name = document.getElementById("tenant-name").value.trim();
+      const contactEmail = document.getElementById("tenant-contact").value.trim();
+      const apiKey = document.getElementById("tenant-api-key").value.trim();
+      const device_info = getDeviceInfo();
+      const location = await getLocation();
+
+      // ✅ Validate required fields
+      if (!name || !contactEmail) {
+        Toastify({
+          text: "❌ Name and contact email are required.",
+          duration: 4000,
+          gravity: "top",
+          position: "right",
+          backgroundColor: "#dc3545",
+        }).showToast();
+        return;
+      }
+
+      // ✅ Validate email format
+      const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail);
+      if (!isValidEmail) {
+        Toastify({
+          text: "❌ Please enter a valid email address.",
+          duration: 4000,
+          gravity: "top",
+          position: "right",
+          backgroundColor: "#dc3545",
+        }).showToast();
+        return;
+      }
+
+      // ✅ Submit registration
+      fetch("/admin/register-tenant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name,
+          api_key: apiKey || null,
+          contact_email: contactEmail,
+          device_info,
+          location,
+        }),
+      })
+        .then(async (res) => {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Request failed");
+
+          const toastText = data.email_sent
+            ? `✅ Tenant registered — API Key sent to ${contactEmail}`
+            : `⚠️ Tenant registered, but email delivery failed.`;
+
+          const toastColor = data.email_sent ? "#198754" : "#ffc107";
+
+          Toastify({
+            text: toastText,
+            duration: 5000,
+            gravity: "top",
+            position: "right",
+            backgroundColor: toastColor,
+          }).showToast();
+
+          // ✅ Show result
+          document.getElementById("register-tenant-result").innerHTML = `
+            <div class="alert alert-light border text-start">
+              <strong>Tenant ID:</strong> ${data.tenant_id}<br>
+              <strong>API Key:</strong> <code>${data.api_key}</code>
+            </div>
+          `;
+
+          e.target.reset();
+
+          // ✅ Reload the tenant list
+          if (typeof loadTenants === "function") {
+            loadTenants();
+          }
+        })
+
+        .catch((err) => {
+          Toastify({
+            text: `❌ ${err.message}`,
+            duration: 5000,
+            gravity: "top",
+            position: "right",
+            backgroundColor: "#dc3545",
+          }).showToast();
+        });
+    });
+  }
+}
+
+async function loadTenants() {
+  const tableBody = document.getElementById("tenant-table-body");
+
+  fetch("/admin/tenants", {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      if (!Array.isArray(data)) {
+        tableBody.innerHTML = `
+          <tr><td colspan="6" class="text-center text-danger">
+            Failed to load tenants (unexpected response)
+          </td></tr>`;
+        return;
+      }
+
+      if (data.length === 0) {
+        tableBody.innerHTML =
+          "<tr><td colspan='6' class='text-center'>No tenants available.</td></tr>";
+        return;
+      }
+
+      tableBody.innerHTML = ""; // Clear existing
+
+      data.forEach((tenant) => {
+        const row = document.createElement("tr");
+
+        const statusBadge = tenant.is_active
+          ? `<span class="badge bg-success">Active</span>`
+          : `<span class="badge bg-danger">Suspended</span>`;
+
+        const rotateKeyButton = tenant.is_active
+          ? `<button class="btn btn-sm text-warning" onclick="rotateApiKey(${tenant.id}, '${tenant.name}', '${tenant.contact_email}')">
+              <i class="fas fa-sync-alt"></i> Rotate Key
+            </button>`
+          : "";
+        row.innerHTML = `
+          <td>${tenant.name}</td>
+          <td>${tenant.contact_email}</td>
+          <td>${tenant.plan}</td>
+          <td>${statusBadge}</td>
+          <td>${tenant.created_at}</td>
+          <td class="action-buttons">
+              <div class="dropdown dropup">
+                  <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)" style="background-color: var(--brand-blue); color: white;">
+                      Actions ▼
+                  </button>
+                  <div class="dropdown-menu">
+                      <button class="btn btn-sm text-dark" onclick="toggleTenantStatus(${tenant.id})">
+                          <i class="fas fa-toggle-on"></i> ${tenant.is_active ? "Suspend" : "Enable"}
+                      </button>
+                      <button class="btn btn-sm text-primary" onclick="editTenant(${tenant.id}, '${tenant.contact_email}', '${tenant.plan}')">
+                          <i class="fas fa-edit"></i> Edit
+                      </button>
+                      ${rotateKeyButton}
+                      <button class="btn btn-sm text-danger" onclick="deleteTenant(${tenant.id})">
+                          <i class="fas fa-trash-alt"></i> Delete
+                      </button>
+                  </div>
+              </div>
+          </td>
+        `;
+
+        tableBody.appendChild(row);
+      });
+    })
+    .catch((error) => {
+      console.error("❌ Error loading tenants:", error);
+      tableBody.innerHTML =
+        "<tr><td colspan='6' class='text-center text-danger'>Error loading tenants</td></tr>";
+    });
+}
+
+
+
+
+async function toggleTenantStatus(id) {
+  const res = await fetch(`/admin/toggle-tenant/${id}`, {
+    method: "POST",
+    credentials: "include"
+  });
+  const result = await res.json();
+
+  Toastify({
+    text: result.message || "Status updated",
+    duration: 4000,
+    gravity: "top",
+    position: "right",
+    backgroundColor: "#198754",
+  }).showToast();
+
+  loadTenants(); // Refresh
+}
+
+async function deleteTenant(id) {
+  if (!confirm("Are you sure you want to delete this tenant?")) return;
+
+  const res = await fetch(`/admin/delete-tenant/${id}`, {
+    method: "DELETE",
+    credentials: "include"
+  });
+
+  const result = await res.json();
+
+  Toastify({
+    text: result.message || "Tenant deleted",
+    duration: 4000,
+    gravity: "top",
+    position: "right",
+    backgroundColor: "#dc3545",
+  }).showToast();
+
+  loadTenants(); // Refresh
+}
+
+function editTenant(id, email, plan) {
+  document.getElementById("edit-tenant-id").value = id;
+  document.getElementById("edit-tenant-email").value = email;
+  document.getElementById("edit-tenant-plan").value = plan;
+  const modal = new bootstrap.Modal(document.getElementById("editTenantModal"));
+  modal.show();
+}
+
+document.getElementById("edit-tenant-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+
+  const tenantId = document.getElementById("edit-tenant-id").value;
+  const contactEmail = document.getElementById("edit-tenant-email").value.trim();
+  const plan = document.getElementById("edit-tenant-plan").value;
+
+  fetch(`/admin/update-tenant/${tenantId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ contact_email: contactEmail, plan }),
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      Toastify({
+        text: `✅ ${data.message}`,
+        duration: 4000,
+        gravity: "top",
+        position: "right",
+        backgroundColor: "#198754",
+      }).showToast();
+
+      bootstrap.Modal.getInstance(document.getElementById("editTenantModal")).hide();
+      loadTenants(); // Refresh table
+    })
+    .catch((err) => {
+      console.error("❌ Edit failed:", err);
+      Toastify({
+        text: `❌ Failed to update tenant`,
+        duration: 4000,
+        gravity: "top",
+        position: "right",
+        backgroundColor: "#dc3545",
+      }).showToast();
+    });
+});
+
+function rotateApiKey(tenantId, tenantName, contactEmail) {
+  if (!confirm(`🔁 Are you sure you want to rotate the API Key for ${tenantName}?`)) {
+    return;
+  }
+
+  fetch(`/admin/rotate-api-key/${tenantId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  })
+    .then(async (res) => {
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Rotation failed");
+
+      Toastify({
+        text: `✅ API Key rotated for ${tenantName}.`,
+        duration: 4000,
+        gravity: "top",
+        position: "right",
+        backgroundColor: "#198754",
+      }).showToast();
+
+      loadTenants(); // reloads the table
+    })
+    .catch((err) => {
+      console.error("❌ Rotation failed:", err);
+      Toastify({
+        text: `❌ ${err.message}`,
+        duration: 4000,
+        gravity: "top",
+        position: "right",
+        backgroundColor: "#dc3545",
+      }).showToast();
+    });
+}
+
+
 // ✅ Device Info Function
 function getDeviceInfo() {
   return {
@@ -577,13 +984,13 @@ async function getLocation() {
 // ---------------------------
 // Funcction to load all transactions
 // ---------------------------
-// 
+//
 function loadAllTransactions() {
   fetch("/admin/all-transactions", {
     method: "GET",
-    credentials: "include"
+    credentials: "include",
   })
-    .then(res => res.json())
+    .then((res) => res.json())
     .then((data) => {
       const tbody = document.getElementById("all-transactions-body");
       tbody.innerHTML = "";
@@ -593,8 +1000,9 @@ function loadAllTransactions() {
         return;
       }
 
-      data.transactions.forEach(tx => {
-        const canReverse = tx.transaction_type === "transfer" && tx.status === "completed";
+      data.transactions.forEach((tx) => {
+        const canReverse =
+          tx.transaction_type === "transfer" && tx.status === "completed";
 
         const reverseBtn = canReverse
           ? `<button class="btn btn-sm btn-danger" onclick="reverseTransfer(${tx.id})">
@@ -616,17 +1024,21 @@ function loadAllTransactions() {
         tbody.innerHTML += row;
       });
     })
-    .catch(err => {
+    .catch((err) => {
       console.error("❌ Failed to load transactions:", err);
       alert("Could not load all transactions.");
     });
 }
 // Binding All transactions function
-document.getElementById("show-all-transactions").addEventListener("click", () => {
-  document.querySelectorAll(".admin-section").forEach(s => s.style.display = "none");
-  document.getElementById("all-transactions-section").style.display = "block";
-  loadAllTransactions();
-});
+document
+  .getElementById("show-all-transactions")
+  .addEventListener("click", () => {
+    document
+      .querySelectorAll(".admin-section")
+      .forEach((s) => (s.style.display = "none"));
+    document.getElementById("all-transactions-section").style.display = "block";
+    loadAllTransactions();
+  });
 
 // ---------------------------
 // Function to reverse transfers
@@ -637,10 +1049,10 @@ function reverseTransfer(transactionId) {
   fetch(`/admin/reverse-transfer/${transactionId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    credentials: "include"
+    credentials: "include",
   })
-    .then(res => res.json())
-    .then(data => {
+    .then((res) => res.json())
+    .then((data) => {
       if (data.message) {
         alert(data.message);
         loadAllTransactions();
@@ -649,7 +1061,7 @@ function reverseTransfer(transactionId) {
         alert(data.error || "Failed to reverse transfer.");
       }
     })
-    .catch(err => {
+    .catch((err) => {
       console.error("❌ Error reversing transfer:", err);
       alert("❌ Something went wrong while reversing the transfer.");
     });
@@ -657,7 +1069,6 @@ function reverseTransfer(transactionId) {
 
 // ✅ Expose globally
 window.reverseTransfer = reverseTransfer;
-
 
 // ✅ Function to fetch and display users in Admin Dashboard
 function fetchUsersForAdmin() {
@@ -1191,9 +1602,10 @@ function loadUserAuthLogs(filter = null) {
       const tbody = document.getElementById("user-auth-logs-container");
       tbody.innerHTML = "";
 
-      const logs = filter === "failed"
-        ? data.filter((log) => log.status.toLowerCase() === "failed")
-        : data;
+      const logs =
+        filter === "failed"
+          ? data.filter((log) => log.status.toLowerCase() === "failed")
+          : data;
 
       if (!logs.length) {
         tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">No logs yet</td></tr>`;
@@ -1205,7 +1617,9 @@ function loadUserAuthLogs(filter = null) {
           <tr>
             <td>${log.user}</td>
             <td>${log.method}</td>
-            <td class="${log.status === 'success' ? 'text-success' : 'text-danger'}">${log.status}</td>
+            <td class="${
+              log.status === "success" ? "text-success" : "text-danger"
+            }">${log.status}</td>
             <td>${log.timestamp}</td>
             <td>${log.ip}</td>
             <td>${log.device}</td>

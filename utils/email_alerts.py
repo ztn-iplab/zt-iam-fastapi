@@ -175,3 +175,56 @@ MoMo ZTN Security Team
         print(f"📧 SIM swap verification email sent to {user.email}")
     except Exception as e:
         print(f"❌ Failed to send SIM swap email: {e}")
+
+def send_tenant_api_key_email(tenant_name, api_key, contact_email):
+    try:
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        subject = f"🔐 Tenant API Key Provisioned - {tenant_name}"
+
+        body = f"""
+Dear {tenant_name},
+
+Your tenant account has been successfully registered in the ZTN-IAM-as-a-Service system as of {timestamp}.
+
+Here is your assigned API Key:
+{api_key}
+
+Please store this key securely. It will not be displayed again for security reasons.
+
+Regards,  
+ZTN-IAM Admin Team
+"""
+        msg = Message(subject=subject, recipients=[contact_email], body=body)
+        mail.send(msg)
+        print(f"📧 Tenant API key email sent to: {contact_email}")
+    except Exception as e:
+        print(f"❌ Failed to send tenant API key email: {e}")
+        
+
+def send_rotated_api_key_email(tenant_name, new_api_key, contact_email):
+    try:
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        subject = f"🔄 API Key Rotated for {tenant_name}"
+
+        body = f"""
+Dear {tenant_name},
+
+Your API Key has been successfully rotated on {timestamp} by the ZTN-IAM administrator.
+
+🔐 Your new API Key:
+{new_api_key}
+
+⚠️ This new key **replaces** your old API Key. Please update any systems or applications using the old key immediately. 
+
+For security reasons, this key will not be shown again.
+
+If you did not request or expect this change, please contact the ZTN-IAM administrator immediately.
+
+Regards,  
+ZTN-IAM Admin Team
+"""
+        msg = Message(subject=subject, recipients=[contact_email], body=body)
+        mail.send(msg)
+        print(f"📧 Rotated API key email sent to: {contact_email}")
+    except Exception as e:
+        print(f"❌ Failed to send rotated API key email: {e}")

@@ -54,7 +54,7 @@ class User(db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
-
+    
 
 # 📌 SIM Card Model (Realistic Mobile SIM Registration)
 class SIMCard(db.Model):
@@ -155,13 +155,22 @@ class UserRole(db.Model):
 
 class UserAccessControl(db.Model):
     __tablename__ = 'user_access_controls'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True)
-    role_id = db.Column(db.Integer, db.ForeignKey('user_roles.id'), nullable=False)
-    access_level = db.Column(db.String(20), default='read')  # read, write, admin
 
-    # 🔥 Fix: Define the relationship to access role.role_name
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey('user_roles.id'), nullable=False)
+    access_level = db.Column(db.String(20), default='read')
+
+    # Relationships
     role = db.relationship('UserRole', backref='user_access_controls')
+    tenant = db.relationship('Tenant', backref='user_access_controls')
+
+    # Ensure no duplicate user entries per tenant
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'tenant_id', name='uq_user_per_tenant'),
+    )
+
 
 
 # 📌 Real-Time Logs (Tracks User Behavior & Security)

@@ -406,94 +406,84 @@
       <div id="real-time-logs-container"></div>
     </section>
 
-    <!-- Tenant Management Section -->
+    <!-- TENANT MANAGEMENT SECTION -->
     <section
       id="tenant-management-section"
       class="admin-section"
       style="display: none"
     >
-      <h3 class="mb-4 text-center">🏢 Register New Tenant</h3>
+      <form
+        id="register-tenant-form"
+        class="form card p-4"
+        style="max-width: 600px; margin: 0 auto"
+      >
+        <h4 class="text-center mb-4">🏢 Register New Tenant</h4>
 
-      <!-- Centered Form -->
-      <div class="d-flex justify-content-center">
-        <form
-          id="register-tenant-form"
-          class="card p-4 shadow-sm bg-light"
-          style="width: 100%; max-width: 600px"
-        >
-          <!-- Tenant Name -->
-          <div class="mb-3">
-            <label for="tenant-name" class="form-label text-dark"
-              >Tenant Name</label
-            >
-            <input
-              type="text"
-              id="tenant-name"
-              class="form-control"
-              placeholder="e.g. Alpha Telecom Ltd"
-              required
-            />
-          </div>
+        <div class="mb-3">
+          <label for="tenant-name" class="form-label">Tenant Name</label>
+          <input
+            type="text"
+            id="tenant-name"
+            class="form-control text-center"
+            placeholder="e.g. Alpha Telecom Ltd"
+            required
+          />
+        </div>
 
-          <!-- Contact Email -->
-          <div class="mb-3">
-            <label for="tenant-contact" class="form-label text-dark"
-              >Contact Email</label
-            >
-            <input
-              type="email"
-              id="tenant-contact"
-              class="form-control"
-              placeholder="e.g. admin@alpha-telecom.com"
-              required
-            />
-          </div>
+        <div class="mb-3">
+          <label for="tenant-contact" class="form-label">Contact Email</label>
+          <input
+            type="email"
+            id="tenant-contact"
+            class="form-control text-center"
+            placeholder="e.g. admin@alpha-telecom.com"
+            required
+          />
+        </div>
 
-          <!-- Optional API Key -->
-          <div class="mb-3">
-            <label for="tenant-api-key" class="form-label">
-              Custom API Key
-              <span class="text-muted small"
-                >(Leave blank to auto-generate)</span
-              >
-            </label>
-            <input
-              type="text"
-              id="tenant-api-key"
-              class="form-control"
-              placeholder="Optional custom key"
-            />
-          </div>
+        <div class="mb-3">
+          <label for="tenant-api-key" class="form-label">
+            Custom API Key <span class="text-muted small">(Optional)</span>
+          </label>
+          <input
+            type="text"
+            id="tenant-api-key"
+            class="form-control text-center"
+            placeholder="Leave blank to auto-generate"
+          />
+        </div>
 
-          <!-- Submit -->
-          <button type="submit" class="btn btn-primary w-100">
-            ➕ Register Tenant
-          </button>
-        </form>
+        <button type="submit" class="btn btn-primary w-100">
+          ➕ Register Tenant
+        </button>
+      </form>
+
+      <div id="register-tenant-result" class="mt-3 text-center"></div>
+
+      <!-- 🔽 Registered Tenants Table -->
+      <div class="widget mt-5">
+        <h5 class="text-center">📋 Registered Tenants</h5>
+        <table class="admin-table mt-3">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Contact Email</th>
+              <th>Plan</th>
+              <th>Status</th>
+              <th>Created At</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tenant-table-body">
+            <tr>
+              <td colspan="6" class="text-center">Loading tenants...</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-
-      <!-- 🔽 Tenant List Table -->
-      <table class="admin-table" id="tenant-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Contact Email</th>
-            <th>Plan</th>
-            <th>Status</th>
-            <th>Created At</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="tenant-table-body">
-          <tr><td colspan="6">Loading tenants...</td></tr>
-        </tbody>
-      </table>
-      <!-- Result Box (must be inside tenant management section) -->
-      <div id="register-tenant-result" class="mt-4 text-center"></div>
-
     </section>
-     
-        <!-- Edit Tenant Modal -->
+
+    <!-- Edit Tenant Modal -->
     <div
       class="modal"
       id="editTenantModal"
@@ -504,7 +494,9 @@
       <div class="modal-dialog">
         <div class="modal-content shadow-sm">
           <div class="modal-header">
-            <h5 class="modal-title" id="editTenantModalLabel">✏️ Edit Tenant</h5>
+            <h5 class="modal-title" id="editTenantModalLabel">
+              ✏️ Edit Tenant
+            </h5>
             <button
               type="button"
               class="btn-close"
@@ -516,8 +508,15 @@
             <form id="edit-tenant-form">
               <input type="hidden" id="edit-tenant-id" />
               <div class="mb-3">
-                <label for="edit-tenant-email" class="form-label">Contact Email</label>
-                <input type="email" class="form-control" id="edit-tenant-email" required />
+                <label for="edit-tenant-email" class="form-label"
+                  >Contact Email</label
+                >
+                <input
+                  type="email"
+                  class="form-control"
+                  id="edit-tenant-email"
+                  required
+                />
               </div>
               <div class="mb-3">
                 <label for="edit-tenant-plan" class="form-label">Plan</label>
@@ -528,15 +527,22 @@
                 </select>
               </div>
               <div class="modal-footer px-0">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  data-bs-dismiss="modal"
+                >
+                  Cancel
+                </button>
+                <button type="submit" class="btn btn-primary">
+                  💾 Save Changes
+                </button>
               </div>
             </form>
           </div>
         </div>
       </div>
     </div>
-
 
     <!-- User Auth Logs Section -->
     <section id="user-auth-logs" class="admin-section" style="display: none">

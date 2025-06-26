@@ -26,22 +26,20 @@ class User(db.Model):
     reset_token = db.Column(db.String(128), nullable=True)
     reset_token_expiry = db.Column(db.DateTime, nullable=True)
 
-    # For tenants
+    # 🌐 Legacy Tenant Association (primary/master tenant)
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
     is_tenant_admin = db.Column(db.Boolean, default=False)
 
-
-
-    # Account Status
+    # 🔐 Account Status
     is_active = db.Column(db.Boolean, default=True)      
     deletion_requested = db.Column(db.Boolean, default=False)
     locked_until = db.Column(db.DateTime, nullable=True)  
-    
-    # Relationships
-    user_access_control = db.relationship('UserAccessControl', backref='user', uselist=False)
+
+    # 🔄 Relationships
+    access_controls = db.relationship('UserAccessControl', backref='user', lazy=True)
     auth_logs = db.relationship('UserAuthLog', backref='user', lazy=True)
     transactions = db.relationship('Transaction', backref='user', lazy=True)
-    sim_cards = db.relationship('SIMCard', backref='user', lazy=True)  # Updated relationship
+    sim_cards = db.relationship('SIMCard', backref='user', lazy=True)
     wallet = db.relationship('Wallet', backref='user', uselist=False)
 
     @property
@@ -55,6 +53,11 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
     
+    # 🔐 New method: resolve role by tenant
+    def get_role_for_tenant(self, tenant_id):
+        from models import UserAccessControl, UserRole  # to avoid circular imports
+        access = UserAccessControl.query.filter_by(user_id=self.id, tenant_id=tenant_id).first()
+        return UserRole.query.get(access.role_id) if access else None
 
 # 📌 SIM Card Model (Realistic Mobile SIM Registration)
 class SIMCard(db.Model):
@@ -201,9 +204,12 @@ class OTPCode(db.Model):
     user = db.relationship('User', backref='otp_codes')
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
 
+from sqlalchemy import Numeric
+
 class HeadquartersWallet(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    balance = db.Column(db.Float, default=0.0)
+    balance = db.Column(Numeric(18, 2), default=0.0)  # 💰 Use DECIMAL type
+
 
 class WebAuthnCredential(db.Model):
     __tablename__ = 'webauthn_credentials'
@@ -290,6 +296,30 @@ class Tenant(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)  
 
+    # Track last API access
+    last_api_access = db.Column(db.DateTime)
+
+    # Abuse detection fields
+    api_request_count = db.Column(db.Integer, default=0)
+    api_error_count = db.Column(db.Integer, default=0)
+    api_score = db.Column(db.Float, default=0.0)
+    api_last_reset = db.Column(db.DateTime, default=datetime.utcnow)
+
     # Relationships
     users = db.relationship('User', backref='tenant', lazy=True)
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.api_score = kwargs.get('api_score', 0.0)
+        self.api_request_count = kwargs.get('api_request_count', 0)
+        self.api_error_count = kwargs.get('api_error_count', 0)
+        self.api_last_reset = kwargs.get('api_last_reset', datetime.utcnow())
+
+class TenantPasswordHistory(db.Model):
+    __tablename__ = 'tenant_password_history'
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_user_id = db.Column(db.Integer, db.ForeignKey('tenant_users.id'), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.now())
+
+    tenant_user = db.relationship('TenantUser', backref='password_history')

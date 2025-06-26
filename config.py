@@ -26,7 +26,7 @@ class Config:
     # SESSION_COOKIE_NAME = "ztn_iam_session"
     # SESSION_COOKIE_DOMAIN = "localhost.localdomain"  # Allow same domain across ports
     # SESSION_COOKIE_PATH = "/"
-    # SESSION_COOKIE_SAMESITE = "None"  # Required for cross-origin + credentials
+    # SESSION_COOKIE_SAMESITE = "Lax"  # Required for cross-origin + credentials
     # SESSION_COOKIE_SECURE = False  # 🔒 Set to True in production
 
     SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "fallback-in-dev")

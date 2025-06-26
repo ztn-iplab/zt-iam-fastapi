@@ -458,7 +458,14 @@
         </button>
       </form>
 
-      <div id="register-tenant-result" class="mt-3 text-center"></div>
+      <!-- Tenant Filters -->
+      <div class="d-flex justify-content-center gap-2 mt-3 mb-2">
+        <button class="btn btn-sm btn-outline-primary" onclick="filterTenants('all')">🔄 Show All</button>
+        <button class="btn btn-sm btn-outline-success" onclick="filterTenants('active')">🟢 Active</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="filterTenants('suspended')">🔴 Suspended</button>
+        <button class="btn btn-sm btn-outline-warning" onclick="filterTenants('recent')">🕒 Accessed Recently</button>
+      </div>
+
 
       <!-- 🔽 Registered Tenants Table -->
       <div class="widget mt-5">
@@ -471,16 +478,19 @@
               <th>Plan</th>
               <th>Status</th>
               <th>Created At</th>
+              <th>Last API Access</th>
+              <th>Abuse Score</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="tenant-table-body">
             <tr>
-              <td colspan="6" class="text-center">Loading tenants...</td>
+              <td colspan="7" class="text-center">Loading tenants...</td>
             </tr>
           </tbody>
         </table>
       </div>
+      <div id="register-tenant-result" class="mt-3 text-center"></div>
     </section>
 
     <!-- Edit Tenant Modal -->

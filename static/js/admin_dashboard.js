@@ -563,6 +563,7 @@ function fetchHqBalance() {
   fetch("/admin/hq-balance", { credentials: "include" })
     .then((res) => res.json())
     .then((data) => {
+      console.log("New balance:", data.balance); // ✅ Check this in browser devtools
       document.getElementById("hq-balance").innerText =
         data.balance?.toLocaleString() || "0";
     });
@@ -632,7 +633,10 @@ function bindFundAgentForm() {
           document.getElementById("fund-result").innerHTML = data.message
             ? `<p class='text-success'>${data.message}</p>`
             : `<p class='text-danger'>${data.error || "Funding failed."}</p>`;
-          setTimeout(() => window.location.reload(), 2500);
+
+          fetchHqBalance();       // ✅ Live update the HQ balance
+          fetchFloatHistory();    // ✅ Update recent float transfers (optional)
+          fundForm.reset();       // ✅ Clear the form
         })
         .catch((err) => {
           console.error(err);
@@ -748,82 +752,138 @@ function bindRegisterTenantForm() {
   }
 }
 
+let fullTenantList = []; // 🧠 Used for filtering
+
 async function loadTenants() {
   const tableBody = document.getElementById("tenant-table-body");
 
-  fetch("/admin/tenants", {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-  })
-    .then((res) => res.json())
-    .then((data) => {
-      if (!Array.isArray(data)) {
-        tableBody.innerHTML = `
-          <tr><td colspan="6" class="text-center text-danger">
-            Failed to load tenants (unexpected response)
-          </td></tr>`;
-        return;
-      }
-
-      if (data.length === 0) {
-        tableBody.innerHTML =
-          "<tr><td colspan='6' class='text-center'>No tenants available.</td></tr>";
-        return;
-      }
-
-      tableBody.innerHTML = ""; // Clear existing
-
-      data.forEach((tenant) => {
-        const row = document.createElement("tr");
-
-        const statusBadge = tenant.is_active
-          ? `<span class="badge bg-success">Active</span>`
-          : `<span class="badge bg-danger">Suspended</span>`;
-
-        const rotateKeyButton = tenant.is_active
-          ? `<button class="btn btn-sm text-warning" onclick="rotateApiKey(${tenant.id}, '${tenant.name}', '${tenant.contact_email}')">
-              <i class="fas fa-sync-alt"></i> Rotate Key
-            </button>`
-          : "";
-        row.innerHTML = `
-          <td>${tenant.name}</td>
-          <td>${tenant.contact_email}</td>
-          <td>${tenant.plan}</td>
-          <td>${statusBadge}</td>
-          <td>${tenant.created_at}</td>
-          <td class="action-buttons">
-              <div class="dropdown dropup">
-                  <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)" style="background-color: var(--brand-blue); color: white;">
-                      Actions ▼
-                  </button>
-                  <div class="dropdown-menu">
-                      <button class="btn btn-sm text-dark" onclick="toggleTenantStatus(${tenant.id})">
-                          <i class="fas fa-toggle-on"></i> ${tenant.is_active ? "Suspend" : "Enable"}
-                      </button>
-                      <button class="btn btn-sm text-primary" onclick="editTenant(${tenant.id}, '${tenant.contact_email}', '${tenant.plan}')">
-                          <i class="fas fa-edit"></i> Edit
-                      </button>
-                      ${rotateKeyButton}
-                      <button class="btn btn-sm text-danger" onclick="deleteTenant(${tenant.id})">
-                          <i class="fas fa-trash-alt"></i> Delete
-                      </button>
-                  </div>
-              </div>
-          </td>
-        `;
-
-        tableBody.appendChild(row);
-      });
-    })
-    .catch((error) => {
-      console.error("❌ Error loading tenants:", error);
-      tableBody.innerHTML =
-        "<tr><td colspan='6' class='text-center text-danger'>Error loading tenants</td></tr>";
+  try {
+    const res = await fetch("/admin/tenants", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
     });
+
+    const data = await res.json();
+
+    if (!Array.isArray(data)) {
+      tableBody.innerHTML = `
+        <tr><td colspan="7" class="text-center text-danger">
+          Failed to load tenants (unexpected response)
+        </td></tr>`;
+      return;
+    }
+
+    if (data.length === 0) {
+      tableBody.innerHTML =
+        "<tr><td colspan='7' class='text-center'>No tenants available.</td></tr>";
+      return;
+    }
+
+    fullTenantList = data; // 🧠 Cache for filters
+    tableBody.innerHTML = ""; // Clear table before rendering
+    fullTenantList.forEach(renderTenantRow);
+  } catch (error) {
+    console.error("❌ Error loading tenants:", error);
+    tableBody.innerHTML =
+      "<tr><td colspan='7' class='text-center text-danger'>Error loading tenants</td></tr>";
+  }
 }
 
+// 👇 Render each row (used in loadTenants + filtering)
+function renderTenantRow(tenant) {
+  const tableBody = document.getElementById("tenant-table-body");
+  const row = document.createElement("tr");
 
+  const statusBadge = tenant.is_active
+    ? `<span class="badge bg-success">Active</span>`
+    : `<span class="badge bg-danger">Suspended</span>`;
+
+  const rotateKeyButton = tenant.is_active
+    ? `<button class="btn btn-sm text-warning" onclick="rotateApiKey(${tenant.id}, '${tenant.name}', '${tenant.contact_email}')">
+         <i class="fas fa-sync-alt"></i> Rotate Key
+       </button>`
+    : "";
+
+  // ✅ Safe handling of undefined/null api_score
+  const abuseScore = (tenant.api_score !== undefined && tenant.api_score !== null)
+    ? tenant.api_score.toFixed(2)
+    : "0.00";
+
+  const abuseBadge = tenant.api_score >= 0.7
+    ? `<span class="badge bg-danger">${abuseScore}</span>`
+    : `<span class="badge bg-secondary">${abuseScore}</span>`;
+
+  row.innerHTML = `
+    <td>${tenant.name}</td>
+    <td>${tenant.contact_email}</td>
+    <td>${tenant.plan}</td>
+    <td>${statusBadge}</td>
+    <td>${tenant.created_at}</td>
+    <td>${tenant.last_api_access || "Never"}</td>
+    <td>${abuseBadge}</td>
+    <td class="action-buttons">
+        <div class="dropdown dropup">
+            <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)" style="background-color: var(--brand-blue); color: white;">
+                Actions ▼
+            </button>
+            <div class="dropdown-menu">
+                <button class="btn btn-sm ${tenant.is_active ? 'btn-danger' : 'btn-success'}" style="color: purple;" onclick="toggleTenantStatus(${tenant.id})">
+                  <i class="fas fa-toggle-on"></i> ${tenant.is_active ? "Suspend" : "Enable"}
+                </button>
+                <button class="btn btn-sm text-primary" onclick="editTenant(${tenant.id}, '${tenant.contact_email}', '${tenant.plan}')">
+                    <i class="fas fa-edit"></i> Edit
+                </button>
+                ${rotateKeyButton}
+                <button class="btn btn-sm text-danger" onclick="deleteTenant(${tenant.id})">
+                    <i class="fas fa-trash-alt"></i> Delete
+                </button>
+            </div>
+        </div>
+    </td>
+  `;
+
+  tableBody.appendChild(row);
+}
+
+function filterTenants(filterType) {
+  const tableBody = document.getElementById("tenant-table-body");
+  tableBody.innerHTML = ""; // Clear before rendering
+
+  let filtered = [];
+
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.setDate(now.getDate() - 7));
+
+  switch (filterType) {
+    case "active":
+      filtered = fullTenantList.filter((t) => t.is_active);
+      break;
+    case "suspended":
+      filtered = fullTenantList.filter((t) => !t.is_active);
+      break;
+    case "recent":
+      filtered = fullTenantList.filter((t) => {
+        if (!t.last_api_access) return false;
+        const accessTime = new Date(t.last_api_access);
+        return accessTime >= sevenDaysAgo;
+      });
+      break;
+    case "all":
+    default:
+      filtered = fullTenantList;
+      break;
+  }
+
+  if (filtered.length === 0) {
+    tableBody.innerHTML = `
+      <tr><td colspan="7" class="text-center text-muted">
+        No tenants found for this filter.
+      </td></tr>`;
+  } else {
+    filtered.forEach(renderTenantRow);
+  }
+}
 
 
 async function toggleTenantStatus(id) {

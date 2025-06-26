@@ -6,7 +6,7 @@ from models.models import (
     db, User, SIMCard, Wallet, UserAuthLog,
     Transaction, UserRole,
     UserAccessControl, RealTimeLog, OTPCode,
-    WebAuthnCredential, PasswordHistory,TenantUser, PendingTOTP
+    WebAuthnCredential, PasswordHistory,TenantPasswordHistory,TenantUser,PendingTOTP
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from utils.security import (
@@ -31,8 +31,9 @@ import json
 from utils.api_key import require_api_key
 from utils.totp import verify_totp_code
 from fido2 import cbor
-
-
+from fido2.utils import websafe_decode, websafe_encode
+from utils.user_trust_engine import evaluate_trust
+from utils.iam_tenant_email import send_tenant_password_reset_email
 
 # Create Blueprint
 iam_api_bp = Blueprint('iam_api', __name__, url_prefix='/api/v1/auth')
@@ -167,17 +168,17 @@ def login_user():
     password = data.get('password')
 
     ip_address = request.remote_addr
-    device_info = "IAMaaS API Access"  # 🛡️ For APIs
+    device_info = "IAMaaS API Access"
     location = get_ip_location(ip_address)
 
     user = None
 
-    # 📍 First try to find the SIM
+    # Lookup by SIM
     sim_card = SIMCard.query.filter_by(mobile_number=login_input, status='active').first()
     if sim_card and sim_card.user:
         user = sim_card.user
 
-    # 📍 If not, try email matching
+    # Lookup by email
     if not user:
         user = User.query.filter_by(email=login_input).first()
 
@@ -194,7 +195,7 @@ def login_user():
         db.session.commit()
         return jsonify({"error": "User not found"}), 404
 
-    # 📍 Now check if user is registered under this tenant
+    # Check tenant mapping
     tenant_user = TenantUser.query.filter_by(
         tenant_id=g.tenant.id,
         user_id=user.id
@@ -213,11 +214,11 @@ def login_user():
         db.session.commit()
         return jsonify({"error": "User not found under this tenant"}), 404
 
-    # 🔥 Check lock
+    # Check if account is locked
     if user.locked_until and user.locked_until > datetime.utcnow():
         return jsonify({"error": f"Account locked. Try again after {user.locked_until}"}), 429
 
-    # 🔥 Password check (we validate against TenantUser password, not base User anymore)
+    # Check password
     if not check_password_hash(tenant_user.password_hash, password):
         failed_count = count_recent_failures(user.id) + 1
 
@@ -257,7 +258,19 @@ def login_user():
         db.session.commit()
         return jsonify({"error": "Invalid credentials"}), 401
 
-    # 🔥 Successful login
+    # ✅ Successful login - now calculate trust score
+    context = {
+        "ip_address": ip_address,
+        "device_info": device_info
+    }
+
+    trust_score = evaluate_trust(user, context, tenant=g.tenant)
+    risk_level = (
+        "high" if trust_score >= 0.7 else
+        "medium" if trust_score >= 0.4 else
+        "low"
+    )
+
     access_token = create_access_token(identity=str(user.id))
 
     db.session.add(UserAuthLog(
@@ -278,13 +291,12 @@ def login_user():
         ip_address=ip_address,
         device_info=device_info,
         location=location,
-        risk_alert=False
+        risk_alert=(risk_level == "high")
     ))
 
     db.session.commit()
 
-    # 🔍 Fetch role
-    # ✨ Resolve tenant-specific role
+    # Resolve tenant-specific role
     user_access = UserAccessControl.query.join(UserRole).filter(
         UserAccessControl.user_id == user.id,
         UserRole.tenant_id == g.tenant.id
@@ -292,35 +304,45 @@ def login_user():
 
     role = user_access.role.role_name if user_access else "user"
 
-
     return jsonify({
-    "message": "Login successful",
-    "user_id": user.id,
-    "access_token": access_token,
-    "require_totp": bool(tenant_user.otp_secret),
-    "require_totp_setup": tenant_user.otp_secret is None,
-    "require_totp_reset": tenant_user.otp_secret and tenant_user.otp_email_label != tenant_user.company_email,
-    "role": user_access.role.role_name if user_access else "user"
-}), 200
+        "message": "Login successful",
+        "user_id": user.id,
+        "access_token": access_token,
+        "require_totp": bool(tenant_user.otp_secret),
+        "require_totp_setup": tenant_user.otp_secret is None,
+        "require_totp_reset": tenant_user.otp_secret and tenant_user.otp_email_label != tenant_user.company_email,
+        "role": role,
+        "trust_score": trust_score,
+        "risk_level": risk_level
+    }), 200
+
 
 @iam_api_bp.route('/forgot-password', methods=['POST'])
 @require_api_key
 def forgot_password():
     data = request.get_json()
     identifier = data.get("identifier")
+    redirect_url = data.get("redirect_url")
 
     if not identifier:
         return jsonify({"error": "Identifier (mobile number or email) is required."}), 400
+    if not redirect_url:
+        return jsonify({"error": "Missing redirect URL for client-side reset."}), 400
 
-    # 🔥 Lookup user inside the current tenant (by email or SIM)
-    user = User.query.filter_by(email=identifier, tenant_id=g.tenant.id).first()
-    if not user:
+    tenant_user = TenantUser.query.filter_by(company_email=identifier, tenant_id=g.tenant.id).first()
+    
+    if tenant_user:
+        user = tenant_user.user
+    else:
+        # fallback to SIM-based lookup
         sim = SIMCard.query.filter_by(mobile_number=identifier, status='active').first()
-        if sim and sim.user and sim.user.tenant_id == g.tenant.id:
-            user = sim.user
+        if sim and sim.user:
+            tenant_user = TenantUser.query.filter_by(user_id=sim.user.id, tenant_id=g.tenant.id).first()
+            user = tenant_user.user if tenant_user else None
+        else:
+            user = None
 
     if not user:
-        # 🔥 Log failed reset attempt
         db.session.add(RealTimeLog(
             user_id=None,
             tenant_id=g.tenant.id,
@@ -340,10 +362,9 @@ def forgot_password():
     user.reset_token = hash_token(token)
     user.reset_token_expiry = expiry
 
-    # 🔥 Log the password reset request
     db.session.add(RealTimeLog(
         user_id=user.id,
-        tenant_id=user.tenant_id,
+        tenant_id=g.tenant.id,
         action="📧 Password reset requested",
         ip_address=request.remote_addr,
         device_info="IAMaaS API Access",
@@ -352,10 +373,19 @@ def forgot_password():
     ))
     db.session.commit()
 
-    # 🔥 Send reset link via email
-    send_password_reset_email(user, token)
+    # 🔥 Construct tenant-scoped reset link
+    reset_link = f"{redirect_url}?token={token}"
+
+    send_tenant_password_reset_email(
+        user=user,
+        raw_token=token,
+        tenant_name=g.tenant.name,
+        tenant_email=tenant_user.company_email,
+        reset_link=reset_link
+    )
 
     return jsonify({"message": "Please check your email for a password reset link."}), 200
+
 
 # Tenant reset password
 @iam_api_bp.route('/reset-password', methods=['POST'])
@@ -372,25 +402,23 @@ def reset_password():
     if new_password != confirm_password:
         return jsonify({"error": "Passwords do not match."}), 400
 
-    # 🔥 Find user by token
     user = User.query.filter_by(reset_token=hash_token(token)).first()
-
     if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
         return jsonify({"error": "Invalid or expired token."}), 400
 
-    # 🛡️ Tenant security check
-    if user.tenant_id != g.tenant.id:
+    tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=g.tenant.id).first()
+    if not tenant_user:
         return jsonify({"error": "Unauthorized reset attempt."}), 403
 
     ip = request.remote_addr
     device_info = "IAMaaS API Access"
     location = get_ip_location(ip)
 
-    # 🔥 Trust Score Check
+    # 🔐 Trust score enforcement
     if user.trust_score < 0.4:
         db.session.add(RealTimeLog(
             user_id=user.id,
-            tenant_id=user.tenant_id,
+            tenant_id=g.tenant.id,
             action="🚫 Password reset denied due to low trust score",
             ip_address=ip,
             device_info=device_info,
@@ -399,13 +427,10 @@ def reset_password():
         ))
         db.session.commit()
         return jsonify({
-            "error": (
-                "This reset request was blocked due to suspicious activity. "
-                "An administrator has been notified."
-            )
+            "error": "This reset request was blocked due to suspicious activity."
         }), 403
 
-    # 🔥 Password strength check
+    # 🔐 Strength check
     if not is_strong_password(new_password):
         return jsonify({
             "error": (
@@ -414,13 +439,56 @@ def reset_password():
             )
         }), 400
 
-    # 🔥 Password reuse check
-    previous_passwords = PasswordHistory.query.filter_by(user_id=user.id).all()
-    for record in previous_passwords:
+    # 🔐 Session MFA logic
+    if session.get("reset_token_checked") != token:
+        session["reset_webauthn_verified"] = False
+        session["reset_totp_verified"] = False
+        session["reset_token_checked"] = token
+
+    has_webauthn = WebAuthnCredential.query.filter_by(user_id=user.id).count() > 0
+    has_totp = tenant_user.otp_secret is not None
+
+    if has_webauthn and not session.get("reset_webauthn_verified"):
+        return jsonify({
+            "require_webauthn": True,
+            "message": "WebAuthn verification required before resetting your password."
+        }), 202
+
+    if has_totp and not has_webauthn and not session.get("reset_totp_verified"):
+        return jsonify({
+            "require_totp": True,
+            "message": "TOTP verification required before resetting your password."
+        }), 202
+
+    if not has_webauthn and not has_totp:
+        db.session.add(RealTimeLog(
+            user_id=user.id,
+            tenant_id=g.tenant.id,
+            action="❌ Password reset blocked — no MFA configured",
+            ip_address=ip,
+            device_info=device_info,
+            location=location,
+            risk_alert=True
+        ))
+        db.session.commit()
+        return jsonify({
+            "error": (
+                "You need to have at least one multi-factor method (TOTP or WebAuthn) "
+                "set up to reset your password."
+            )
+        }), 403
+
+    # 🔐 Reuse check — current password
+    if check_password_hash(tenant_user.password_hash, new_password):
+        return jsonify({"error": "New password must be different from the current password."}), 400
+
+    # 🔐 Reuse check — history
+    old_passwords = TenantPasswordHistory.query.filter_by(tenant_user_id=tenant_user.id).all()
+    for record in old_passwords:
         if check_password_hash(record.password_hash, new_password):
             db.session.add(RealTimeLog(
                 user_id=user.id,
-                tenant_id=user.tenant_id,
+                tenant_id=g.tenant.id,
                 action="❌ Attempted to reuse an old password during reset",
                 ip_address=ip,
                 device_info=device_info,
@@ -428,39 +496,45 @@ def reset_password():
                 risk_alert=True
             ))
             db.session.commit()
-            return jsonify({"error": "You have already used this password before. Please choose a new one."}), 400
+            return jsonify({"error": "You have already used this password. Please choose a new one."}), 400
 
-    # 🔥 Update password
-    user.password = new_password
-    db.session.add(PasswordHistory(user_id=user.id, password_hash=user.password_hash))
+    # ✅ Hash and update password
+    new_hash = generate_password_hash(new_password)
+    tenant_user.password_hash = new_hash
+    db.session.add(TenantPasswordHistory(
+        tenant_user_id=tenant_user.id,
+        password_hash=new_hash
+    ))
 
-    # 🔥 Keep last 5 password history
-    history_records = PasswordHistory.query.filter_by(user_id=user.id).order_by(
-        PasswordHistory.created_at.desc()).all()
-    if len(history_records) > 5:
-        for old_record in history_records[5:]:
-            db.session.delete(old_record)
+    # Keep last 5 passwords
+    history = TenantPasswordHistory.query.filter_by(tenant_user_id=tenant_user.id).order_by(
+        TenantPasswordHistory.created_at.desc()).all()
+    if len(history) > 5:
+        for old in history[5:]:
+            db.session.delete(old)
 
-    # 🔥 Clear reset token
+    # ✅ Clear reset token
     user.reset_token = None
     user.reset_token_expiry = None
 
-    # 🔥 Log success
     db.session.add(RealTimeLog(
         user_id=user.id,
-        tenant_id=user.tenant_id,
-        action="✅ Password reset successfully",
+        tenant_id=g.tenant.id,
+        action="✅ Password reset after MFA and checks",
         ip_address=ip,
         device_info=device_info,
         location=location,
         risk_alert=False
     ))
 
+    session.clear()
+
     db.session.commit()
 
     return jsonify({
         "message": "Your password has been successfully reset. You may now log in with your new credentials."
     }), 200
+
 
 # Enroll the tenant's user TOTP
 @iam_api_bp.route('/enroll-totp', methods=['GET'])
@@ -668,6 +742,136 @@ def verify_totp_login():
         "user_id": user.id
     }), 200
 
+# Tenant user totp reset from the Outside:
+@iam_api_bp.route('/request-totp-reset', methods=['POST'])
+@require_api_key
+def request_totp_reset():
+    data = request.get_json()
+    identifier = data.get("identifier")
+
+    if not identifier:
+        return jsonify({"error": "Identifier (email or mobile number) is required."}), 400
+
+    # 🔎 Resolve user from identifier
+    user = User.query.filter_by(email=identifier).first()
+    if not user:
+        sim = SIMCard.query.filter_by(mobile_number=identifier, status='active').first()
+        user = sim.user if sim else None
+
+    if not user:
+        return jsonify({"error": "No matching account found."}), 404
+
+    # 🛡️ Tenant-aware match
+    tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=g.tenant.id).first()
+    if not tenant_user:
+        return jsonify({"error": "User not registered under this tenant."}), 404
+
+    # ✅ Generate secure reset token
+    token = generate_token()
+    expiry = datetime.utcnow() + timedelta(minutes=15)
+    user.reset_token = hash_token(token)
+    user.reset_token_expiry = expiry
+
+    # 🔐 Log request
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        tenant_id=g.tenant.id,
+        action="📨 TOTP reset link requested",
+        ip_address=request.remote_addr,
+        device_info=request.user_agent.string,
+        location=get_ip_location(request.remote_addr),
+        risk_alert=True
+    ))
+
+    db.session.commit()
+
+    # 📧 Send tenant-customized email (use tenant_user.company_email or otp_email_label if preferred)
+    send_totp_reset_email(user, token, tenant=g.tenant)
+
+    return jsonify({"message": "TOTP reset link has been sent to your email."}), 200
+
+
+@iam_api_bp.route('/verify-totp-reset', methods=['POST'])
+@require_api_key
+def verify_totp_reset_post():
+    data = request.get_json()
+    token = data.get("token")
+    password = data.get("password")
+
+    user = User.query.filter_by(reset_token=hash_token(token)).first()
+    if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
+        return jsonify({"error": "Invalid or expired token"}), 400
+
+    tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=g.tenant.id).first()
+    if not tenant_user:
+        return jsonify({"error": "User not registered under this tenant."}), 403
+
+    # ✅ Check password
+    if not user.check_password(password):
+        return jsonify({"error": "Incorrect password"}), 401
+
+    ip = request.remote_addr
+    device_info = request.user_agent.string
+    location = get_ip_location(ip)
+
+    # ✅ Trust score enforcement
+    if user.trust_score < 0.5:
+        db.session.add(RealTimeLog(
+            user_id=user.id,
+            tenant_id=g.tenant.id,
+            action="⚠️ TOTP reset denied due to low trust score",
+            ip_address=ip,
+            device_info=device_info,
+            location=location,
+            risk_alert=True
+        ))
+
+        send_admin_alert(
+            user=user,
+            event_type="Blocked TOTP Reset (Low Trust Score)",
+            ip_address=ip,
+            device_info=device_info,
+            location=location
+        )
+
+        db.session.commit()
+        return jsonify({
+            "error": (
+                "For your protection, this TOTP reset request has been blocked "
+                "due to unusual activity or untrusted device. An administrator "
+                "has been notified for further review."
+            )
+        }), 403
+
+    # ✅ Optional WebAuthn enforcement
+    has_webauthn = WebAuthnCredential.query.filter_by(user_id=user.id).count() > 0
+    if has_webauthn and not session.get("reset_webauthn_verified"):
+        return jsonify({
+            "require_webauthn": True,
+            "message": "WebAuthn verification required before TOTP reset."
+        }), 202
+
+    # ✅ Passed → reset tenant-scoped TOTP
+    tenant_user.otp_secret = None
+    tenant_user.otp_email_label = None
+    user.reset_token = None
+    user.reset_token_expiry = None
+
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        tenant_id=g.tenant.id,
+        action="✅ TOTP reset after identity + trust check",
+        ip_address=ip,
+        device_info=device_info,
+        location=location,
+        risk_alert=False
+    ))
+
+    session.pop("reset_webauthn_verified", None)
+
+    db.session.commit()
+    return jsonify({"message": "TOTP has been reset. You’ll be prompted to set it up on next login."}), 200
+
 
 
 # Tenant user totp reset from the settings:
@@ -675,7 +879,7 @@ def verify_totp_login():
 @jwt_required()
 @require_api_key
 def request_reset_totp():
-    user = User.query.get(get_jwt_identity())
+    user = TenantUser.query.get(get_jwt_identity())
     if not user:
         return jsonify({"error": "User not found."}), 404
 
@@ -715,8 +919,8 @@ def request_reset_totp():
         return jsonify({"error": "Incorrect password."}), 401
 
     # 🔥 Clear TOTP info safely
-    user.otp_secret = None
-    user.otp_email_label = None
+    TenantUser.otp_secret = None
+    TenantUser.otp_email_label = None
 
     db.session.add(UserAuthLog(
         user_id=user.id,
@@ -744,6 +948,34 @@ def request_reset_totp():
     return jsonify({
         "message": "TOTP reset successfully. You’ll be asked to enroll TOTP again on next login."
     }), 200
+
+@iam_api_bp.route('/verify-fallback-totp', methods=['POST'])
+@require_api_key
+def verify_fallback_totp():
+    data = request.get_json()
+    token = data.get("token")
+    code = data.get("code")
+
+    if not token or not code:
+        return jsonify({"error": "Reset token and TOTP code are required"}), 400
+
+    user = User.query.filter_by(reset_token=hash_token(token)).first()
+    if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
+        return jsonify({"error": "Invalid or expired token"}), 400
+
+    tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=g.tenant.id).first()
+    if not tenant_user or not tenant_user.otp_secret:
+        return jsonify({"error": "No TOTP method set up"}), 400
+
+    if verify_totp_code(tenant_user.otp_secret, code):
+        session["reset_totp_verified"] = True
+        session["reset_token_checked"] = token
+
+        return jsonify({
+            "message": "✅ TOTP code verified successfully. You can now reset your password."
+        }), 200
+    else:
+        return jsonify({"error": "Invalid TOTP code"}), 401
 
 
 # Enroll the tenants user webauthn
@@ -1177,9 +1409,13 @@ def complete_webauthn_assertion():
 
         db.session.commit()
 
+        # Issue final access_token after WebAuthn is complete
+        access_token = create_access_token(identity=user.id)
+
         return jsonify({
             "message": "✅ Login successful",
             "user_id": user.id,
+            "access_token": access_token,
             "dashboard_url": dashboard_url
         }), 200
 
@@ -1205,12 +1441,10 @@ def begin_reset_webauthn_assertion():
 
         user = User.query.filter_by(reset_token=hash_token(token)).first()
 
-        if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
+        # ⚠️ Enforce tenant isolation
+        tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=g.tenant.id).first() if user else None
+        if not tenant_user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
             return jsonify({"error": "Reset token invalid or expired."}), 403
-
-        # 🛡️ Ensure the user belongs to this tenant
-        if user.tenant_id != g.tenant.id:
-            return jsonify({"error": "Unauthorized: Wrong tenant."}), 403
 
         if not user.webauthn_credentials:
             return jsonify({"error": "User has no registered WebAuthn credentials."}), 404
@@ -1224,11 +1458,11 @@ def begin_reset_webauthn_assertion():
             for c in user.webauthn_credentials
         ]
 
-        # 🔥 Begin WebAuthn assertion
         assertion_data, state = server.authenticate_begin(credentials)
 
         session["reset_webauthn_assertion_state"] = state
         session["reset_user_id"] = user.id
+        session["reset_token_checked"] = token  # ✅ Set token to support follow-up
         session["reset_context"] = "iam_reset"
 
         return jsonify({
@@ -1240,7 +1474,7 @@ def begin_reset_webauthn_assertion():
         traceback.print_exc()
         return jsonify({"error": f"Reset WebAuthn begin failed: {str(e)}"}), 500
 
-# Tenant User Webauth reset-assertion complete
+
 @iam_api_bp.route('/webauthn/reset-assertion-complete', methods=['POST'])
 @require_api_key
 def complete_reset_webauthn_assertion():
@@ -1256,8 +1490,9 @@ def complete_reset_webauthn_assertion():
         if not user:
             return jsonify({"error": "User not found."}), 404
 
-        # 🛡️ Ensure the user belongs to this tenant
-        if user.tenant_id != g.tenant.id:
+        # ⚠️ Enforce tenant isolation
+        tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=g.tenant.id).first()
+        if not tenant_user:
             return jsonify({"error": "Unauthorized: Wrong tenant."}), 403
 
         credential_id = websafe_decode(data["credentialId"])
@@ -1269,7 +1504,7 @@ def complete_reset_webauthn_assertion():
         if not credential:
             return jsonify({"error": "Invalid credential."}), 401
 
-        # ✅ Build WebAuthn response object (as dict)
+        # ✅ Build WebAuthn response object
         assertion = {
             "id": data["credentialId"],
             "rawId": websafe_decode(data["credentialId"]),
@@ -1291,35 +1526,64 @@ def complete_reset_webauthn_assertion():
             "user_handle": None,
         }
 
-        # ✅ Final auth check
+        # ✅ Final WebAuthn verification
         server.authenticate_complete(
             state,
             assertion,
             [public_key_source]
         )
 
-        # ✅ Update credential sign count
         credential.sign_count += 1
         db.session.commit()
 
-        # ✅ After success
-        session.pop("reset_token", None)
-        session.pop("reset_webauthn_assertion_state", None)
+        # ✅ Set verification flag
         session["reset_webauthn_verified"] = True
+        session.pop("reset_webauthn_assertion_state", None)
+        print("✅ Session flag set: reset_webauthn_verified =", session.get("reset_webauthn_verified"))
 
-        return jsonify({"message": "✅ Verified via WebAuthn for reset"}), 200
+        return jsonify({
+            "message": "✅ Verified via WebAuthn for reset",
+        })
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"❌ Reset WebAuthn failed: {str(e)}"}), 500
 
+@iam_api_bp.route('/verify-fallback_totp', methods=['POST'])
+@require_api_key
+def verify_fallback_totp():
+    data = request.get_json()
+    token = data.get("token")
+    code = data.get("code")
 
+    if not token or not code:
+        return jsonify({"error": "Reset token and TOTP code are required"}), 400
 
+    tenant_user = TenantUser.query.join(User).filter(
+        User.reset_token == hash_token(token),
+        User.reset_token_expiry > datetime.utcnow(),
+        TenantUser.tenant_id == g.tenant.id
+    ).first()
 
+    user = tenant_user.user if tenant_user else None
 
+    if not user:
+        return jsonify({"error": "Invalid or expired token or unauthorized tenant access."}), 403
 
+    if not user.otp_secret:
+        return jsonify({"error": "No TOTP method set up"}), 400
 
+    if verify_totp_code(user.otp_secret, code):
+        # Mark TOTP as verified in session for this token
+        session["reset_totp_verified"] = True
+        session["reset_token_checked"] = token
+
+        return jsonify({
+            "message": "✅ TOTP code verified successfully. You can now reset your password."
+        }), 200
+    else:
+        return jsonify({"error": "Invalid TOTP code"}), 401
 
 
 
@@ -1372,23 +1636,61 @@ def get_roles():
     ]), 200
 
 
-# Tenants Roles
-@iam_api_bp.route("/roles", methods=["POST"])
-# @jwt_required()
+# Tenants Users
+@iam_api_bp.route('/tenant-users', methods=['GET'])
+@jwt_required(locations=["headers"])
 @require_api_key
-def create_role():
-    data = request.get_json()
-    role_name = data.get("role_name")
-    permissions = data.get("permissions", {})
+def get_users_trust_summary():
+    tenant_users = TenantUser.query.filter_by(tenant_id=g.tenant.id).all()
 
-    if not role_name:
-        return jsonify({"error": "Role name is required"}), 400
+    result = []
+    for tenant_user in tenant_users:
+        user = tenant_user.user
+        # Try to find their role
+        access_control = UserAccessControl.query.filter_by(
+            user_id=user.id, tenant_id=g.tenant.id
+        ).first()
+        role_name = None
+        if access_control:
+            role = UserRole.query.get(access_control.role_id)
+            role_name = role.role_name if role else "Unassigned"
 
-    existing = UserRole.query.filter_by(role_name=role_name, tenant_id=g.tenant.id).first()
-    if existing:
-        return jsonify({"error": "Role already exists"}), 400
+        result.append({
+            "id": user.id,
+            "first_name": user.first_name,
+            "email": user.email,
+            "role": role_name or "Unassigned",
+            "trust_score": user.trust_score
+        })
 
-    new_role = UserRole(role_name=role_name, permissions=permissions, tenant_id=g.tenant.id)
-    db.session.add(new_role)
-    db.session.commit()
-    return jsonify({"message": "Role created"}), 201
+    return jsonify({"users": result}), 200
+
+
+
+@iam_api_bp.route("/health-check", methods=["GET"])
+@require_api_key
+def health_check():
+    return jsonify({"message": "API key is valid and system is healthy."}), 200
+
+@iam_api_bp.route('/trust-score', methods=['GET'])
+@jwt_required()
+@require_api_key
+def get_trust_score():
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    context = {
+        "ip_address": request.remote_addr,
+        "device_info": request.user_agent.string
+    }
+
+    tenant = g.tenant  # Injected from @require_api_key
+    score = evaluate_trust(user, context, tenant=tenant)
+
+    return jsonify({
+        "user_id": user.id,
+        "trust_score": score,
+        "risk_level": "high" if score > 0.7 else "medium" if score > 0.4 else "low"
+    }), 200

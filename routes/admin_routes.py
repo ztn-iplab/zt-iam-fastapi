@@ -115,10 +115,12 @@ def get_all_users():
         for u in users:
             primary_sim = SIMCard.query.filter_by(user_id=u.id, status="active").first()
 
-            user_role = UserRole.query.get(u.user_access_control.role_id) if u.user_access_control else None
+            # ✅ Get the UserAccessControl for the Master Tenant (e.g., tenant_id = 1)
+            access = UserAccessControl.query.filter_by(user_id=u.id, tenant_id=1).first()
+
+            user_role = UserRole.query.get(access.role_id) if access else None
             role_name = user_role.role_name if user_role else "N/A"
 
-            # ✅ Check if user is locked
             is_locked = u.locked_until is not None and u.locked_until > datetime.utcnow()
 
             users_list.append({
@@ -127,14 +129,15 @@ def get_all_users():
                 "mobile_number": primary_sim.mobile_number if primary_sim else "N/A",
                 "email": u.email,
                 "role": role_name,
-                "is_locked": u.locked_until is not None and u.locked_until > datetime.utcnow(),
-                "locked_until": u.locked_until.isoformat() if u.locked_until else None  # ✅ NEW
+                "is_locked": is_locked,
+                "locked_until": u.locked_until.isoformat() if u.locked_until else None
             })
 
         return jsonify(users_list), 200
 
     except Exception as e:
         return jsonify({"error": "Failed to fetch users", "details": str(e)}), 500
+
 
 
 # ✅ Assign Role to User (Fixed for New Approach)
@@ -510,6 +513,7 @@ def view_user(user_id):
 
 
 # Sending froats to agents
+from decimal import Decimal, InvalidOperation
 @admin_bp.route('/admin/fund-agent', methods=['POST'])
 @jwt_required()
 @session_protected()
@@ -519,26 +523,38 @@ def fund_agent():
     admin_id = get_jwt_identity()
 
     agent_mobile = data.get('agent_mobile')
-    amount = data.get('amount')
+    raw_amount = data.get('amount')  # Still raw string/float from JSON
     device_info = data.get('device_info')
     location = data.get('location')
 
-    if not agent_mobile or not amount:
+    if not agent_mobile or not raw_amount:
         return jsonify({"error": "Missing agent mobile or amount."}), 400
 
     try:
-        amount = float(amount)
+        amount = Decimal(str(raw_amount))  # Secure conversion
         if amount <= 0:
-            return jsonify({"error": "Invalid amount."}), 400
-    except:
-        return jsonify({"error": "Amount must be a number."}), 400
+            return jsonify({"error": "Invalid amount. Must be positive."}), 400
+    except (InvalidOperation, ValueError) as e:
+        print(f"[ERROR] Amount parse error: {e}")
+        return jsonify({"error": "Amount must be a valid number."}), 400
 
-    # ✅ Use HeadquartersWallet instead of admin's personal wallet
+    # ✅ Fetch HQ wallet
     hq_wallet = HeadquartersWallet.query.first()
-    if not hq_wallet or hq_wallet.balance < amount:
-        return jsonify({"error": "Insufficient HQ funds"}), 400
+    if not hq_wallet:
+        print("[ERROR] HQ Wallet not found.")
+        return jsonify({"error": "HQ Wallet not found"}), 404
 
-    # ✅ Find the agent and their wallet
+    hq_balance = hq_wallet.balance  # Should be Decimal if DB column is Numeric
+
+    # print(f"[DEBUG] HQ balance: {hq_balance}, Amount requested: {amount}")
+
+    if hq_balance < amount:
+        print(f"[BLOCKED] HQ balance too low. Requested: {amount}, Available: {hq_balance}")
+        return jsonify({
+            "error": f"Insufficient HQ funds. Available: {hq_balance} RWF, Requested: {amount} RWF"
+        }), 400
+
+    # ✅ Find the agent
     agent_sim = SIMCard.query.filter_by(mobile_number=agent_mobile).first()
     if not agent_sim or not agent_sim.user_id:
         return jsonify({"error": "Agent SIM is not assigned to any user."}), 400
@@ -551,18 +567,17 @@ def fund_agent():
     if not agent_wallet:
         return jsonify({"error": "Agent wallet not found"}), 404
 
-    # 💸 Perform the transfer
+    # 💸 Perform the float transfer
     hq_wallet.balance -= amount
-    agent_wallet.balance += amount
-
+    agent_wallet.balance += float(amount)
     # 🧾 Record the transaction
     float_tx = Transaction(
         user_id=agent.id,
-        amount=amount,
+        amount=float(amount),  # If Transaction.amount is still Float
         transaction_type="float_received",
         status="completed",
-        location=json.dumps(location),         # ✅ serialized
-        device_info=json.dumps(device_info),   # ✅ serialized
+        location=json.dumps(location),
+        device_info=json.dumps(device_info),
         transaction_metadata=json.dumps({
             "from_admin": admin_id,
             "approved_by": "admin",
@@ -574,19 +589,21 @@ def fund_agent():
     )
     db.session.add(float_tx)
 
-    # ✅ Real-time log entry
+    # 🪵 Log to RealTimeLog
     rt_log = RealTimeLog(
         user_id=admin_id,
         action=f"💸 Funded agent {agent.first_name} ({agent_mobile}) with {amount} RWF from HQ Wallet",
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent"),
-        location=json.dumps(location),  # ✅ FIXED: serialize location
+        location=json.dumps(location),
         risk_alert=False,
         tenant_id=1
     )
     db.session.add(rt_log)
 
     db.session.commit()
+
+    # print(f"[SUCCESS] {amount} RWF sent to {agent.first_name} ({agent_mobile})")
 
     return jsonify({
         "message": f"✅ {amount} RWF successfully sent to {agent.first_name} ({agent_mobile})"
@@ -1114,7 +1131,9 @@ def list_tenants():
             "contact_email": t.contact_email,
             "plan": t.plan,
             "is_active": t.is_active,
-            "created_at": t.created_at.strftime("%Y-%m-%d %H:%M")
+            "created_at": t.created_at.strftime("%Y-%m-%d %H:%M"),
+            "last_api_access": t.last_api_access.strftime("%Y-%m-%d %H:%M:%S") if t.last_api_access else None,
+            "api_score": float(t.api_score) if t.api_score is not None else 0.0,
         } for t in tenants
     ])
 

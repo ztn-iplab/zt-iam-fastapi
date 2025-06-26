@@ -274,7 +274,7 @@ def register():
     if not user_role:
         return jsonify({"error": "Default user role not found"}), 500
 
-    new_access = UserAccessControl(user_id=new_user.id, role_id=user_role.id)
+    new_access = UserAccessControl(user_id=new_user.id, role_id=user_role.id, tenant_id=new_user.tenant_id)
     db.session.add(new_access)
 
     # 🔹 Create Wallet for the User
@@ -1053,7 +1053,7 @@ def request_totp_reset():
 def request_totp_reset_form():
     return render_template("request_totp_reset.html")
 
-# Verify totp rest request from user settings
+# Verify totp rest request
 @auth_bp.route('/verify-totp-reset', methods=['POST'])
 def verify_totp_reset_post():
     data = request.get_json()

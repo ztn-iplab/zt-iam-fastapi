@@ -9,7 +9,7 @@ import json
 import threading
 import time
 import json
-from utils.fraud_engine import calculate_risk_score
+from utils.user_trust_engine import evaluate_trust
 from utils.email_alerts import send_alert_email
 from utils.decorators import role_required, session_protected
 
@@ -66,8 +66,14 @@ def create_transaction():
     if not verify_totp_code(user.otp_secret, totp_code):
         return jsonify({"error": "Invalid or expired TOTP code"}), 401
 
-    ip_address = request.remote_addr or data.get('ip_address')
-    risk_score = calculate_risk_score(user, amount, data.get('location'), data.get('device_info'), ip_address)
+    context = {
+        "amount": amount,
+        "device_info": data.get('device_info'),
+        "ip_address": ip_address,
+        "location": data.get('location'),
+        "scope": "transaction"
+    }
+    risk_score = evaluate_trust(user, context, tenant=None)
     fraud_flag = risk_score >= 0.7
 
     # ✅ Withdrawal

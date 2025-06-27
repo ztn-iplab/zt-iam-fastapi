@@ -11,7 +11,7 @@ SCORE_DECAY_HOURS = 6         # Decay trust score every X hours
 WARN_THRESHOLD = 0.5          # Log warning-level API misuse
 BLOCK_THRESHOLD = 1.0         # Auto-suspend if score exceeds this
 
-TRUST_ENGINE_BYPASS_TENANTS = ["MasterTenant", "MinistryOfHealth"]  # ✅ Add more as needed
+TRUST_ENGINE_BYPASS_TENANTS = ["MasterTenant", "MinistryOfHealth"]  # We can add more as needed
 
 def require_api_key(func):
     def wrapper(*args, **kwargs):
@@ -26,11 +26,11 @@ def require_api_key(func):
         now = datetime.utcnow()
 
         # ✅ Bypass trust engine for whitelisted tenants
-        if tenant.name in TRUST_ENGINE_BYPASS_TENANTS:
-            tenant.last_api_access = now
-            db.session.commit()
-            g.tenant = tenant
-            return func(*args, **kwargs)
+        # if tenant.name in TRUST_ENGINE_BYPASS_TENANTS:
+        #     tenant.last_api_access = now
+        #     db.session.commit()
+        #     g.tenant = tenant
+        #     return func(*args, **kwargs)
 
         # ✅ Initialize safely
         tenant.api_score = getattr(tenant, 'api_score', 0.0) or 0.0

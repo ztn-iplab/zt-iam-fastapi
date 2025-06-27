@@ -1186,3 +1186,33 @@ def update_tenant(tenant_id):
 
     return jsonify({"message": "Tenant updated successfully."}), 200
 
+# Reset a tenant's API trust score and unsuspend
+@admin_bp.route('/admin/reset-trust-score/<int:tenant_id>', methods=['POST'])
+@jwt_required()
+@session_protected()
+@role_required(["admin"])
+def reset_trust_score(tenant_id):
+    tenant = Tenant.query.get(tenant_id)
+    if not tenant:
+        return jsonify({"error": "Tenant not found"}), 404
+
+    tenant.api_score = 0.0
+    tenant.api_error_count = 0
+    tenant.api_request_count = 0
+    tenant.api_last_reset = datetime.utcnow()
+    tenant.is_active = True  # Optionally reactivate
+    db.session.commit()
+
+    # Log it
+    db.session.add(RealTimeLog(
+        user_id=get_jwt_identity(),
+        tenant_id=tenant.id,
+        action=f"🔁 Trust score reset for tenant: {tenant.name}",
+        ip_address=request.remote_addr,
+        device_info=request.user_agent.string,
+        location=get_ip_location(request.remote_addr)
+    ))
+    db.session.commit()
+
+    return jsonify({"message": f"Trust score reset for {tenant.name}."}), 200
+

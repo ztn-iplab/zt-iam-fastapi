@@ -805,6 +805,13 @@ function renderTenantRow(tenant) {
        </button>`
     : "";
 
+  // ✅ Only show Reset Trust Score if tenant is suspended
+  const resetTrustButton = !tenant.is_active
+    ? `<button class="btn btn-sm text-info" onclick="resetTrustScore(${tenant.id}, '${tenant.name}')">
+         <i class="fas fa-undo-alt"></i> Reset Trust
+       </button>`
+    : "";
+
   // ✅ Safe handling of undefined/null api_score
   const abuseScore = (tenant.api_score !== undefined && tenant.api_score !== null)
     ? tenant.api_score.toFixed(2)
@@ -835,6 +842,7 @@ function renderTenantRow(tenant) {
                     <i class="fas fa-edit"></i> Edit
                 </button>
                 ${rotateKeyButton}
+                ${resetTrustButton}
                 <button class="btn btn-sm text-danger" onclick="deleteTenant(${tenant.id})">
                     <i class="fas fa-trash-alt"></i> Delete
                 </button>
@@ -1009,6 +1017,24 @@ function rotateApiKey(tenantId, tenantName, contactEmail) {
     });
 }
 
+function resetTrustScore(tenantId, tenantName) {
+  if (!confirm(`Are you sure you want to reset trust score for ${tenantName}?`)) return;
+
+  fetch(`/admin/reset-trust-score/${tenantId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      alert(data.message || "Trust score reset.");
+      loadTenants(); // refresh UI
+    })
+    .catch((err) => {
+      console.error("❌ Failed to reset trust score:", err);
+      alert("Failed to reset trust score.");
+    });
+}
 
 // ✅ Device Info Function
 function getDeviceInfo() {

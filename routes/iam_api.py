@@ -33,7 +33,7 @@ from utils.totp import verify_totp_code
 from fido2 import cbor
 from fido2.utils import websafe_decode, websafe_encode
 from utils.user_trust_engine import evaluate_trust
-from utils.iam_tenant_email import send_tenant_password_reset_email
+from utils.iam_tenant_email import send_tenant_password_reset_email, send_tenant_totp_reset_email, send_tenant_webauthn_reset_email
 
 # Create Blueprint
 iam_api_bp = Blueprint('iam_api', __name__, url_prefix='/api/v1/auth')
@@ -748,9 +748,12 @@ def verify_totp_login():
 def request_totp_reset():
     data = request.get_json()
     identifier = data.get("identifier")
+    redirect_url = data.get("redirect_url")
 
     if not identifier:
-        return jsonify({"error": "Identifier (email or mobile number) is required."}), 400
+        return jsonify({"error": "Identifier (mobile number or email) is required."}), 400
+    if not redirect_url:
+        return jsonify({"error": "Missing redirect URL for client-side reset."}), 400
 
     # 🔎 Resolve user from identifier
     user = User.query.filter_by(email=identifier).first()
@@ -785,8 +788,16 @@ def request_totp_reset():
 
     db.session.commit()
 
-    # 📧 Send tenant-customized email (use tenant_user.company_email or otp_email_label if preferred)
-    send_totp_reset_email(user, token, tenant=g.tenant)
+    # 🔥 Construct tenant-scoped reset link
+    reset_link = f"{redirect_url}?token={token}"
+    # 📧 Send tenant-customized email
+    send_tenant_totp_reset_email(
+        user=user,
+        raw_token=token,
+        tenant_name=g.tenant.name,
+        tenant_email=tenant_user.company_email,
+        reset_link=reset_link
+    )
 
     return jsonify({"message": "TOTP reset link has been sent to your email."}), 200
 
@@ -1486,6 +1497,11 @@ def complete_reset_webauthn_assertion():
             return jsonify({"error": "No reset verification in progress."}), 400
 
         data = request.get_json()
+        print("📥 WebAuthn reset data received:", data, type(data))  # DEBUG
+
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid payload format. Expected a JSON object."}), 400
+
         user = User.query.get(user_id)
         if not user:
             return jsonify({"error": "User not found."}), 404
@@ -1504,34 +1520,38 @@ def complete_reset_webauthn_assertion():
         if not credential:
             return jsonify({"error": "Invalid credential."}), 401
 
-        # ✅ Build WebAuthn response object
-        assertion = {
-            "id": data["credentialId"],
-            "rawId": websafe_decode(data["credentialId"]),
-            "type": "public-key",
-            "response": {
-                "authenticatorData": websafe_decode(data["authenticatorData"]),
-                "clientDataJSON": websafe_decode(data["clientDataJSON"]),
-                "signature": websafe_decode(data["signature"]),
-                "userHandle": websafe_decode(data["userHandle"]) if data.get("userHandle") else None
+        
+        # ✅ Build WebAuthn response object (as dict)
+            assertion = {
+                "id": data["credentialId"],
+                "rawId": websafe_decode(data["credentialId"]),
+                "type": "public-key",
+                "response": {
+                    "authenticatorData": websafe_decode(data["authenticatorData"]),
+                    "clientDataJSON": websafe_decode(data["clientDataJSON"]),
+                    "signature": websafe_decode(data["signature"]),
+                    "userHandle": websafe_decode(data["userHandle"]) if data.get("userHandle") else None
+                }
             }
-        }
+
 
         # ✅ Credential from DB
-        public_key_source = {
-            "id": credential.credential_id,
-            "public_key": credential.public_key,
-            "sign_count": credential.sign_count,
-            "transports": credential.transports.split(",") if credential.transports else [],
-            "user_handle": None,
-        }
+            public_key_source = {
+                "id": credential.credential_id,
+                "public_key": credential.public_key,
+                "sign_count": credential.sign_count,
+                "transports": credential.transports.split(",") if credential.transports else [],
+                "user_handle": None,
+            }
 
-        # ✅ Final WebAuthn verification
-        server.authenticate_complete(
-            state,
-            assertion,
-            [public_key_source]
-        )
+
+        # ✅ Final auth check (note: NO brackets on `assertion`)
+            server.authenticate_complete(
+                state,
+                assertion,
+                [public_key_source]
+            )
+
 
         credential.sign_count += 1
         db.session.commit()
@@ -1550,9 +1570,10 @@ def complete_reset_webauthn_assertion():
         traceback.print_exc()
         return jsonify({"error": f"❌ Reset WebAuthn failed: {str(e)}"}), 500
 
-@iam_api_bp.route('/verify-fallback_totp', methods=['POST'])
+
+@iam_api_bp.route('/verify-totp-reset', methods=['POST'])
 @require_api_key
-def verify_fallback_totp():
+def verify_totp_reset():
     data = request.get_json()
     token = data.get("token")
     code = data.get("code")
@@ -1694,3 +1715,128 @@ def get_trust_score():
         "trust_score": score,
         "risk_level": "high" if score > 0.7 else "medium" if score > 0.4 else "low"
     }), 200
+
+
+# 1. Request to reset WebAuthn
+@iam_api_bp.route('/out-request-webauthn-reset', methods=['POST'])
+@require_api_key
+def request_webauthn_reset():
+    data = request.get_json()
+    identifier = data.get("identifier")
+    redirect_url = data.get("redirect_url")
+
+    if not identifier:
+        return jsonify({"error": "Identifier (email or mobile number) is required."}), 400
+
+    user = User.query.filter_by(email=identifier).first()
+    if not user:
+        sim = SIMCard.query.filter_by(mobile_number=identifier, status='active').first()
+        user = sim.user if sim else None
+
+    if not user:
+        return jsonify({"error": "No matching account found."}), 404
+
+    tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=g.tenant.id).first()
+    if not tenant_user:
+        return jsonify({"error": "Unauthorized reset attempt for this tenant."}), 403
+
+    token = generate_token()
+    expiry = datetime.utcnow() + timedelta(minutes=15)
+
+    user.reset_token = hash_token(token)
+    user.reset_token_expiry = expiry
+    db.session.commit()
+
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        tenant_id=g.tenant.id,
+        action="📨 WebAuthn reset link requested",
+        ip_address=request.remote_addr,
+        device_info=request.user_agent.string,
+        location=get_ip_location(request.remote_addr),
+        risk_alert=True
+    ))
+    db.session.commit()
+
+    # ✅ Construct reset link
+    reset_link = f"{redirect_url}?token={token}"
+    # 📧 Send tenant-customized email
+
+    send_tenant_webauthn_reset_email(
+        user=user,
+        raw_token=token,
+        tenant_name=g.tenant.name,
+        tenant_email=tenant_user.company_email,
+        reset_link=reset_link
+    )
+
+    return jsonify({"message": "WebAuthn reset link has been sent to your email."}), 200
+
+# Step 2: Verify Token and Reset WebAuthn (Password + TOTP Required)
+@iam_api_bp.route('/out-verify-webauthn-reset/<token>', methods=['POST'])
+@require_api_key
+def verify_webauthn_reset(token):
+    data = request.get_json()
+    password = data.get("password")
+    totp = data.get("totp")
+
+    if not password or not totp:
+        return jsonify({"error": "Password and TOTP code are required."}), 400
+
+    user = User.query.filter_by(reset_token=hash_token(token)).first()
+
+    if not user or user.reset_token_expiry < datetime.utcnow():
+        return jsonify({"error": "Invalid or expired token."}), 403
+
+    # 🔐 Enforce tenant boundaries
+    tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=g.tenant.id).first()
+    if not tenant_user:
+        return jsonify({"error": "Unauthorized reset attempt."}), 403
+
+    if not user.check_password(password):
+        return jsonify({"error": "Invalid password."}), 403
+
+    if not tenant_user.otp_secret:
+        return jsonify({"error": "No TOTP configured for this account."}), 403
+
+    totp_validator = pyotp.TOTP(tenant_user.otp_secret)
+    if not totp_validator.verify(totp, valid_window=1):
+        return jsonify({"error": "Invalid TOTP code."}), 403
+
+    # ✅ Delete the user's WebAuthn credentials
+    WebAuthnCredential.query.filter_by(user_id=user.id).delete()
+    db.session.flush()
+
+    # ✅ Clear token and flag for re-enrollment
+    user.reset_token = None
+    user.reset_token_expiry = None
+    user.passkey_required = True
+
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        tenant_id=g.tenant.id,
+        action="✅ WebAuthn reset verified",
+        ip_address=request.remote_addr,
+        device_info=request.user_agent.string,
+        location=get_ip_location(request.remote_addr),
+        risk_alert=True
+    ))
+
+    # ✅ Optional: record credential deletion explicitly
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        tenant_id=g.tenant.id,
+        action="🗑️ Deleted WebAuthn credentials",
+        ip_address=request.remote_addr,
+        device_info=request.user_agent.string,
+        location=get_ip_location(request.remote_addr),
+        risk_alert=False
+    ))
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "✅ WebAuthn reset successful. Please log in and re-enroll your passkey."
+    }), 200
+
+

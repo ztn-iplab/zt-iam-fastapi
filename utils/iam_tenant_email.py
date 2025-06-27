@@ -64,3 +64,36 @@ Best regards,
 
     except Exception as e:
         print(f"❌ Failed to send tenant TOTP reset email: {e}")
+
+
+def send_tenant_webauthn_reset_email(user, raw_token, tenant_name, tenant_email, reset_link):
+    try:
+        subject = f"🔐 WebAuthn Reset Request - {tenant_name}"
+        body = f"""
+Dear {user.first_name},
+
+We received a request to reset your WebAuthn for your {tenant_name} account.
+
+Click the link below to proceed with verification and reset your WeAuthn setup (valid for 15 minutes):
+{reset_link}
+
+If you did not request this reset or still have access to your authenticator app, you can ignore this email.
+
+For your security, always keep your MFA device safe.
+
+Best regards,  
+{tenant_name} Security Team
+"""
+
+        msg = Message(
+            subject=subject,
+            sender=(f"{tenant_name} Security", current_app.config['MAIL_DEFAULT_SENDER']),
+            recipients=[tenant_email],
+            body=body
+        )
+        mail.send(msg)
+        print(f"📧 WebAuthn reset email sent to {tenant_email} from {tenant_name}")
+
+    except Exception as e:
+        print(f"❌ Failed to send tenant WeAbauthn reset email: {e}")
+

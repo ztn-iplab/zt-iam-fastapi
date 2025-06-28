@@ -143,12 +143,12 @@ def register_sim():
 def fetch_sim_registration_history():
     agent_id = get_jwt_identity()
 
-    # ✅ Fetch only SIMs registered by the agent
-    sims = SIMCard.query.filter_by(registered_by=agent_id).order_by(SIMCard.registration_date.desc()).all()
+    # ✅ Fetch all SIMs registered by this agent
+    sims = SIMCard.query.filter_by(registered_by=str(agent_id)).order_by(SIMCard.registration_date.desc()).all()
 
     sim_list = []
     for sim in sims:
-        # ✅ Determine status color class
+        # ✅ Status color logic
         if sim.status == "active":
             status_class = "text-success"
         elif sim.status == "suspended":
@@ -158,8 +158,8 @@ def fetch_sim_registration_history():
         else:
             status_class = "text-muted"
 
-        # ✅ If the SIM was swapped, show the real current mobile number
-        if sim.mobile_number.startswith("SWP_") and sim.user_id:
+        # ✅ Show the user's current active mobile number (if different from this SIM)
+        if sim.user_id:
             active_sim = SIMCard.query.filter_by(user_id=sim.user_id, status="active").first()
             display_mobile = active_sim.mobile_number if active_sim else sim.mobile_number
         else:
@@ -176,8 +176,6 @@ def fetch_sim_registration_history():
         })
 
     return jsonify({"sims": sim_list}), 200
-
-
 
 
 # ✅ Agent Dashboard (HTML Page)
@@ -909,87 +907,6 @@ def reject_user_withdrawal(transaction_id):
         "status": "rejected"
     }), 200
 
-
-# SIM SWAPPING
-# @agent_bp.route("/agent/swap-sim", methods=["POST"])
-# @jwt_required()
-# @role_required(["agent"])
-# def swap_sim():
-#     data = request.get_json()
-
-#     old_iccid = data.get("old_iccid")
-#     new_iccid = data.get("new_iccid")
-#     network_provider = data.get("network_provider")
-#     location = data.get("location", "Unknown")
-
-#     if not old_iccid or not new_iccid or not network_provider:
-#         return jsonify({"error": "Missing required fields"}), 400
-
-#     agent_id = int(get_jwt_identity())
-
-#     # ✅ 1. Validate old SIM
-#     old_sim = SIMCard.query.filter_by(iccid=old_iccid).first()
-#     if not old_sim or old_sim.status != "active":
-#         return jsonify({"error": "Old SIM not found or not active"}), 404
-
-#     # ✅ 2. Validate new SIM
-#     new_sim = SIMCard.query.filter_by(iccid=new_iccid).first()
-#     if not new_sim:
-#         return jsonify({"error": "The selected new ICCID does not exist in the system."}), 404
-#     if new_sim.status != "unregistered":
-#         return jsonify({"error": "The selected ICCID is not available for activation."}), 400
-
-#     # ✅ 3. Enforce same network provider
-#     if old_sim.network_provider != new_sim.network_provider:
-#         return jsonify({
-#             "error": f"SIM swap denied: Cannot swap from {old_sim.network_provider} to {new_sim.network_provider}."
-#         }), 400
-
-#     # ✅ 4. Prevent frequent swaps of same number
-#     recent_swap = SIMCard.query.filter_by(
-#         mobile_number=old_sim.mobile_number,
-#         status="swapped"
-#     ).order_by(SIMCard.registration_date.desc()).first()
-
-#     if recent_swap:
-#         time_since_last = datetime.utcnow() - recent_swap.registration_date
-#         if time_since_last.total_seconds() < 120:
-#             return jsonify({"error": "SIM was recently swapped. Please wait before swapping again."}), 429
-
-#     # ✅ 5. Backup mobile number
-#     old_mobile_number = old_sim.mobile_number
-
-#     # ✅ 6. Mark old SIM as swapped
-#     old_sim.status = "swapped"
-#     old_sim.mobile_number = f"SWP_{int(datetime.utcnow().timestamp())}"
-
-#     # ✅ 7. Assign new SIM
-#     new_sim.status = "active"
-#     new_sim.user_id = old_sim.user_id
-#     new_sim.mobile_number = old_mobile_number
-#     new_sim.registration_date = datetime.utcnow()
-#     new_sim.registered_by = str(agent_id)  # For tracking in history
-
-#     # ✅ 8. Log real-time
-#     rt_log = RealTimeLog(
-#         user_id=agent_id,
-#         action=f"🔄 SIM swapped for {old_mobile_number}: {old_iccid} ➡️ {new_iccid}",
-#         ip_address=request.remote_addr,
-#         device_info=request.headers.get("User-Agent", "Unknown"),
-#         location=location,
-#         risk_alert=True,
-#         tenant_id=1
-#     )
-
-#     db.session.add(rt_log)
-#     db.session.commit()
-
-#     return jsonify({
-#         "message": "🔄 SIM swap successful",
-#         "mobile_number": old_mobile_number,
-#         "old_iccid": old_iccid,
-#         "new_iccid": new_iccid
-#     }), 200
 
 @agent_bp.route("/agent/request-sim-swap", methods=["POST"])
 @jwt_required()

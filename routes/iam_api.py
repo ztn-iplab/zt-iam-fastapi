@@ -1639,54 +1639,6 @@ def logout_user():
         "message": "Successfully logged out. Please discard your access token."
     }), 200
 
-# Getting Tenants roles
-
-@iam_api_bp.route('/roles', methods=['GET'])
-@jwt_required(optional=True)
-@require_api_key
-def get_roles():
-    tenant_id = g.tenant.id
-    roles = UserRole.query.filter_by(tenant_id=tenant_id).all()
-    
-    if not roles:
-        return jsonify([]), 200  # Return empty array if none
-
-    return jsonify([
-        {"id": role.id, "role_name": role.role_name}
-        for role in roles
-    ]), 200
-
-
-# Tenants Users
-@iam_api_bp.route('/tenant-users', methods=['GET'])
-@jwt_required(locations=["headers"])
-@require_api_key
-def get_users_trust_summary():
-    tenant_users = TenantUser.query.filter_by(tenant_id=g.tenant.id).all()
-
-    result = []
-    for tenant_user in tenant_users:
-        user = tenant_user.user
-        # Try to find their role
-        access_control = UserAccessControl.query.filter_by(
-            user_id=user.id, tenant_id=g.tenant.id
-        ).first()
-        role_name = None
-        if access_control:
-            role = UserRole.query.get(access_control.role_id)
-            role_name = role.role_name if role else "Unassigned"
-
-        result.append({
-            "id": user.id,
-            "first_name": user.first_name,
-            "email": user.email,
-            "role": role_name or "Unassigned",
-            "trust_score": user.trust_score
-        })
-
-    return jsonify({"users": result}), 200
-
-
 
 @iam_api_bp.route("/health-check", methods=["GET"])
 @require_api_key
@@ -1840,3 +1792,252 @@ def verify_webauthn_reset(token):
     }), 200
 
 
+# Tenants User Management
+@iam_api_bp.route('/tenant/roles', methods=['GET'])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def get_roles():
+    roles = UserRole.query.filter(UserRole.tenant_id == g.tenant.id).all()
+
+    return jsonify([
+        {"id": r.id, "role_name": r.role_name}
+        for r in roles
+    ]), 200
+
+@iam_api_bp.route('/tenant/roles', methods=['POST'])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def create_role():
+    data = request.get_json()
+    role_name = data.get("role_name")
+    description = data.get("description", "")
+
+    if not role_name:
+        return jsonify({"error": "Role name is required"}), 400
+
+    existing = UserRole.query.filter_by(role_name=role_name, tenant_id=g.tenant.id).first()
+    if existing:
+        return jsonify({"error": "Role already exists"}), 400
+
+    role = UserRole(role_name=role_name, description=description, tenant_id=g.tenant.id)
+    db.session.add(role)
+    db.session.commit()
+    return jsonify({"message": "Role created successfully", "role_id": role.id}), 201
+
+
+@iam_api_bp.route('/tenant/users/<int:user_id>', methods=['PUT'])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def update_tenant_user(user_id):
+    tenant_user = TenantUser.query.filter_by(tenant_id=g.tenant.id, user_id=user_id).first()
+    if not tenant_user:
+        return jsonify({"error": "User not found"}), 404
+
+    data = request.get_json()
+
+    email = data.get("email")
+    if email:
+        tenant_user.company_email = email
+
+    password = data.get("password")
+    if password:
+        tenant_user.password_hash = generate_password_hash(password)
+
+    role_name = data.get("role", "user").lower()
+    role = UserRole.query.filter_by(role_name=role_name, tenant_id=g.tenant.id).first()
+    if not role:
+        return jsonify({"error": f"Role '{role_name}' not found"}), 400
+
+    access_control = UserAccessControl.query.filter_by(user_id=user_id).first()
+    if access_control:
+        access_control.role_id = role.id
+    else:
+        db.session.add(UserAccessControl(user_id=user_id, role_id=role.id))
+
+    db.session.commit()
+
+    return jsonify({"message": "Tenant user updated successfully."}), 200
+
+
+@iam_api_bp.route('/tenant/users/<int:user_id>', methods=['DELETE'])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def delete_tenant_user(user_id):
+    tenant_user = TenantUser.query.filter_by(tenant_id=g.tenant.id, user_id=user_id).first()
+    if not tenant_user:
+        return jsonify({"error": "User not found for this tenant"}), 404
+
+    access = UserAccessControl.query.filter_by(user_id=user_id).first()
+    if access:
+        db.session.delete(access)
+
+    db.session.delete(tenant_user)
+    db.session.commit()
+
+    return jsonify({"message": "Tenant user deleted successfully"}), 200
+
+
+@iam_api_bp.route('/tenant/users', methods=['GET'])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def get_tenant_users():
+    tenant_users = TenantUser.query.filter_by(tenant_id=g.tenant.id).all()
+    users_data = []
+
+    for t_user in tenant_users:
+        user = t_user.user
+
+        # 🧠 Get correct tenant-specific role
+        access = UserAccessControl.query.join(UserRole).filter(
+            UserAccessControl.user_id == user.id,
+            UserAccessControl.tenant_id == g.tenant.id,
+            UserAccessControl.role_id == UserRole.id,
+            UserRole.tenant_id == g.tenant.id
+        ).first()
+
+        role_name = access.role.role_name if access and access.role else "N/A"
+
+        # ✅ Fetch active SIM only to avoid SWP_/OLD_ numbers
+        sim = SIMCard.query.filter_by(user_id=user.id, status="active").first()
+        mobile_number = sim.mobile_number if sim else "N/A"
+
+        users_data.append({
+            "user_id": user.id,
+            "mobile_number": mobile_number,
+            "full_name": f"{user.first_name} {user.last_name}".strip(),
+            "email": t_user.company_email,
+            "role": role_name
+        })
+
+    return jsonify({"users": users_data}), 200
+
+
+@iam_api_bp.route('/tenant/users/<int:user_id>', methods=['GET'])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def get_single_tenant_user(user_id):
+    # 🔒 Ensure the user is part of the current tenant
+    tenant_user = TenantUser.query.filter_by(
+        tenant_id=g.tenant.id,
+        user_id=user_id
+    ).first()
+
+    if not tenant_user:
+        return jsonify({"error": "User not found in this tenant"}), 404
+
+    # 🔄 Get the role assigned for this tenant
+    access = UserAccessControl.query.join(UserRole).filter(
+        UserAccessControl.user_id == user_id,
+        UserRole.id == UserAccessControl.role_id,
+        UserRole.tenant_id == g.tenant.id
+    ).first()
+
+    role_name = access.role.role_name if access and access.role else "user"
+
+    # 🔍 Fetch user profile from core user table
+    user = User.query.get(user_id)
+
+    # ✅ Only show the active SIM’s mobile number
+    sim = SIMCard.query.filter_by(user_id=user.id, status="active").first()
+
+    return jsonify({
+        "user_id": user.id,
+        "full_name": f"{user.first_name} {user.last_name}".strip(),
+        "email": tenant_user.company_email,
+        "mobile_number": sim.mobile_number if sim else None,
+        "role": role_name
+    }), 200
+
+
+@iam_api_bp.route('/tenant/users', methods=['POST'])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def register_tenant_user():
+    try:
+        data = request.get_json(force=True)
+    except Exception:
+        return jsonify({"error": "Invalid JSON format"}), 400
+
+    required_fields = ['mobile_number', 'first_name', 'password', 'email']
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify({"error": f"{field.replace('_', ' ').capitalize()} is required"}), 400
+
+    if not is_strong_password(data['password']):
+        return jsonify({
+            "error": "Password must be at least 8 characters long and include uppercase, lowercase, number, and special character."
+        }), 400
+
+    sim_card = SIMCard.query.filter_by(mobile_number=data['mobile_number'], status="active").first()
+    if not sim_card:
+        return jsonify({"error": "Mobile number not recognized or not active"}), 404
+
+    user = User.query.get(sim_card.user_id)
+    if not user:
+        return jsonify({"error": "SIM card not linked to any user"}), 404
+
+    # 🔁 Ensure user's first_name is stored
+    if not user.first_name:
+        user.first_name = data.get("first_name", "").strip()
+        db.session.add(user)
+
+    existing_tenant_user = TenantUser.query.filter_by(
+        tenant_id=g.tenant.id,
+        user_id=user.id
+    ).first()
+
+    if existing_tenant_user:
+        return jsonify({"error": "User with this mobile number already registered under this tenant"}), 400
+
+    existing_email_user = TenantUser.query.filter_by(
+        tenant_id=g.tenant.id,
+        company_email=data['email']
+    ).first()
+
+    if existing_email_user:
+        return jsonify({"error": "User with this email already registered under this tenant"}), 400
+
+    # 🔥 Create TenantUser entry
+    tenant_user = TenantUser(
+        tenant_id=g.tenant.id,
+        user_id=user.id,
+        company_email=data['email'],
+        password_hash=generate_password_hash(data['password'])
+    )
+    db.session.add(tenant_user)
+
+    # ✅ NEW: Create or fetch role
+    role_name = data.get("role", "user").strip().lower()
+    role = UserRole.query.filter_by(role_name=role_name, tenant_id=g.tenant.id).first()
+    if not role:
+        role = UserRole(role_name=role_name, tenant_id=g.tenant.id)
+        db.session.add(role)
+        db.session.commit()  # Needed for role.id
+
+    # Create UserAccessControl entry
+    access_control = UserAccessControl(
+        user_id=user.id,
+        role_id=role.id,
+        access_level=data.get("access_level", "read")
+    )
+    db.session.add(access_control)
+
+    # ✅ Log registration event
+    db.session.add(RealTimeLog(
+        user_id=user.id,
+        tenant_id=g.tenant.id,
+        action=f"🆕 IAMaaS User Registered via API (Mobile {data['mobile_number']}, Role: {role_name})",
+        ip_address=request.remote_addr,
+        device_info="IAMaaS API",
+        location=data.get('location', 'Unknown'),
+        risk_alert=False
+    ))
+
+    db.session.commit()
+
+    return jsonify({
+        "message": f"User registered successfully with role '{role_name}'.",
+        "mobile_number": data['mobile_number'],
+        "tenant_email": data['email'],
+        "role": role_name
+    }), 201

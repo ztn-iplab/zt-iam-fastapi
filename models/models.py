@@ -289,23 +289,23 @@ class Tenant(db.Model):
     __tablename__ = 'tenants'
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False, unique=True)  
+    name = db.Column(db.String(100), nullable=False, unique=True)
     api_key = db.Column(db.String(64), unique=True, nullable=False)
-    contact_email = db.Column(db.String(120), nullable=False, unique=False)
+    contact_email = db.Column(db.String(120), nullable=False)
     plan = db.Column(db.String(50), default='free')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    is_active = db.Column(db.Boolean, default=True)  
+    is_active = db.Column(db.Boolean, default=True)
 
-    # Track last API access
+    # ⏳ NEW FIELD
+    api_key_expires_at = db.Column(db.DateTime, nullable=True)
+
+    # API abuse and tracking
     last_api_access = db.Column(db.DateTime)
-
-    # Abuse detection fields
     api_request_count = db.Column(db.Integer, default=0)
     api_error_count = db.Column(db.Integer, default=0)
     api_score = db.Column(db.Float, default=0.0)
     api_last_reset = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Relationships
     users = db.relationship('User', backref='tenant', lazy=True)
 
     def __init__(self, **kwargs):
@@ -314,6 +314,15 @@ class Tenant(db.Model):
         self.api_request_count = kwargs.get('api_request_count', 0)
         self.api_error_count = kwargs.get('api_error_count', 0)
         self.api_last_reset = kwargs.get('api_last_reset', datetime.utcnow())
+        
+        # 🎯 Automatically set expiry based on plan
+        if not self.api_key_expires_at:
+            if self.plan == 'free':
+                self.api_key_expires_at = None  # Free = unlimited
+            elif self.plan == 'pro':
+                self.api_key_expires_at = datetime.utcnow() + timedelta(days=90)
+            elif self.plan == 'enterprise':
+                self.api_key_expires_at = datetime.utcnow() + timedelta(days=365)
 
 class TenantPasswordHistory(db.Model):
     __tablename__ = 'tenant_password_history'

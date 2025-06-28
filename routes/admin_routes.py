@@ -107,17 +107,17 @@ def admin_dashboard():
 @session_protected()
 @role_required(["admin"])
 def get_all_users():
-    """Only admins can view all users"""
+    """ZTN-IAM Admins view all users (Master Tenant only)"""
     try:
         users = User.query.all()
         users_list = []
 
         for u in users:
+            # ✅ Fetch active SIM only
             primary_sim = SIMCard.query.filter_by(user_id=u.id, status="active").first()
 
-            # ✅ Get the UserAccessControl for the Master Tenant (e.g., tenant_id = 1)
+            # ✅ Enforce Master Tenant role only
             access = UserAccessControl.query.filter_by(user_id=u.id, tenant_id=1).first()
-
             user_role = UserRole.query.get(access.role_id) if access else None
             role_name = user_role.role_name if user_role else "N/A"
 
@@ -136,56 +136,70 @@ def get_all_users():
         return jsonify(users_list), 200
 
     except Exception as e:
-        return jsonify({"error": "Failed to fetch users", "details": str(e)}), 500
-
-
+        return jsonify({
+            "error": "Failed to fetch users",
+            "details": str(e)
+        }), 500
 
 # ✅ Assign Role to User (Fixed for New Approach)
+ZTN_MASTER_TENANT_ID = 1
+
 @admin_bp.route("/admin/assign_role", methods=["POST"])
 @jwt_required()
-# @session_protected()
 @role_required(["admin"])
 def assign_role():
-    """Admins assign roles to users"""
     data = request.get_json()
 
     user = User.query.get(data.get("user_id"))
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # ✅ Get user's mobile number from SIMCard (since it's not in the User model anymore)
-    user_sim = SIMCard.query.filter_by(user_id=user.id).first()
-    mobile_number = user_sim.mobile_number if user_sim else "N/A"
-
-    # ✅ Validate the role ID instead of role name
     role = UserRole.query.get(data.get("role_id"))
     if not role:
         return jsonify({"error": "Invalid role ID"}), 400
 
-    # ✅ Assign or update user role
-    user_access = UserAccessControl.query.filter_by(user_id=user.id).first()
+    # ✅ Enforce that the role is from master tenant
+    if role.tenant_id != ZTN_MASTER_TENANT_ID:
+        return jsonify({"error": "Cross-tenant role assignment is not allowed"}), 400
+
+    # 🔍 Assign or update access control for master tenant
+    user_access = UserAccessControl.query.filter_by(
+        user_id=user.id,
+        tenant_id=ZTN_MASTER_TENANT_ID
+    ).first()
+
     if user_access:
-        user_access.role_id = role.id  # ✅ Update existing role
+        user_access.role_id = role.id
+        user_access.access_level = data.get("access_level", "read")
     else:
-        new_access = UserAccessControl(user_id=user.id, role_id=role.id)
+        new_access = UserAccessControl(
+            user_id=user.id,
+            role_id=role.id,
+            tenant_id=ZTN_MASTER_TENANT_ID,
+            access_level=data.get("access_level", "read")
+        )
         db.session.add(new_access)
 
-    # ✅ Log admin action
+    # Logging
+    user_sim = SIMCard.query.filter_by(user_id=user.id, status="active").first()
+    mobile_number = user_sim.mobile_number if user_sim else "N/A"
+
     admin_id = int(get_jwt_identity())
     rt_log = RealTimeLog(
         user_id=admin_id,
+        tenant_id=ZTN_MASTER_TENANT_ID,
         action=f"🛠️ Assigned role '{role.role_name}' to user {user.first_name} {user.last_name} ({mobile_number})",
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Admin Panel"),
         location="Headquarters",
-        risk_alert=False,
-        tenant_id=1
+        risk_alert=False
     )
     db.session.add(rt_log)
-
     db.session.commit()
 
-    return jsonify({"message": f"✅ Role '{role.role_name}' assigned to user with mobile {mobile_number}"}), 200
+    return jsonify({
+        "message": f"✅ Role '{role.role_name}' assigned to user with mobile {mobile_number}"
+    }), 200
 
 
 # Suspend the user
@@ -463,21 +477,30 @@ def generate_sim():
 
 
 # View User Details
+ZTN_MASTER_TENANT_ID = 1
+
 @admin_bp.route("/admin/view_user/<int:user_id>", methods=["GET"])
 @jwt_required()
 @session_protected()
 def view_user(user_id):
-    """Admin views user details and action buttons based on status."""
-
+    """Admin views user details (ZTN-IAM context only)."""
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 
+    # ✅ Get active SIM
     primary_sim = SIMCard.query.filter_by(user_id=user.id, status="active").first()
-    user_role = UserRole.query.get(user.user_access_control.role_id) if user.user_access_control else None
+
+    # ✅ Get role scoped to master tenant
+    access = UserAccessControl.query.filter_by(
+        user_id=user.id,
+        tenant_id=ZTN_MASTER_TENANT_ID
+    ).first()
+
+    user_role = UserRole.query.get(access.role_id) if access else None
     role_name = user_role.role_name if user_role else "N/A"
 
-    # ✅ Log this view action
+    # ✅ Log view action
     admin_id = int(get_jwt_identity())
     admin_user = User.query.get(admin_id)
 
@@ -488,12 +511,12 @@ def view_user(user_id):
         device_info=request.headers.get("User-Agent", "Admin Panel"),
         location="Headquarters",
         risk_alert=False,
-        tenant_id=1
+        tenant_id=ZTN_MASTER_TENANT_ID
     )
     db.session.add(rt_log)
     db.session.commit()
 
-    # Prepare user details
+    # ✅ Prepare user details
     user_details = {
         "id": user.id,
         "name": f"{user.first_name} {user.last_name or ''}".strip(),
@@ -501,7 +524,7 @@ def view_user(user_id):
         "email": user.email,
         "role": role_name,
         "is_verified": user.identity_verified,
-        "is_suspended": user.is_active == False,
+        "is_suspended": not user.is_active,
         "can_assign_role": True,
         "can_suspend": not user.is_active,
         "can_verify": not user.identity_verified,
@@ -510,7 +533,6 @@ def view_user(user_id):
     }
 
     return jsonify(user_details), 200
-
 
 # Sending froats to agents
 from decimal import Decimal, InvalidOperation
@@ -1177,14 +1199,32 @@ def update_tenant(tenant_id):
     new_email = data.get("contact_email")
     new_plan = data.get("plan")
 
+    plan_changed = False
     if new_email:
         tenant.contact_email = new_email.strip()
-    if new_plan:
-        tenant.plan = new_plan.strip()
+    if new_plan and new_plan.strip().lower() != tenant.plan.lower():
+        tenant.plan = new_plan.strip().lower()
+        plan_changed = True
+
+    # ✅ Automatically upgrade settings if plan changed
+    if plan_changed:
+        if tenant.plan == "pro":
+            tenant.api_key_expires_at = datetime.utcnow() + timedelta(days=90)
+        elif tenant.plan == "enterprise":
+            tenant.api_key_expires_at = datetime.utcnow() + timedelta(days=365)
+        else:  # fallback for 'free' or unknown plans
+            tenant.api_key_expires_at = None  # or set a shorter duration if you wish
+
+        # Optional: Reset abuse tracking for fresh start on plan upgrade
+        tenant.api_score = 0.0
+        tenant.api_request_count = 0
+        tenant.api_error_count = 0
+        tenant.api_last_reset = datetime.utcnow()
 
     db.session.commit()
 
     return jsonify({"message": "Tenant updated successfully."}), 200
+
 
 # Reset a tenant's API trust score and unsuspend
 @admin_bp.route('/admin/reset-trust-score/<int:tenant_id>', methods=['POST'])
@@ -1216,3 +1256,24 @@ def reset_trust_score(tenant_id):
 
     return jsonify({"message": f"Trust score reset for {tenant.name}."}), 200
 
+
+@admin_bp.route("/admin/tenant-details/<int:tenant_id>")
+@jwt_required()
+@session_protected()
+@role_required(["admin"])
+def get_tenant_details(tenant_id):
+    tenant = Tenant.query.get_or_404(tenant_id)
+    data = {
+        "id": tenant.id,
+        "name": tenant.name,
+        "contact_email": tenant.contact_email,
+        "plan": tenant.plan,
+        "created_at": tenant.created_at.isoformat(),
+        "last_api_access": tenant.last_api_access.isoformat() if tenant.last_api_access else "Never",
+        "api_key_expires_at": tenant.api_key_expires_at.isoformat() if tenant.api_key_expires_at else "Never",
+        "api_request_count": tenant.api_request_count,
+        "api_error_count": tenant.api_error_count,
+        "api_score": round(tenant.api_score or 0.0, 2),
+        "is_active": tenant.is_active
+    }
+    return jsonify(data), 200

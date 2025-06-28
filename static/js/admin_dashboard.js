@@ -821,6 +821,12 @@ function renderTenantRow(tenant) {
     ? `<span class="badge bg-danger">${abuseScore}</span>`
     : `<span class="badge bg-secondary">${abuseScore}</span>`;
 
+  const viewButton = `
+  <button class="btn btn-sm text-dark" onclick="viewTenantDetails(${tenant.id})">
+    <i class="fas fa-eye"></i> View
+  </button>`;
+
+
   row.innerHTML = `
     <td>${tenant.name}</td>
     <td>${tenant.contact_email}</td>
@@ -843,6 +849,7 @@ function renderTenantRow(tenant) {
                 </button>
                 ${rotateKeyButton}
                 ${resetTrustButton}
+                ${viewButton}
                 <button class="btn btn-sm text-danger" onclick="deleteTenant(${tenant.id})">
                     <i class="fas fa-trash-alt"></i> Delete
                 </button>
@@ -936,7 +943,7 @@ async function deleteTenant(id) {
 function editTenant(id, email, plan) {
   document.getElementById("edit-tenant-id").value = id;
   document.getElementById("edit-tenant-email").value = email;
-  document.getElementById("edit-tenant-plan").value = plan;
+  document.getElementById("edit-tenant-plan").value = plan.toLowerCase(); // normalize casing
   const modal = new bootstrap.Modal(document.getElementById("editTenantModal"));
   modal.show();
 }
@@ -946,7 +953,16 @@ document.getElementById("edit-tenant-form").addEventListener("submit", function 
 
   const tenantId = document.getElementById("edit-tenant-id").value;
   const contactEmail = document.getElementById("edit-tenant-email").value.trim();
-  const plan = document.getElementById("edit-tenant-plan").value;
+  const plan = document.getElementById("edit-tenant-plan").value.trim().toLowerCase();
+
+  if (!["free", "pro", "enterprise"].includes(plan)) {
+    Toastify({
+      text: "❌ Invalid plan selected. Choose free, pro, or enterprise.",
+      duration: 4000,
+      backgroundColor: "#dc3545",
+    }).showToast();
+    return;
+  }
 
   fetch(`/admin/update-tenant/${tenantId}`, {
     method: "PUT",
@@ -967,12 +983,12 @@ document.getElementById("edit-tenant-form").addEventListener("submit", function 
       }).showToast();
 
       bootstrap.Modal.getInstance(document.getElementById("editTenantModal")).hide();
-      loadTenants(); // Refresh table
+      loadTenants(); // Refresh updated view
     })
     .catch((err) => {
       console.error("❌ Edit failed:", err);
       Toastify({
-        text: `❌ Failed to update tenant`,
+        text: `❌ Failed to update tenant.`,
         duration: 4000,
         gravity: "top",
         position: "right",
@@ -1047,6 +1063,33 @@ function getDeviceInfo() {
     },
   };
 }
+
+function viewTenantDetails(id) {
+  fetch(`/admin/tenant-details/${id}`)
+    .then(res => res.json())
+    .then(data => {
+      const modalBody = document.getElementById("tenant-details-body");
+      modalBody.innerHTML = `
+        <p><strong>Name:</strong> ${data.name}</p>
+        <p><strong>Email:</strong> ${data.contact_email}</p>
+        <p><strong>Plan:</strong> ${data.plan}</p>
+        <p><strong>Status:</strong> ${data.is_active ? "Active" : "Suspended"}</p>
+        <p><strong>API Key Expires:</strong> ${data.api_key_expires_at}</p>
+        <p><strong>Created At:</strong> ${data.created_at}</p>
+        <p><strong>Last Access:</strong> ${data.last_api_access}</p>
+        <p><strong>Request Count:</strong> ${data.api_request_count}</p>
+        <p><strong>Error Count:</strong> ${data.api_error_count}</p>
+        <p><strong>Trust Score:</strong> ${data.api_score}</p>
+      `;
+      const modal = new bootstrap.Modal(document.getElementById("tenantDetailsModal"));
+      modal.show();
+    })
+    .catch(err => {
+      console.error("Failed to load tenant details", err);
+      alert("Error fetching details");
+    });
+}
+
 
 // ✅ Location Info Function
 async function getLocation() {

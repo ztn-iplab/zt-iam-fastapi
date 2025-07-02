@@ -332,3 +332,14 @@ class TenantPasswordHistory(db.Model):
     created_at = db.Column(db.DateTime, default=db.func.now())
 
     tenant_user = db.relationship('TenantUser', backref='password_history')
+
+class TenantTrustPolicyFile(db.Model):
+    __tablename__ = "tenant_trust_policy_file"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenants.id"), unique=True, nullable=False)
+    filename = db.Column(db.String(128))
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    config_json = db.Column(db.JSON, nullable=False)
+
+    tenant = db.relationship("Tenant", backref=db.backref("trust_policy_file", uselist=False))

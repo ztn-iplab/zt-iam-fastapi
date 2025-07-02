@@ -70,11 +70,11 @@ def verify_secondary_method(user):
 def generate_challenge():
     return base64.b64encode(os.urandom(32)).decode("utf-8")
 
-def get_request_fingerprint():
+def get_request_fingerprint(tenant_id=None):
     if not has_request_context():
         return "no-request-context"
 
-    # Trust real client IP forwarded by NGINX
+    # 🌐 Trust headers set by nginx/reverse proxy
     ip = (
         request.headers.get("X-Real-IP")
         or request.headers.get("X-Forwarded-For")
@@ -84,7 +84,10 @@ def get_request_fingerprint():
 
     ua = request.headers.get("User-Agent", "unknown").lower().strip()
 
-    raw_fp = f"{ip}|{ua}"
+    # 🔐 Include tenant-specific salt
+    tenant_str = str(tenant_id) if tenant_id else "unknown-tenant"
+
+    raw_fp = f"{tenant_str}|{ip}|{ua}"
     return hashlib.sha256(raw_fp.encode()).hexdigest()
 
 

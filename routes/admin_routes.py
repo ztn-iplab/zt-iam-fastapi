@@ -1192,7 +1192,7 @@ def update_tenant(tenant_id):
         return jsonify({"error": "Only admins can update tenants."}), 403
 
     tenant = Tenant.query.get(tenant_id)
-    if not tenant or tenant.name.lower() == "dummytenant":
+    if not tenant or tenant.name.lower() == "mastertenant":
         return jsonify({"error": "Tenant not found or not editable."}), 404
 
     data = request.get_json()
@@ -1208,7 +1208,7 @@ def update_tenant(tenant_id):
 
     # ✅ Automatically upgrade settings if plan changed
     if plan_changed:
-        if tenant.plan == "pro":
+        if tenant.plan == "premium":
             tenant.api_key_expires_at = datetime.utcnow() + timedelta(days=90)
         elif tenant.plan == "enterprise":
             tenant.api_key_expires_at = datetime.utcnow() + timedelta(days=365)

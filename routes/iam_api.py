@@ -5,7 +5,7 @@ from flask_jwt_extended import (
 from models.models import (
     db, User, SIMCard, Wallet, UserAuthLog,
     Transaction, UserRole,
-    UserAccessControl, RealTimeLog, OTPCode,
+    UserAccessControl, RealTimeLog, OTPCode,TenantTrustPolicyFile,
     WebAuthnCredential, PasswordHistory,TenantPasswordHistory,TenantUser,PendingTOTP
 )
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -259,10 +259,15 @@ def login_user():
         return jsonify({"error": "Invalid credentials"}), 401
 
     # ✅ Successful login - now calculate trust score
+    # context = {
+    #     "ip_address": ip_address,
+    #     "device_info": device_info
+    # }
     context = {
-        "ip_address": ip_address,
-        "device_info": device_info
+        "ip_address": "198.51.100.99",  # Simulated new IP
+        "device_info": "MyCustomTestDevice/1.0"  # Simulated new device
     }
+
 
     trust_score = evaluate_trust(user, context, tenant=g.tenant)
     risk_level = (
@@ -1810,7 +1815,6 @@ def get_roles():
 def create_role():
     data = request.get_json()
     role_name = data.get("role_name")
-    description = data.get("description", "")
 
     if not role_name:
         return jsonify({"error": "Role name is required"}), 400
@@ -1819,7 +1823,7 @@ def create_role():
     if existing:
         return jsonify({"error": "Role already exists"}), 400
 
-    role = UserRole(role_name=role_name, description=description, tenant_id=g.tenant.id)
+    role = UserRole(role_name=role_name, tenant_id=g.tenant.id)
     db.session.add(role)
     db.session.commit()
     return jsonify({"message": "Role created successfully", "role_id": role.id}), 201
@@ -1976,9 +1980,10 @@ def register_tenant_user():
     if not user:
         return jsonify({"error": "SIM card not linked to any user"}), 404
 
-    # 🔁 Ensure user's first_name is stored
+    # ✅ Only update first_name; treat it as full name
     if not user.first_name:
         user.first_name = data.get("first_name", "").strip()
+        user.last_name = ""  # Or None — your choice
         db.session.add(user)
 
     existing_tenant_user = TenantUser.query.filter_by(
@@ -1997,7 +2002,6 @@ def register_tenant_user():
     if existing_email_user:
         return jsonify({"error": "User with this email already registered under this tenant"}), 400
 
-    # 🔥 Create TenantUser entry
     tenant_user = TenantUser(
         tenant_id=g.tenant.id,
         user_id=user.id,
@@ -2006,23 +2010,17 @@ def register_tenant_user():
     )
     db.session.add(tenant_user)
 
-    # ✅ NEW: Create or fetch role
     role_name = data.get("role", "user").strip().lower()
     role = UserRole.query.filter_by(role_name=role_name, tenant_id=g.tenant.id).first()
-    if not role:
-        role = UserRole(role_name=role_name, tenant_id=g.tenant.id)
-        db.session.add(role)
-        db.session.commit()  # Needed for role.id
 
-    # Create UserAccessControl entry
     access_control = UserAccessControl(
         user_id=user.id,
         role_id=role.id,
+        tenant_id=g.tenant.id,
         access_level=data.get("access_level", "read")
     )
     db.session.add(access_control)
 
-    # ✅ Log registration event
     db.session.add(RealTimeLog(
         user_id=user.id,
         tenant_id=g.tenant.id,
@@ -2041,3 +2039,272 @@ def register_tenant_user():
         "tenant_email": data['email'],
         "role": role_name
     }), 201
+
+
+
+# Allowing external application to refresh access tokens
+@iam_api_bp.route("/refresh", methods=["POST"])
+@require_api_key
+def external_refresh():
+    """Allow external client apps to refresh access token via refresh token cookie."""
+    refresh_token = request.cookies.get("refresh_token_cookie")
+
+    if not refresh_token:
+        return jsonify({"error": "Missing refresh token"}), 401
+
+    try:
+        decoded = decode_token(refresh_token)
+        user_id = decoded.get("sub")
+
+        if not user_id:
+            return jsonify({"error": "Invalid token (no subject)"}), 401
+
+        # ✅ Load user and tenant
+        user = User.query.get(user_id)
+        if not user or user.status == "suspended":
+            return jsonify({"error": "User not allowed to refresh."}), 403
+
+        tenant_id = user.tenant_id  # ⬅️ Assuming you have this field
+
+        # ✅ Generate fingerprint
+        fingerprint = get_request_fingerprint(tenant_id)
+
+        # ✅ Issue new access token
+        access_token = create_access_token(identity=user_id)
+        resp = jsonify({"access_token": access_token})
+        set_access_cookies(resp, access_token)
+
+        # ✅ Log refresh attempt
+        log = RealTimeLog(
+            actor="user",
+            event="token_refresh",
+            user_id=user_id,
+            tenant_id=tenant_id,
+            ip=request.headers.get("X-Real-IP") or request.remote_addr,
+            fingerprint=fingerprint,
+            metadata={
+                "user_agent": request.headers.get("User-Agent", "unknown"),
+                "source": "external_client"
+            }
+        )
+        db.session.add(log)
+        db.session.commit()
+
+        return resp, 200
+
+    except Exception as e:
+        return jsonify({"error": f"Token refresh failed: {str(e)}"}), 401
+
+
+# Tenants Settings Self Management
+@iam_api_bp.route("/tenant-settings", methods=["GET"])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def get_tenant_settings():
+    tenant = g.tenant
+    return jsonify({
+        "api_key": tenant.api_key,
+        "plan": tenant.plan or "Basic"
+    }), 200
+
+@iam_api_bp.route("/change-plan", methods=["POST"])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def change_tenant_plan():
+    try:
+        data = request.get_json(force=True)
+    except Exception:
+        return jsonify({"error": "Invalid JSON format"}), 400
+
+    new_plan = data.get("plan", "").capitalize()
+    allowed_plans = ["Basic", "Premium", "Enterprise"]
+
+    if new_plan not in allowed_plans:
+        return jsonify({"error": f"Invalid plan: '{new_plan}'. Allowed plans: {', '.join(allowed_plans)}"}), 400
+
+    tenant = g.tenant
+    old_plan = tenant.plan or "Basic"
+    tenant.plan = new_plan
+    db.session.add(tenant)
+
+    db.session.add(RealTimeLog(
+        tenant_id=tenant.id,
+        action=f"📦 Plan changed from {old_plan} to {new_plan} via dashboard",
+        ip_address=request.remote_addr,
+        device_info="IAMaaS API",
+        location="Tenant Self-Service",
+        risk_alert=False
+    ))
+
+    db.session.commit()
+
+    return jsonify({
+        "message": f"Plan updated to '{new_plan}'",
+        "plan": new_plan
+    }), 200
+
+
+# Tenants System Metrics
+@iam_api_bp.route("/tenant/system-metrics", methods=["GET"])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def get_tenant_system_metrics():
+    tenant = g.tenant
+
+    total_users = (
+        db.session.query(TenantUser)
+        .filter_by(tenant_id=tenant.id)
+        .count()
+    )
+
+    today = datetime.utcnow().date()
+    active_users_today = (
+        db.session.query(UserAuthLog.user_id)
+        .filter(
+            UserAuthLog.tenant_id == tenant.id,
+            db.func.date(UserAuthLog.auth_timestamp) == today,
+            UserAuthLog.auth_status == "success"
+        )
+        .distinct()
+        .count()
+    )
+
+    past_7_days = datetime.utcnow() - timedelta(days=7)
+    logins_last_7_days = (
+        db.session.query(UserAuthLog)
+        .filter(
+            UserAuthLog.tenant_id == tenant.id,
+            UserAuthLog.auth_status == "success",
+            UserAuthLog.auth_timestamp >= past_7_days
+        )
+        .count()
+    )
+
+    # ✅ Count TOTP enrolled users (those with non-null otp_secret)
+    totp_users = (
+        db.session.query(TenantUser)
+        .filter(
+            TenantUser.tenant_id == tenant.id,
+            TenantUser.otp_secret.isnot(None)
+        )
+        .count()
+    )
+
+    # ✅ Count WebAuthn enrolled users
+    webauthn_users = (
+        db.session.query(WebAuthnCredential)
+        .filter_by(tenant_id=tenant.id)
+        .distinct(WebAuthnCredential.user_id)
+        .count()
+    )
+
+    totp_percent = round((totp_users / total_users) * 100, 1) if total_users else 0
+    webauthn_percent = round((webauthn_users / total_users) * 100, 1) if total_users else 0
+
+    since_24h = datetime.utcnow() - timedelta(hours=24)
+    api_calls_24h = (
+        db.session.query(RealTimeLog)
+        .filter(
+            RealTimeLog.tenant_id == tenant.id,
+            RealTimeLog.timestamp >= since_24h,
+            RealTimeLog.action.ilike("%api%")
+        )
+        .count()
+    )
+
+    return jsonify({
+        "total_users": total_users,
+        "active_users_today": active_users_today,
+        "logins_last_7_days": logins_last_7_days,
+        "totp_percent": totp_percent,
+        "webauthn_percent": webauthn_percent,
+        "api_calls_24h": api_calls_24h
+    }), 200
+
+
+# Tenants Policy Management:
+from utils.policy_validator import validate_trust_policy
+@iam_api_bp.route("/tenant/trust-policy/upload", methods=["POST"])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def upload_trust_policy_file():
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    if not file.filename.endswith(".json"):
+        return jsonify({"error": "Only .json files are allowed"}), 400
+
+    try:
+        parsed = json.load(file)
+        validate_trust_policy(parsed)
+    except Exception as e:
+        return jsonify({"error": f"Invalid policy file: {str(e)}"}), 400
+
+    tenant_id = g.tenant.id
+    existing = TenantTrustPolicyFile.query.filter_by(tenant_id=tenant_id).first()
+
+    if existing:
+        existing.config_json = parsed
+        existing.filename = file.filename
+        existing.uploaded_at = datetime.utcnow()
+    else:
+        db.session.add(TenantTrustPolicyFile(
+            tenant_id=tenant_id,
+            filename=file.filename,
+            config_json=parsed,
+            uploaded_at=datetime.utcnow()  # ✅ Force explicit timestamp
+        ))
+
+
+    db.session.add(RealTimeLog(
+        tenant_id=tenant_id,
+        action=f"📤 Trust Policy File Uploaded: {file.filename}",
+        ip_address=request.remote_addr,
+        device_info="IAMaaS API",
+        location="Tenant Self-Service",
+        risk_alert=False
+    ))
+    db.session.commit()
+
+    return jsonify({"message": "Trust policy uploaded successfully."}), 200
+
+@iam_api_bp.route("/tenant/trust-policy", methods=["GET"])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def get_uploaded_policy():
+    policy = TenantTrustPolicyFile.query.filter_by(tenant_id=g.tenant.id).first()
+    if not policy:
+        return jsonify({"error": "No policy uploaded"}), 404
+
+    return jsonify({
+    "filename": policy.filename,
+    "uploaded_at": policy.uploaded_at.isoformat() + "Z",  # ✅ Explicit UTC timestamp
+    "config": policy.config_json
+}), 200
+
+
+@iam_api_bp.route("/tenant/trust-policy/clear", methods=["DELETE"])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def clear_trust_policy():
+    if not g.tenant:
+        return jsonify({"error": "No tenant context found"}), 400
+
+    existing = TenantTrustPolicyFile.query.filter_by(tenant_id=g.tenant.id).first()
+    if not existing:
+        return jsonify({"error": "No policy to clear"}), 404
+
+    db.session.delete(existing)
+    db.session.add(RealTimeLog(
+        user_id=get_jwt_identity(),
+        tenant_id=g.tenant.id,
+        action="🗑️ Trust policy cleared by tenant admin",
+        ip_address=request.remote_addr,
+        device_info=request.user_agent.string,
+        location=get_ip_location(request.remote_addr),
+        risk_alert=False
+    ))
+    db.session.commit()
+
+    return jsonify({"message": "Trust policy cleared successfully"}), 200

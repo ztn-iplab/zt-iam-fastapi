@@ -3,21 +3,21 @@ console.log("Admin Dashboard JS loaded");
 // ---------------------------
 // Inactivity Timeout Logic
 // ---------------------------
-const INACTIVITY_LIMIT = 15 * 60 * 1000; // 15 minutes in milliseconds
-let lastActivityTime = Date.now();
-["mousemove", "keydown", "click", "scroll"].forEach((evt) =>
-  document.addEventListener(evt, () => {
-    lastActivityTime = Date.now();
-  })
-);
-setInterval(() => {
-  if (Date.now() - lastActivityTime > INACTIVITY_LIMIT) {
-    alert("You've been inactive. Logging out.");
-    fetch("/api/auth/logout", { method: "POST" }).then(() => {
-      window.location.href = "/api/auth/login_form";
-    });
-  }
-}, 60000);
+// const INACTIVITY_LIMIT = 60 * 60 * 1000; // 15 minutes in milliseconds
+// let lastActivityTime = Date.now();
+// ["mousemove", "keydown", "click", "scroll"].forEach((evt) =>
+//   document.addEventListener(evt, () => {
+//     lastActivityTime = Date.now();
+//   })
+// );
+// setInterval(() => {
+//   if (Date.now() - lastActivityTime > INACTIVITY_LIMIT) {
+//     alert("You've been inactive. Logging out.");
+//     fetch("/api/auth/logout", { method: "POST" }).then(() => {
+//       window.location.href = "/api/auth/login_form";
+//     });
+//   }
+// }, 60000);
 
 // ---------------------------
 // Admin Section Toggle
@@ -791,6 +791,7 @@ async function loadTenants() {
 }
 
 // 👇 Render each row (used in loadTenants + filtering)
+// 👇 Render each row (used in loadTenants + filtering)
 function renderTenantRow(tenant) {
   const tableBody = document.getElementById("tenant-table-body");
   const row = document.createElement("tr");
@@ -800,19 +801,17 @@ function renderTenantRow(tenant) {
     : `<span class="badge bg-danger">Suspended</span>`;
 
   const rotateKeyButton = tenant.is_active
-    ? `<button class="btn btn-sm text-warning" onclick="rotateApiKey(${tenant.id}, '${tenant.name}', '${tenant.contact_email}')">
+    ? `<button class="btn btn-sm rotate-btn" onclick="rotateApiKey(${tenant.id}, '${tenant.name}', '${tenant.contact_email}')">
          <i class="fas fa-sync-alt"></i> Rotate Key
        </button>`
     : "";
 
-  // ✅ Only show Reset Trust Score if tenant is suspended
   const resetTrustButton = !tenant.is_active
-    ? `<button class="btn btn-sm text-info" onclick="resetTrustScore(${tenant.id}, '${tenant.name}')">
+    ? `<button class="btn btn-sm reset-trust-btn" onclick="resetTrustScore(${tenant.id}, '${tenant.name}')">
          <i class="fas fa-undo-alt"></i> Reset Trust
        </button>`
     : "";
 
-  // ✅ Safe handling of undefined/null api_score
   const abuseScore = (tenant.api_score !== undefined && tenant.api_score !== null)
     ? tenant.api_score.toFixed(2)
     : "0.00";
@@ -822,39 +821,38 @@ function renderTenantRow(tenant) {
     : `<span class="badge bg-secondary">${abuseScore}</span>`;
 
   const viewButton = `
-  <button class="btn btn-sm text-dark" onclick="viewTenantDetails(${tenant.id})">
-    <i class="fas fa-eye"></i> View
-  </button>`;
-
+    <button class="btn btn-sm view-btn" onclick="viewTenantDetails(${tenant.id})">
+      <i class="fas fa-eye"></i> View
+    </button>`;
 
   row.innerHTML = `
     <td>${tenant.name}</td>
     <td>${tenant.contact_email}</td>
-    <td>${tenant.plan}</td>
+    <td>${tenant.plan.charAt(0).toUpperCase() + tenant.plan.slice(1)}</td>
     <td>${statusBadge}</td>
     <td>${tenant.created_at}</td>
     <td>${tenant.last_api_access || "Never"}</td>
     <td>${abuseBadge}</td>
     <td class="action-buttons">
-        <div class="dropdown dropup">
-            <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)" style="background-color: var(--brand-blue); color: white;">
-                Actions ▼
-            </button>
-            <div class="dropdown-menu">
-                <button class="btn btn-sm ${tenant.is_active ? 'btn-danger' : 'btn-success'}" style="color: purple;" onclick="toggleTenantStatus(${tenant.id})">
-                  <i class="fas fa-toggle-on"></i> ${tenant.is_active ? "Suspend" : "Enable"}
-                </button>
-                <button class="btn btn-sm text-primary" onclick="editTenant(${tenant.id}, '${tenant.contact_email}', '${tenant.plan}')">
-                    <i class="fas fa-edit"></i> Edit
-                </button>
-                ${rotateKeyButton}
-                ${resetTrustButton}
-                ${viewButton}
-                <button class="btn btn-sm text-danger" onclick="deleteTenant(${tenant.id})">
-                    <i class="fas fa-trash-alt"></i> Delete
-                </button>
-            </div>
+      <div class="dropdown dropup">
+        <button class="btn btn-sm dropdown-toggle" onclick="toggleDropdown(this)">
+          Actions ▼
+        </button>
+        <div class="dropdown-menu">
+          <button class="btn btn-sm toggle-status-btn" onclick="toggleTenantStatus(${tenant.id})">
+            <i class="fas fa-toggle-on"></i> ${tenant.is_active ? "Suspend" : "Enable"}
+          </button>
+          <button class="btn btn-sm edit-btn" onclick="editTenant(${tenant.id}, '${tenant.contact_email}', '${tenant.plan}')">
+            <i class="fas fa-edit"></i> Edit
+          </button>
+          ${rotateKeyButton}
+          ${resetTrustButton}
+          ${viewButton}
+          <button class="btn btn-sm delete-btn" onclick="deleteTenant(${tenant.id})">
+            <i class="fas fa-trash-alt"></i> Delete
+          </button>
         </div>
+      </div>
     </td>
   `;
 
@@ -955,9 +953,9 @@ document.getElementById("edit-tenant-form").addEventListener("submit", function 
   const contactEmail = document.getElementById("edit-tenant-email").value.trim();
   const plan = document.getElementById("edit-tenant-plan").value.trim().toLowerCase();
 
-  if (!["free", "pro", "enterprise"].includes(plan)) {
+  if (!["basic", "premium", "enterprise"].includes(plan)) {
     Toastify({
-      text: "❌ Invalid plan selected. Choose free, pro, or enterprise.",
+      text: "❌ Invalid plan selected. Choose basic, premium, or enterprise.",
       duration: 4000,
       backgroundColor: "#dc3545",
     }).showToast();

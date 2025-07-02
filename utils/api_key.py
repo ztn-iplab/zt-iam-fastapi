@@ -33,11 +33,11 @@ def require_api_key(func):
         now = datetime.utcnow()
 
         # ✅ Bypass trust engine for whitelisted tenants (safe for dev/testing)
-        if tenant.name in TRUST_ENGINE_BYPASS_TENANTS:
-            tenant.last_api_access = now
-            db.session.commit()
-            g.tenant = tenant
-            return func(*args, **kwargs)
+        # if tenant.name in TRUST_ENGINE_BYPASS_TENANTS:
+        #     tenant.last_api_access = now
+        #     db.session.commit()
+        #     g.tenant = tenant
+        #     return func(*args, **kwargs)
 
         # 🔐 Plan-based dynamic rate limits
         plan = (tenant.plan or "free").lower()

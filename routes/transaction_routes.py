@@ -65,6 +65,8 @@ def create_transaction():
 
     if not verify_totp_code(user.otp_secret, totp_code):
         return jsonify({"error": "Invalid or expired TOTP code"}), 401
+        
+    ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
 
     context = {
         "amount": amount,

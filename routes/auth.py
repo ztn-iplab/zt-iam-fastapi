@@ -611,7 +611,7 @@ def verify_fallback_totp():
     else:
         return jsonify({"error": "Invalid TOTP code"}), 401
 
-# Refres the access token
+# Refresh the access token
 @auth_bp.route('/refresh', methods=['POST'])
 @jwt_required(refresh=True)
 def refresh():

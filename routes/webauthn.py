@@ -79,7 +79,7 @@ def begin_registration():
         traceback.print_exc()
         return jsonify({"error": "Server failed to prepare biometric registration."}), 500
 
-
+ZTN_MASTER_TENANT_ID = 1
 @webauthn_bp.route("/webauthn/register-complete", methods=["POST"])
 @jwt_required()
 @session_protected()
@@ -114,6 +114,7 @@ def complete_registration():
 
         credential = WebAuthnCredential(
             user_id=user.id,
+            tenant_id=ZTN_MASTER_TENANT_ID,
             credential_id=cred_data.credential_id,
             public_key=public_key_bytes,
             sign_count=0,

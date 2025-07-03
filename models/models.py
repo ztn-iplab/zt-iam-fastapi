@@ -213,19 +213,22 @@ class HeadquartersWallet(db.Model):
 
 class WebAuthnCredential(db.Model):
     __tablename__ = 'webauthn_credentials'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False) 
-    credential_id = db.Column(db.LargeBinary, unique=True, nullable=False)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
+    credential_id = db.Column(db.LargeBinary, nullable=False)  # ❌ Don't use unique=True here
     public_key = db.Column(db.LargeBinary, nullable=False)
     sign_count = db.Column(db.Integer, default=0)
-    transports = db.Column(db.String)  # e.g. "usb,ble,internal"
+    transports = db.Column(db.String)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship('User', backref='webauthn_credentials')
 
-    # ✅ Used for allowCredentials in WebAuthn challenge
+    __table_args__ = (
+        db.UniqueConstraint("credential_id", "tenant_id", name="uq_credential_per_tenant"),
+    )
+
     def as_dict(self):
         return {
             "type": "public-key",
@@ -233,14 +236,13 @@ class WebAuthnCredential(db.Model):
             "transports": self.transports.split(",") if self.transports else []
         }
 
-    # ✅ Used for FIDO2 server.authenticate_complete
     def as_webauthn_credential(self):
         from fido2.webauthn import PublicKeyCredentialDescriptor
         return PublicKeyCredentialDescriptor(
             id=self.credential_id,
             type="public-key"
         )
-
+        
 class PasswordHistory(db.Model):
     __tablename__ = 'password_history'
     id = db.Column(db.Integer, primary_key=True)

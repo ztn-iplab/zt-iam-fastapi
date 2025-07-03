@@ -5,49 +5,24 @@ TRUST_POLICY_SCHEMA = {
     "properties": {
         "rules": {
             "type": "object",
-            "properties": {
-                "large_transaction": {
-                    "type": "object",
-                    "properties": {
-                        "enabled": {"type": "boolean"},
-                        "weight": {"type": "number"},
-                        "threshold": {"type": "number"}
-                    },
-                    "required": ["enabled", "weight"]
-                },
-                "odd_hours": {
-                    "type": "object",
-                    "properties": {
-                        "enabled": {"type": "boolean"},
-                        "weight": {"type": "number"},
-                        "hours": {
-                            "type": "array",
-                            "items": {"type": "integer", "minimum": 0, "maximum": 23}
-                        }
-                    },
-                    "required": ["enabled", "weight"]
-                },
-                "new_device_or_ip": {
+            "patternProperties": {
+                "^.*$": {  # ✅ Accept any rule name
                     "type": "object",
                     "properties": {
                         "enabled": {"type": "boolean"},
                         "weight": {"type": "number"}
                     },
-                    "required": ["enabled", "weight"]
-                },
-                "geo_trust": {
-                    "type": "object",
-                    "properties": {
-                        "enabled": {"type": "boolean"},
-                        "weight": {"type": "number"},
-                        "min_trust_score": {"type": "number"}
-                    },
-                    "required": ["enabled", "weight"]
+                    "required": ["enabled", "weight"],
+                    "additionalProperties": True  # allow rule-specific extras like "threshold", "hours", etc.
                 }
             },
-            "additionalProperties": False
+            "additionalProperties": False  # disallow rule names outside pattern
         },
-        "final_threshold": {"type": "number", "minimum": 0, "maximum": 1}
+        "final_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+        }
     },
     "required": ["rules", "final_threshold"],
     "additionalProperties": False

@@ -1745,14 +1745,17 @@ def verify_webauthn_reset(token):
     if not user or user.reset_token_expiry < datetime.utcnow():
         return jsonify({"error": "Invalid or expired token."}), 403
 
-    # 🔐 Enforce tenant boundaries
-    tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=g.tenant.id).first()
+    # 🔐 Enforce tenant boundary
+    tenant_id = g.tenant.id
+    tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=tenant_id).first()
     if not tenant_user:
         return jsonify({"error": "Unauthorized reset attempt."}), 403
 
-    if not user.check_password(password):
+    # ✅ Check tenant-specific password
+    if not check_password_hash(tenant_user.password_hash, password):
         return jsonify({"error": "Invalid password."}), 403
 
+    # ✅ TOTP validation
     if not tenant_user.otp_secret:
         return jsonify({"error": "No TOTP configured for this account."}), 403
 
@@ -1760,35 +1763,40 @@ def verify_webauthn_reset(token):
     if not totp_validator.verify(totp, valid_window=1):
         return jsonify({"error": "Invalid TOTP code."}), 403
 
-    # ✅ Delete the user's WebAuthn credentials
-    WebAuthnCredential.query.filter_by(user_id=user.id).delete()
+    # ✅ Tenant-scoped WebAuthn deletion
+    WebAuthnCredential.query.filter_by(user_id=user.id, tenant_id=tenant_id).delete()
     db.session.flush()
 
-    # ✅ Clear token and flag for re-enrollment
+    # 🧼 Clear reset token and flag for passkey re-registration
     user.reset_token = None
     user.reset_token_expiry = None
     user.passkey_required = True
 
-    db.session.add(RealTimeLog(
-        user_id=user.id,
-        tenant_id=g.tenant.id,
-        action="✅ WebAuthn reset verified",
-        ip_address=request.remote_addr,
-        device_info=request.user_agent.string,
-        location=get_ip_location(request.remote_addr),
-        risk_alert=True
-    ))
+    # 🔐 Audit Logs
+    ip_address = request.remote_addr
+    device_info = request.user_agent.string
+    location = get_ip_location(ip_address)
 
-    # ✅ Optional: record credential deletion explicitly
-    db.session.add(RealTimeLog(
-        user_id=user.id,
-        tenant_id=g.tenant.id,
-        action="🗑️ Deleted WebAuthn credentials",
-        ip_address=request.remote_addr,
-        device_info=request.user_agent.string,
-        location=get_ip_location(request.remote_addr),
-        risk_alert=False
-    ))
+    db.session.add_all([
+        RealTimeLog(
+            user_id=user.id,
+            tenant_id=tenant_id,
+            action="✅ WebAuthn reset verified",
+            ip_address=ip_address,
+            device_info=device_info,
+            location=location,
+            risk_alert=True
+        ),
+        RealTimeLog(
+            user_id=user.id,
+            tenant_id=tenant_id,
+            action="🗑️ Deleted WebAuthn credentials",
+            ip_address=ip_address,
+            device_info=device_info,
+            location=location,
+            risk_alert=False
+        )
+    ])
 
     db.session.commit()
 

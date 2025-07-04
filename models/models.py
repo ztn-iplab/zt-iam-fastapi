@@ -279,7 +279,8 @@ class TenantUser(db.Model):
     # 🔐 New: Per-tenant TOTP
     otp_secret = db.Column(db.String(64), nullable=True)
     otp_email_label = db.Column(db.String(120), nullable=True)
-
+    preferred_mfa = db.Column(db.String(20), default='both')  # Options: 'totp', 'webauthn', 'both'
+     
     tenant = db.relationship('Tenant', backref='tenant_users')
     user = db.relationship('User', backref='tenant_profiles')
 
@@ -297,6 +298,8 @@ class Tenant(db.Model):
     plan = db.Column(db.String(50), default='free')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
+    # ✅ New: enforce MFA for all users under this tenant/ admin work
+    enforce_strict_mfa = db.Column(db.Boolean, default=False)
 
     # ⏳ NEW FIELD
     api_key_expires_at = db.Column(db.DateTime, nullable=True)

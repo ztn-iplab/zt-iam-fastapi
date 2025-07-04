@@ -12,8 +12,8 @@ BLOCK_THRESHOLD = 1.0
 
 # 🎚️ Plan-specific Rate Limits
 PLAN_RATE_LIMITS = {
-    "free": 100,
-    "pro": 1000,
+    "basic": 100,
+    "premium": 1000,
     "enterprise": 5000
 }
 
@@ -40,7 +40,7 @@ def require_api_key(func):
         #     return func(*args, **kwargs)
 
         # 🔐 Plan-based dynamic rate limits
-        plan = (tenant.plan or "free").lower()
+        plan = (tenant.plan or "basic").lower()
         rate_limit = PLAN_RATE_LIMITS.get(plan, 100)
 
         # ✅ Initialize fields safely

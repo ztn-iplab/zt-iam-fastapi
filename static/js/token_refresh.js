@@ -1,7 +1,7 @@
 // ---------------------------
 // 🔁 Silent Token Refresh
 // ---------------------------
-const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000; // Every 5 minutes
+const AUTO_REFRESH_INTERVAL = 60 * 60 * 1000; // Every 
 
 setInterval(() => {
   fetch("/api/auth/refresh", {

@@ -6,7 +6,7 @@ from models.models import (
     db, User, SIMCard, Wallet, UserAuthLog,
     Transaction, UserRole,
     UserAccessControl, RealTimeLog, OTPCode,TenantTrustPolicyFile,
-    WebAuthnCredential, PasswordHistory,TenantPasswordHistory,TenantUser,PendingTOTP
+    WebAuthnCredential, PasswordHistory,TenantPasswordHistory,Tenant, TenantUser,PendingTOTP
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from utils.security import (
@@ -309,18 +309,44 @@ def login_user():
 
     role = user_access.role.role_name if user_access else "user"
 
+    preferred_mfa = (tenant_user.preferred_mfa or "both").lower()
+
+    # ✅ Enforce global MFA policy if enabled
+    if g.tenant.enforce_strict_mfa:
+        preferred_mfa = "both"
+
+    # Determine MFA requirements based on trust score and preference
+    require_totp = False
+    require_webauthn = False
+    skip_all_mfa = False
+
+    if trust_score >= 0.95:
+        skip_all_mfa = True
+
+    if not skip_all_mfa:
+        if preferred_mfa == "totp":
+            require_totp = bool(tenant_user.otp_secret)
+        elif preferred_mfa == "webauthn":
+            require_webauthn = True
+        elif preferred_mfa == "both":
+            require_totp = bool(tenant_user.otp_secret)
+            require_webauthn = True
+    print(f"🔐 MFA Settings for user {user.id}: {preferred_mfa}")
+    print(f"➡️ TOTP: {require_totp}, WebAuthn: {require_webauthn}, Skip All: {skip_all_mfa}")
+
     return jsonify({
         "message": "Login successful",
         "user_id": user.id,
         "access_token": access_token,
-        "require_totp": bool(tenant_user.otp_secret),
-        "require_totp_setup": tenant_user.otp_secret is None,
-        "require_totp_reset": tenant_user.otp_secret and tenant_user.otp_email_label != tenant_user.company_email,
         "role": role,
         "trust_score": trust_score,
-        "risk_level": risk_level
+        "risk_level": risk_level,
+        "require_totp": require_totp,
+        "require_totp_setup": tenant_user.otp_secret is None,
+        "require_totp_reset": tenant_user.otp_secret and tenant_user.otp_email_label != tenant_user.company_email,
+        "require_webauthn": require_webauthn,
+        "skip_all_mfa": skip_all_mfa
     }), 200
-
 
 @iam_api_bp.route('/forgot-password', methods=['POST'])
 @require_api_key
@@ -739,13 +765,15 @@ def verify_totp_login():
         tenant_id=tenant_id
     ).first() is not None
 
+    require_webauthn = tenant_user.preferred_mfa in ["both", "webauthn"]
 
     return jsonify({
         "message": "TOTP verified successfully.",
-        "require_webauthn": True,
+        "require_webauthn": require_webauthn,  # ✅ based on preference!
         "has_webauthn_credentials": has_webauthn_credentials,
         "user_id": user.id
     }), 200
+
 
 # Tenant user totp reset from the Outside:
 @iam_api_bp.route('/request-totp-reset', methods=['POST'])
@@ -1855,6 +1883,10 @@ def update_tenant_user(user_id):
     if password:
         tenant_user.password_hash = generate_password_hash(password)
 
+    new_mfa = data.get("preferred_mfa")
+    if new_mfa in ["totp", "webauthn", "both"]:
+        tenant_user.preferred_mfa = new_mfa
+
     role_name = data.get("role", "user").lower()
     role = UserRole.query.filter_by(role_name=role_name, tenant_id=g.tenant.id).first()
     if not role:
@@ -1957,7 +1989,8 @@ def get_single_tenant_user(user_id):
         "full_name": f"{user.first_name} {user.last_name}".strip(),
         "email": tenant_user.company_email,
         "mobile_number": sim.mobile_number if sim else None,
-        "role": role_name
+        "role": role_name,
+        "preferred_mfa": tenant_user.preferred_mfa
     }), 200
 
 
@@ -2316,3 +2349,53 @@ def clear_trust_policy():
     db.session.commit()
 
     return jsonify({"message": "Trust policy cleared successfully"}), 200
+
+
+# User profile management
+@iam_api_bp.route("/tenant/user/preferred-mfa", methods=["PUT"])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def update_user_mfa_preference():
+    try:
+        user_id = int(get_jwt_identity())  # ✅ Ensure correct type
+        tenant_id = g.tenant.id
+        data = request.get_json()
+
+        preferred_mfa = data.get("preferred_mfa")
+        if preferred_mfa not in ["totp", "webauthn", "both"]:
+            return jsonify({"error": "Invalid MFA selection"}), 400
+
+        tenant_user = TenantUser.query.filter_by(user_id=user_id, tenant_id=tenant_id).first()
+        if not tenant_user:
+            return jsonify({"error": "User not found in this tenant"}), 404
+
+        tenant_user.preferred_mfa = preferred_mfa
+        db.session.commit()
+        print("✅ New preferred_mfa:", tenant_user.preferred_mfa)
+        return jsonify({"message": "MFA preference updated"}), 200
+
+    except Exception as e:
+        print("❌ MFA preference update error:", e)
+        db.session.rollback()
+        return jsonify({"error": "Failed to update MFA preference"}), 500
+
+
+@iam_api_bp.route("/tenant/mfa-policy", methods=["GET", "PUT"])
+@jwt_required(locations=["cookies"])
+@require_api_key
+def manage_mfa_policy():
+    tenant_id = g.tenant.id
+    tenant = Tenant.query.get(tenant_id)
+
+    if request.method == "GET":
+        return jsonify({"enforce_strict_mfa": tenant.enforce_strict_mfa}), 200
+
+    if request.method == "PUT":
+        data = request.get_json()
+        value = data.get("enforce_strict_mfa")
+        if not isinstance(value, bool):
+            return jsonify({"error": "Invalid value"}), 400
+
+        tenant.enforce_strict_mfa = value
+        db.session.commit()
+        return jsonify({"message": "MFA policy updated", "enforce_strict_mfa": value}), 200

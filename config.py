@@ -26,7 +26,7 @@ class Config:
     JWT_REFRESH_COOKIE_PATH = '/api/auth/refresh'  # Scoped to refresh endpoint
 
     # Expiry durations
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=15)   # Short-lived for security
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=60)   # Short-lived for security
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)      # Long-lived to allow auto-refresh
 
     # Cookie security settings

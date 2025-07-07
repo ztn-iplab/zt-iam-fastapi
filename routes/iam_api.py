@@ -311,7 +311,7 @@ def login_user():
 
     preferred_mfa = (tenant_user.preferred_mfa or "both").lower()
 
-    # ✅ Enforce global MFA policy if enabled
+    # Enforce global MFA policy if enabled
     if g.tenant.enforce_strict_mfa:
         preferred_mfa = "both"
 
@@ -1454,7 +1454,7 @@ def complete_webauthn_assertion():
         db.session.commit()
 
         # Issue final access_token after WebAuthn is complete
-        access_token = create_access_token(identity=user.id)
+        access_token = create_access_token(identity=str(user.id))
 
         return jsonify({
             "message": "✅ Login successful",
@@ -1835,7 +1835,7 @@ def verify_webauthn_reset(token):
 
 # Tenants User Management
 @iam_api_bp.route('/tenant/roles', methods=['GET'])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def get_roles():
     roles = UserRole.query.filter(UserRole.tenant_id == g.tenant.id).all()
@@ -1846,7 +1846,7 @@ def get_roles():
     ]), 200
 
 @iam_api_bp.route('/tenant/roles', methods=['POST'])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def create_role():
     data = request.get_json()
@@ -1866,7 +1866,7 @@ def create_role():
 
 
 @iam_api_bp.route('/tenant/users/<int:user_id>', methods=['PUT'])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def update_tenant_user(user_id):
     tenant_user = TenantUser.query.filter_by(tenant_id=g.tenant.id, user_id=user_id).first()
@@ -1904,7 +1904,7 @@ def update_tenant_user(user_id):
 
 
 @iam_api_bp.route('/tenant/users/<int:user_id>', methods=['DELETE'])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def delete_tenant_user(user_id):
     tenant_user = TenantUser.query.filter_by(tenant_id=g.tenant.id, user_id=user_id).first()
@@ -1922,7 +1922,7 @@ def delete_tenant_user(user_id):
 
 
 @iam_api_bp.route('/tenant/users', methods=['GET'])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def get_tenant_users():
     tenant_users = TenantUser.query.filter_by(tenant_id=g.tenant.id).all()
@@ -1957,10 +1957,9 @@ def get_tenant_users():
 
 
 @iam_api_bp.route('/tenant/users/<int:user_id>', methods=['GET'])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def get_single_tenant_user(user_id):
-    # 🔒 Ensure the user is part of the current tenant
     tenant_user = TenantUser.query.filter_by(
         tenant_id=g.tenant.id,
         user_id=user_id
@@ -1995,7 +1994,7 @@ def get_single_tenant_user(user_id):
 
 
 @iam_api_bp.route('/tenant/users', methods=['POST'])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def register_tenant_user():
     try:
@@ -2111,7 +2110,7 @@ def external_refresh():
         fingerprint = get_request_fingerprint(tenant_id)
 
         # ✅ Issue new access token
-        access_token = create_access_token(identity=user_id)
+        access_token = create_access_token(identity=str(user.id))
         resp = jsonify({"access_token": access_token})
         set_access_cookies(resp, access_token)
 
@@ -2139,7 +2138,7 @@ def external_refresh():
 
 # Tenants Settings Self Management
 @iam_api_bp.route("/tenant-settings", methods=["GET"])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def get_tenant_settings():
     tenant = g.tenant
@@ -2149,7 +2148,7 @@ def get_tenant_settings():
     }), 200
 
 @iam_api_bp.route("/change-plan", methods=["POST"])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def change_tenant_plan():
     try:
@@ -2187,7 +2186,7 @@ def change_tenant_plan():
 
 # Tenants System Metrics
 @iam_api_bp.route("/tenant/system-metrics", methods=["GET"])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def get_tenant_system_metrics():
     tenant = g.tenant
@@ -2266,7 +2265,7 @@ def get_tenant_system_metrics():
 # Tenants Policy Management:
 from utils.policy_validator import validate_trust_policy
 @iam_api_bp.route("/tenant/trust-policy/upload", methods=["POST"])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def upload_trust_policy_file():
     file = request.files.get("file")
@@ -2311,7 +2310,7 @@ def upload_trust_policy_file():
     return jsonify({"message": "Trust policy uploaded successfully."}), 200
 
 @iam_api_bp.route("/tenant/trust-policy", methods=["GET"])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def get_uploaded_policy():
     policy = TenantTrustPolicyFile.query.filter_by(tenant_id=g.tenant.id).first()
@@ -2325,8 +2324,50 @@ def get_uploaded_policy():
 }), 200
 
 
+# Real time udpdate of the Tenant uploaded policy
+@iam_api_bp.route("/tenant/trust-policy/edit", methods=["PUT"])
+@jwt_required(locations=['cookies', 'headers'])
+@require_api_key
+def edit_trust_policy_json():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing JSON payload"}), 400
+
+    try:
+        validate_trust_policy(data)
+    except Exception as e:
+        return jsonify({"error": f"Invalid policy structure: {str(e)}"}), 400
+
+    tenant_id = g.tenant.id
+    policy = TenantTrustPolicyFile.query.filter_by(tenant_id=tenant_id).first()
+
+    if policy:
+        policy.config_json = data
+        policy.uploaded_at = datetime.utcnow()
+    else:
+        policy = TenantTrustPolicyFile(
+            tenant_id=tenant_id,
+            filename="inline_editor.json",
+            config_json=data,
+            uploaded_at=datetime.utcnow()
+        )
+        db.session.add(policy)
+
+    db.session.add(RealTimeLog(
+        tenant_id=tenant_id,
+        action="📝 Trust Policy Edited Inline (JSON)",
+        ip_address=request.remote_addr,
+        device_info="IAMaaS API",
+        location="Tenant Dashboard",
+        risk_alert=False
+    ))
+
+    db.session.commit()
+    return jsonify({"message": "Trust policy updated successfully."}), 200
+
+
 @iam_api_bp.route("/tenant/trust-policy/clear", methods=["DELETE"])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def clear_trust_policy():
     if not g.tenant:
@@ -2353,7 +2394,7 @@ def clear_trust_policy():
 
 # User profile management
 @iam_api_bp.route("/tenant/user/preferred-mfa", methods=["PUT"])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def update_user_mfa_preference():
     try:
@@ -2379,9 +2420,9 @@ def update_user_mfa_preference():
         db.session.rollback()
         return jsonify({"error": "Failed to update MFA preference"}), 500
 
-
+# Admin enforeces mfa policy for all the users
 @iam_api_bp.route("/tenant/mfa-policy", methods=["GET", "PUT"])
-@jwt_required(locations=["cookies"])
+@jwt_required(locations=['cookies', 'headers'])
 @require_api_key
 def manage_mfa_policy():
     tenant_id = g.tenant.id

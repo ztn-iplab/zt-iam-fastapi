@@ -41,15 +41,18 @@ key_path = os.getenv("SSL_KEY_PATH")
 
 @jwt.expired_token_loader
 def expired_token_callback(jwt_header, jwt_payload):
+    print("❌ TOKEN EXPIRED")
     return jsonify({"error": "Token has expired"}), 401
 
 @jwt.invalid_token_loader
 def invalid_token_callback(error):
-    return jsonify({"error": "Invalid token"}), 422
+    print(f"❌ INVALID TOKEN: {error}")  # <-- Add this!
+    return jsonify({"error": f"Invalid token: {error}"}), 422
 
 @jwt.unauthorized_loader
 def missing_token_callback(error):
-    return jsonify({"error": "Missing access token"}), 401
+    print(f"❌ UNAUTHORIZED (Missing or Bad Token): {error}")  # <-- Add this!
+    return jsonify({"error": f"Missing access token: {error}"}), 401
 
 # ==========================
 # 🔗 Register Blueprints

@@ -14,7 +14,7 @@ user_bp = Blueprint('user', __name__)
 @session_protected()
 @require_totp_setup
 @require_full_mfa
-def user_dashboard():  # ✅ Function name must be "user_dashboard"
+def user_dashboard():
     """User dashboard view"""
     user_id = get_jwt_identity()
     user = db.session.get(User, user_id)
@@ -164,7 +164,7 @@ def request_deletion():
     return jsonify({"message": "Your account deletion request has been submitted. An administrator will review your request shortly."}), 200
 
 
-    # ✅ API: Fetch Basic User Info by Mobile Number
+    #  API: Fetch Basic User Info by Mobile Number
 @user_bp.route('/user-info/<string:mobile_number>', methods=['GET'])
 @jwt_required()
 @session_protected()

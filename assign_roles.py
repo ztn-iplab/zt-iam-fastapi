@@ -1,11 +1,11 @@
 from models.models import db, UserRole, TenantUser, UserAccessControl
 from flask import Flask
-from main import app  # 🧠 Import your configured Flask app
+from main import app 
 
-# 👇 You can change this if assigning roles to another tenant
+#  You can change this if assigning roles to another tenant
 tenant_id = 2
 
-# 📌 Mapping of company_email to role name
+#  Mapping of company_email to role name
 role_assignments = {
     "pathos2m@gmail.com": "doctor",
     "patrickmutabazi104@gmail.com": None,  # No role assigned
@@ -13,7 +13,7 @@ role_assignments = {
     "bztniplab@gmail.com": "admin",
 }
 
-# 🧠 Use app context to access DB
+#  Use app context to access DB
 with app.app_context():
     for email, role_name in role_assignments.items():
         tenant_user = TenantUser.query.filter_by(company_email=email, tenant_id=tenant_id).first()

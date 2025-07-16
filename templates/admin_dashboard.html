@@ -415,17 +415,17 @@
       <form
         id="register-tenant-form"
         class="form card p-4"
-        style="max-width: 600px; margin: 0 auto"
+        style="max-width: 700px; margin: 0 auto"
       >
         <h4 class="text-center mb-4">🏢 Register New Tenant</h4>
 
+        <!-- Basic Tenant Info -->
         <div class="mb-3">
           <label for="tenant-name" class="form-label">Tenant Name</label>
           <input
             type="text"
             id="tenant-name"
             class="form-control text-center"
-            placeholder="e.g. Alpha Telecom Ltd"
             required
           />
         </div>
@@ -436,7 +436,6 @@
             type="email"
             id="tenant-contact"
             class="form-control text-center"
-            placeholder="e.g. admin@alpha-telecom.com"
             required
           />
         </div>
@@ -453,19 +452,92 @@
           />
         </div>
 
-        <button type="submit" class="btn btn-primary w-100">
+        <!-- Toggle Admin User Fields -->
+        <div class="form-check form-switch mb-3">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            id="toggle-admin-user"
+          />
+          <label class="form-check-label fw-bold" for="toggle-admin-user"
+            >➕ Add Initial Admin User?</label
+          >
+        </div>
+
+        <!-- Admin User Fields -->
+        <div id="admin-user-fields" class="border rounded p-3 d-none text-white" style="background-color: transparent;">
+          <h6 class="text-center text-danger mb-3">👤 Initial Admin User</h6>
+
+          <div class="mb-2">
+            <label class="form-label">Mobile Number </label>
+            <input
+              type="text"
+              id="admin-mobile"
+              class="form-control"
+              placeholder="e.g. 0788123456"
+            />
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label">First Name</label>
+            <input
+              type="text"
+              id="admin-firstname"
+              class="form-control"
+            />
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label">Email</label>
+            <input
+              type="email"
+              id="admin-email"
+              class="form-control"
+            />
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label">Password</label>
+            <input
+              type="password"
+              id="admin-password"
+              class="form-control"
+            />
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100 mt-3">
           ➕ Register Tenant
         </button>
       </form>
 
       <!-- Tenant Filters -->
       <div class="d-flex justify-content-center gap-2 mt-3 mb-2">
-        <button class="btn btn-sm btn-outline-primary" onclick="filterTenants('all')">🔄 Show All</button>
-        <button class="btn btn-sm btn-outline-success" onclick="filterTenants('active')">🟢 Active</button>
-        <button class="btn btn-sm btn-outline-danger" onclick="filterTenants('suspended')">🔴 Suspended</button>
-        <button class="btn btn-sm btn-outline-warning" onclick="filterTenants('recent')">🕒 Accessed Recently</button>
+        <button
+          class="btn btn-sm btn-outline-primary"
+          onclick="filterTenants('all')"
+        >
+          🔄 Show All
+        </button>
+        <button
+          class="btn btn-sm btn-outline-success"
+          onclick="filterTenants('active')"
+        >
+          🟢 Active
+        </button>
+        <button
+          class="btn btn-sm btn-outline-danger"
+          onclick="filterTenants('suspended')"
+        >
+          🔴 Suspended
+        </button>
+        <button
+          class="btn btn-sm btn-outline-warning"
+          onclick="filterTenants('recent')"
+        >
+          🕒 Accessed Recently
+        </button>
       </div>
-
 
       <!-- 🔽 Registered Tenants Table -->
       <div class="widget mt-5">
@@ -555,18 +627,35 @@
     </div>
 
     <!-- Tenant Details Modal -->
-    <div class="modal fade" id="tenantDetailsModal" tabindex="-1" aria-labelledby="tenantDetailsLabel" aria-hidden="true">
+    <div
+      class="modal fade"
+      id="tenantDetailsModal"
+      tabindex="-1"
+      aria-labelledby="tenantDetailsLabel"
+      aria-hidden="true"
+    >
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="tenantDetailsLabel">Tenant Details</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
           </div>
           <div class="modal-body" id="tenant-details-body">
             <!-- Filled dynamically by JS -->
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Close
+            </button>
           </div>
         </div>
       </div>
@@ -595,6 +684,22 @@
 </section>
 {% endblock %} {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const toggle = document.getElementById("toggle-admin-user");
+  const adminFields = document.getElementById("admin-user-fields");
+
+  if (toggle && adminFields) {
+    toggle.addEventListener("change", () => {
+      if (toggle.checked) {
+        adminFields.classList.remove("d-none");
+      } else {
+        adminFields.classList.add("d-none");
+      }
+    });
+  }
+});
+</script>
 <script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
 <!--  -->
 {% endblock %}

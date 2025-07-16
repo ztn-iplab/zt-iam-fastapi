@@ -648,10 +648,110 @@ function bindFundAgentForm() {
   }
 }
 
-// -------------------------------
-// Funcction for Tenant Management
-// -------------------------------
-//
+// // -------------------------------
+// // Funcction for Tenant Management
+// // -------------------------------
+// //
+// function bindRegisterTenantForm() {
+//   const tenantForm = document.getElementById("register-tenant-form");
+
+//   if (tenantForm && !tenantForm.dataset.bound) {
+//     tenantForm.dataset.bound = "true";
+
+//     tenantForm.addEventListener("submit", async function (e) {
+//       e.preventDefault();
+
+//       const name = document.getElementById("tenant-name").value.trim();
+//       const contactEmail = document.getElementById("tenant-contact").value.trim();
+//       const apiKey = document.getElementById("tenant-api-key").value.trim();
+//       const device_info = getDeviceInfo();
+//       const location = await getLocation();
+
+//       // ✅ Validate required fields
+//       if (!name || !contactEmail) {
+//         Toastify({
+//           text: "❌ Name and contact email are required.",
+//           duration: 4000,
+//           gravity: "top",
+//           position: "right",
+//           backgroundColor: "#dc3545",
+//         }).showToast();
+//         return;
+//       }
+
+//       // ✅ Validate email format
+//       const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail);
+//       if (!isValidEmail) {
+//         Toastify({
+//           text: "❌ Please enter a valid email address.",
+//           duration: 4000,
+//           gravity: "top",
+//           position: "right",
+//           backgroundColor: "#dc3545",
+//         }).showToast();
+//         return;
+//       }
+
+//       // ✅ Submit registration
+//       fetch("/admin/register-tenant", {
+//         method: "POST",
+//         headers: { "Content-Type": "application/json" },
+//         credentials: "include",
+//         body: JSON.stringify({
+//           name,
+//           api_key: apiKey || null,
+//           contact_email: contactEmail,
+//           device_info,
+//           location,
+//         }),
+//       })
+//         .then(async (res) => {
+//           const data = await res.json();
+//           if (!res.ok) throw new Error(data.error || "Request failed");
+
+//           const toastText = data.email_sent
+//             ? `✅ Tenant registered — API Key sent to ${contactEmail}`
+//             : `⚠️ Tenant registered, but email delivery failed.`;
+
+//           const toastColor = data.email_sent ? "#198754" : "#ffc107";
+
+//           Toastify({
+//             text: toastText,
+//             duration: 5000,
+//             gravity: "top",
+//             position: "right",
+//             backgroundColor: toastColor,
+//           }).showToast();
+
+//           // ✅ Show result
+//           document.getElementById("register-tenant-result").innerHTML = `
+//             <div class="alert alert-light border text-start">
+//               <strong>Tenant ID:</strong> ${data.tenant_id}<br>
+//               <strong>API Key:</strong> <code>${data.api_key}</code>
+//             </div>
+//           `;
+
+//           e.target.reset();
+
+//           // ✅ Reload the tenant list
+//           if (typeof loadTenants === "function") {
+//             loadTenants();
+//           }
+//         })
+
+//         .catch((err) => {
+//           Toastify({
+//             text: `❌ ${err.message}`,
+//             duration: 5000,
+//             gravity: "top",
+//             position: "right",
+//             backgroundColor: "#dc3545",
+//           }).showToast();
+//         });
+//     });
+//   }
+// }
+
 function bindRegisterTenantForm() {
   const tenantForm = document.getElementById("register-tenant-form");
 
@@ -662,12 +762,43 @@ function bindRegisterTenantForm() {
       e.preventDefault();
 
       const name = document.getElementById("tenant-name").value.trim();
-      const contactEmail = document.getElementById("tenant-contact").value.trim();
+      const contactEmail = document
+        .getElementById("tenant-contact")
+        .value.trim();
       const apiKey = document.getElementById("tenant-api-key").value.trim();
       const device_info = getDeviceInfo();
       const location = await getLocation();
 
-      // ✅ Validate required fields
+      const createAdmin = document.getElementById("toggle-admin-user")?.checked;
+      let admin_user = null;
+
+      if (createAdmin) {
+        const mobile = document.getElementById("admin-mobile").value.trim();
+        const firstname = document
+          .getElementById("admin-firstname")
+          .value.trim();
+        const email = document.getElementById("admin-email").value.trim();
+        const password = document.getElementById("admin-password").value;
+
+        if (!mobile || !firstname || !email || !password) {
+          Toastify({
+            text: "❌ All admin fields are required when toggled ON.",
+            duration: 5000,
+            gravity: "top",
+            position: "right",
+            backgroundColor: "#dc3545",
+          }).showToast();
+          return;
+        }
+
+        admin_user = {
+          mobile_number: mobile,
+          first_name: firstname,
+          email,
+          password,
+        };
+      }
+
       if (!name || !contactEmail) {
         Toastify({
           text: "❌ Name and contact email are required.",
@@ -679,7 +810,6 @@ function bindRegisterTenantForm() {
         return;
       }
 
-      // ✅ Validate email format
       const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail);
       if (!isValidEmail) {
         Toastify({
@@ -692,7 +822,6 @@ function bindRegisterTenantForm() {
         return;
       }
 
-      // ✅ Submit registration
       fetch("/admin/register-tenant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -703,6 +832,7 @@ function bindRegisterTenantForm() {
           contact_email: contactEmail,
           device_info,
           location,
+          admin_user, // optional
         }),
       })
         .then(async (res) => {
@@ -723,7 +853,6 @@ function bindRegisterTenantForm() {
             backgroundColor: toastColor,
           }).showToast();
 
-          // ✅ Show result
           document.getElementById("register-tenant-result").innerHTML = `
             <div class="alert alert-light border text-start">
               <strong>Tenant ID:</strong> ${data.tenant_id}<br>
@@ -731,14 +860,19 @@ function bindRegisterTenantForm() {
             </div>
           `;
 
+          // ✅ Reset form and UI AFTER everything is rendered
           e.target.reset();
 
-          // ✅ Reload the tenant list
+          const toggleSwitch = document.getElementById("toggle-admin-user");
+          const adminFields = document.getElementById("admin-user-fields");
+
+          if (toggleSwitch) toggleSwitch.checked = false;
+          if (adminFields) adminFields.classList.add("d-none");
+
           if (typeof loadTenants === "function") {
             loadTenants();
           }
         })
-
         .catch((err) => {
           Toastify({
             text: `❌ ${err.message}`,
@@ -752,7 +886,7 @@ function bindRegisterTenantForm() {
   }
 }
 
-let fullTenantList = []; // 🧠 Used for filtering
+let fullTenantList = [];
 
 async function loadTenants() {
   const tableBody = document.getElementById("tenant-table-body");
@@ -1050,7 +1184,7 @@ function resetTrustScore(tenantId, tenantName) {
     });
 }
 
-// ✅ Device Info Function
+//  Device Info Function
 function getDeviceInfo() {
   return {
     platform: navigator.platform,
@@ -1089,7 +1223,7 @@ function viewTenantDetails(id) {
 }
 
 
-// ✅ Location Info Function
+//  Location Info Function
 async function getLocation() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
@@ -1194,10 +1328,10 @@ function reverseTransfer(transactionId) {
     });
 }
 
-// ✅ Expose globally
+//  Expose globally
 window.reverseTransfer = reverseTransfer;
 
-// ✅ Function to fetch and display users in Admin Dashboard
+//  Function to fetch and display users in Admin Dashboard
 function fetchUsersForAdmin() {
   const userList = document.querySelector("#admin-user-list tbody");
   userList.innerHTML =
@@ -1210,9 +1344,8 @@ function fetchUsersForAdmin() {
   })
     .then((res) => res.json())
     .then((data) => {
-      console.log("✅ Admin Users Fetched:", data);
 
-      // ✅ Validate that the response is an array
+      //  Validate that the response is an array
       if (!Array.isArray(data)) {
         userList.innerHTML = `
           <tr><td colspan="6" class="text-center text-danger">
@@ -1223,7 +1356,7 @@ function fetchUsersForAdmin() {
       }
 
       const users = data;
-      userList.innerHTML = ""; // Clear previous content
+      userList.innerHTML = "";
 
       if (users.length === 0) {
         userList.innerHTML =

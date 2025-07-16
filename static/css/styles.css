@@ -1401,3 +1401,23 @@ h2 {
 .text-red {
   color: #ff6b6b;
 }
+
+.profile-dropdown {
+  position: absolute;
+  top: 60px;
+  right: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--input-border);
+  padding: 14px;
+  border-radius: 10px;
+  box-shadow: var(--card-shadow);
+  z-index: 999;
+  width: 260px;
+  color: white;
+}
+.profile-dropdown select:focus {
+  outline: none;
+  border-color: var(--input-focus);
+  box-shadow: 0 0 0 0.1rem var(--input-focus);
+}
+

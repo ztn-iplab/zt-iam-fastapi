@@ -124,7 +124,7 @@ def complete_registration():
         db.session.add(credential)
         session.pop("webauthn_register_state", None)
 
-        # ✅ Store pending verification state
+        #  Store pending verification state
         session["pending_webauthn_verification"] = True
         session["webauthn_user_id"] = str(user.id)
 
@@ -166,15 +166,15 @@ def begin_assertion():
             for c in user.webauthn_credentials
         ]
 
-        # 👇 Begin authentication
+        #  Begin authentication
         assertion_data, state = server.authenticate_begin(credentials)
 
-        # 🔐 Store session for completion
+        #  Store session for completion
         session["webauthn_assertion_state"] = state
         session["assertion_user_id"] = user.id
         session["mfa_webauthn_verified"] = False
 
-        # ✅ Manually serialize clean dict
+        #  Manually serialize clean dict
         options: PublicKeyCredentialRequestOptions = assertion_data.public_key
 
         public_key_dict = {
@@ -252,7 +252,7 @@ def complete_assertion():
                 location=location,
                 device_info=device_info,
                 failed_attempts=fail_count,
-                tenant_id=user.tenant_id or 1 # 🛡️ Added
+                tenant_id=user.tenant_id or 1 #  Added
             ))
 
             db.session.add(RealTimeLog(
@@ -262,7 +262,7 @@ def complete_assertion():
                 device_info=device_info,
                 location=location,
                 risk_alert=(fail_count >= 3),
-                tenant_id=user.tenant_id or 1 # 🛡️ Added
+                tenant_id=user.tenant_id or 1 #  Added
             ))
 
             if fail_count >= 5:
@@ -287,7 +287,7 @@ def complete_assertion():
 
 
 
-        # ✅ Build WebAuthn response object (as dict)
+        #  Build WebAuthn response object (as dict)
             assertion = {
                 "id": data["credentialId"],
                 "rawId": websafe_decode(data["credentialId"]),
@@ -300,7 +300,7 @@ def complete_assertion():
                 }
             }
 
-            # ✅ Credential from DB
+            #  Credential from DB
             public_key_source = {
                 "id": credential.credential_id,
                 "public_key": credential.public_key,
@@ -309,14 +309,14 @@ def complete_assertion():
                 "user_handle": None,
             }
 
-            # ✅ Final auth check (note: NO brackets on `assertion`)
+            #  Final auth check (note: NO brackets on `assertion`)
             server.authenticate_complete(
                 state,
                 assertion,
                 [public_key_source]
             )
 
-        # 🎉 Success
+        #  Success
         credential.sign_count += 1
         db.session.commit()
         session["mfa_webauthn_verified"] = True
@@ -332,7 +332,7 @@ def complete_assertion():
             "user": url_for("user.user_dashboard", _external=True)
         }
 
-        # 🧬 Determine login method based on credential metadata
+        #  Determine login method based on credential metadata
         transports = credential.transports.split(",") if credential.transports else []
         if "hybrid" in transports:
             method = "cross-device passkey"
@@ -352,7 +352,7 @@ def complete_assertion():
 
         
 
-        # 🛡️ RealTimeLog entry for login
+        #  RealTimeLog entry for login
         db.session.add(RealTimeLog(
             user_id=user.id,
             action=f"🔐 Logged in via WebAuthn ({method})",
@@ -473,7 +473,7 @@ def complete_reset_assertion():
         if not credential:
             return jsonify({"error": "Invalid credential."}), 401
 
-        # ✅ Build WebAuthn response object (as dict)
+        #  Build WebAuthn response object (as dict)
             assertion = {
                 "id": data["credentialId"],
                 "rawId": websafe_decode(data["credentialId"]),
@@ -486,7 +486,7 @@ def complete_reset_assertion():
                 }
             }
 
-            # ✅ Credential from DB
+            #  Credential from DB
             public_key_source = {
                 "id": credential.credential_id,
                 "public_key": credential.public_key,
@@ -495,7 +495,7 @@ def complete_reset_assertion():
                 "user_handle": None,
             }
 
-            # ✅ Final auth check (note: NO brackets on `assertion`)
+            #  Final auth check (note: NO brackets on `assertion`)
             server.authenticate_complete(
                 state,
                 assertion,

@@ -47,7 +47,7 @@ def role_required(required_roles, json_response=True):
         return wrapper
     return decorator
 
-# ✅ TOTP Setup Enforcement
+#  TOTP Setup Enforcement
 def require_totp_setup(view_func):
     @wraps(view_func)
     def wrapped(*args, **kwargs):
@@ -71,7 +71,7 @@ def session_protected():
             user_id = token_data.get("sub")
 
             if token_fp != request_fp:
-                # ✅ Attempt to resolve role (optional but useful for admin logs)
+                #  Attempt to resolve role (optional but useful for admin logs)
                 role = "unknown"
                 try:
                     user = User.query.get(user_id)
@@ -84,7 +84,7 @@ def session_protected():
                 except:
                     pass  # Avoid breaking logging if DB errors occur
 
-                # ✅ Log suspicious activity
+                #  Log suspicious activity
                 db.session.add(RealTimeLog(
                     user_id=user_id,
                     action=f"🚨 Session hijack attempt on {role} account (fingerprint mismatch)",

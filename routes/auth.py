@@ -43,6 +43,7 @@ import pyotp
 from utils.security import get_request_fingerprint
 from utils.logger import app_logger
 import secrets
+from utils.user_trust_engine import evaluate_trust
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -87,8 +88,6 @@ def login_route():
 
     if not user:
         app_logger.warning(f"[USER-ENUM] login_input={login_input} ip={ip_address}")
-
-        # 🛡️ Use helper here for unknown user
         log_realtime_event(
             user=None,
             action=f"❌ Failed login: Unknown identifier {login_input}",
@@ -96,7 +95,6 @@ def login_route():
             device_info=device_info,
             location=location,
             risk_alert=True,
-            # tenant_id=1
         )
         db.session.commit()
         return jsonify({"error": "User not found or SIM inactive"}), 404
@@ -108,8 +106,6 @@ def login_route():
 
     if not user.check_password(password):
         failed_count = recent_fails + 1
-        app_logger.warning(f"[LOGIN-FAILED] user_id={user.id} failed_attempts={failed_count} ip={ip_address}")
-        app_logger.warning("[LOGIN-FAILED] user_id=123 ip=192.168.2.100")
 
         log_auth_event(
             user=user,
@@ -143,7 +139,6 @@ def login_route():
                 risk_alert=True
             )
 
-            # ✅ Email alerts
             if user.email:
                 send_user_alert(
                     user=user,
@@ -164,21 +159,52 @@ def login_route():
         db.session.commit()
         return jsonify({"error": "Invalid credentials"}), 401
 
-    # ✅ Success
+    # SUCCESSFUL LOGIN
     fp = get_request_fingerprint()
     access_token = create_access_token(
         identity=str(user.id),
         additional_claims={"fp": fp}
     )
-    # ✅ Success
     app_logger.info(f"[LOGIN] user_id={user.id} ip={ip_address}")
+
+    # Evaluate trust score
+    context = {"ip_address": ip_address, "device_info": device_info}
+    trust_score = evaluate_trust(user, context)
+    risk_level = (
+        "high" if trust_score >= 0.7 else
+        "medium" if trust_score >= 0.4 else
+        "low"
+    )
+
+    # Determine MFA requirements
+    preferred_mfa = (user.preferred_mfa or "both").lower()
+
+    require_totp = False
+    require_webauthn = False
+    skip_all_mfa = False
+
+    if trust_score >= 0.95:
+        skip_all_mfa = True
+
+    if not skip_all_mfa:
+        if preferred_mfa == "totp":
+            require_totp = bool(user.otp_secret)
+        elif preferred_mfa == "webauthn":
+            require_webauthn = True
+        elif preferred_mfa == "both":
+            require_totp = bool(user.otp_secret)
+            require_webauthn = True
 
     response = jsonify({
         "message": "Login successful",
         "user_id": user.id,
-        "require_totp": bool(user.otp_secret),
+        "trust_score": trust_score,
+        "risk_level": risk_level,
+        "require_totp": require_totp,
         "require_totp_setup": user.otp_secret is None,
-        "require_totp_reset": user.otp_secret and user.otp_email_label != user.email    
+        "require_totp_reset": user.otp_secret and user.otp_email_label != user.email,
+        "require_webauthn": require_webauthn,
+        "skip_all_mfa": skip_all_mfa
     })
 
     log_auth_event(
@@ -197,15 +223,14 @@ def login_route():
         ip_address=ip_address,
         device_info=device_info,
         location=location,
-        risk_alert=False
+        risk_alert=(risk_level == "high")
     )
 
     db.session.commit()
     set_access_cookies(response, access_token)
     return response, 200
 
-
-# ✅ Registering new user accounts
+#  Registering new user accounts
 @auth_bp.route('/register', methods=['POST'])
 def register():
     try:
@@ -214,29 +239,29 @@ def register():
     except Exception as e:
         return jsonify({"error": "Invalid JSON format"}), 400
 
-    # ✅ Validate required fields
+    #  Validate required fields
     required_fields = ['iccid', 'first_name', 'password', 'email']
     for field in required_fields:
         if not data.get(field):
             return jsonify({"error": f"{field.replace('_', ' ').capitalize()} is required"}), 400
     
-    # ✅ Enforce strong password
+    #  Enforce strong password
     if not is_strong_password(data['password']):
         return jsonify({
             "error": "Password must be at least 8 characters long and include uppercase, lowercase, number, and special character."
         }), 400
 
-    # 🔹 Fetch the SIM card by ICCID
+    #  Fetch the SIM card by ICCID
     sim_card = SIMCard.query.filter_by(iccid=data['iccid']).first()
     if not sim_card:
         return jsonify({"error": "Invalid ICCID. Please register a SIM first."}), 404
 
-    # ✅ If SIM is found but unregistered, activate it
+    #  If SIM is found but unregistered, activate it
     if sim_card.status == "unregistered":
         sim_card.status = "active"
         db.session.commit()
 
-    # 🔹 Check if a user is already linked to this SIM card or email exists
+    #  Check if a user is already linked to this SIM card or email exists
     existing_user = User.query.filter(
         (User.email == data['email']) | (User.id == sim_card.user_id)
     ).first()
@@ -244,7 +269,7 @@ def register():
     if existing_user:
         return jsonify({"error": "User with this email or SIM card already exists"}), 400
 
-    # 🔹 Create a new user
+    #  Create a new user
     new_user = User(
         email=data['email'],
         first_name=data['first_name'],
@@ -255,7 +280,7 @@ def register():
         tenant_id=1
     )
 
-    # ✅ Use the setter to ensure hashing works correctly
+    #  Use the setter to ensure hashing works correctly
     new_user.password = data['password']
 
     try:
@@ -265,11 +290,11 @@ def register():
         db.session.rollback()
         return jsonify({"error": f"User creation failed: {e}"}), 500
 
-    # 🔹 Assign the SIM card to the user
+    #  Assign the SIM card to the user
     sim_card.user_id = new_user.id
     db.session.add(sim_card)
 
-    # 🔹 Assign Default "User" Role
+    #  Assign Default "User" Role
     user_role = UserRole.query.filter_by(role_name="user").first()
     if not user_role:
         return jsonify({"error": "Default user role not found"}), 500
@@ -277,28 +302,28 @@ def register():
     new_access = UserAccessControl(user_id=new_user.id, role_id=user_role.id, tenant_id=new_user.tenant_id)
     db.session.add(new_access)
 
-    # 🔹 Create Wallet for the User
+    #  Create Wallet for the User
     new_wallet = Wallet(user_id=new_user.id, balance=0.0, currency="RWF")
     db.session.add(new_wallet)
 
-    # 🔹 Log registration event
+    #  Log registration event
     rt_log = RealTimeLog(
         user_id=new_user.id,
-        action=f"🆕 New user registered using ICCID {data['iccid']} (SIM created by: {sim_card.registered_by})",
+        action=f" New user registered using ICCID {data['iccid']} (SIM created by: {sim_card.registered_by})",
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Unknown"),
         location=data.get("location", "Unknown"),
         risk_alert=False,
-        tenant_id=1  # 🛡️ Added
+        tenant_id=1 
     )
     db.session.add(rt_log)
 
     db.session.commit()
 
-    # 🔹 Generate JWT token for the newly registered user
+    #  Generate JWT token for the newly registered user
     access_token = create_access_token(identity=new_user.id)
 
-    # 🔹 Construct Response with Success Message & User Data
+    #  Construct Response with Success Message & User Data
     response_data = {
         "message": "User registered successfully, assigned role: 'user', and wallet created.",
         "id": new_user.id,
@@ -316,38 +341,33 @@ def register():
         }
     }
 
-    # 🔹 Set the JWT token in a secure, HttpOnly cookie
+    #  Set the JWT token in a secure, HttpOnly cookie
     response = make_response(response_data)
     response.set_cookie('auth_token', access_token, httponly=True, secure=True, samesite='Strict')
 
     return response, 201
 
 
-# ✅ Getting the OTP
+#  Getting the OTP
 @auth_bp.route('/verify-totp', methods=['GET'])
 def verify_totp_page():
     try:
         verify_jwt_in_request(locations=["cookies"])
         user_id = get_jwt_identity()
-        print("✅ Accessed /verify-totp page")
-        print("🎯 Extracted user_id from JWT:", user_id)
     except Exception as e:
-        print("❌ Token error on /verify-totp page:", e)
         return redirect(url_for('auth.login_form'))
 
     return render_template('verify_totp.html')
 
 
-# ✅ Set up Token_OTP
+#  Set up Token_OTP
 @auth_bp.route('/setup-totp', methods=['GET'])
 def setup_totp():
     try:
         verify_jwt_in_request(locations=["cookies"])
         user_id = get_jwt_identity()
-        print("✅ API: JWT verified for setup-totp:", user_id)
+        
     except Exception as e:
-        print("❌ API: JWT error in /setup-totp:", e)
-        print("Cookies seen:", dict(request.cookies))
         return jsonify({"error": "Invalid or missing token"}), 401
 
     user = User.query.get(user_id)
@@ -360,7 +380,7 @@ def setup_totp():
     )
 
     if reset_required:
-        # 🔥 Generate new secret and store it temporarily in session
+        #  Generate new secret and store it temporarily in session
         secret = pyotp.random_base32()
         session['pending_totp_secret'] = secret
         session['pending_totp_email'] = user.email
@@ -382,7 +402,7 @@ def setup_totp():
             "reset_required": True
         }), 200
 
-    # 🔥 Already configured and no email mismatch
+    #  Already configured and no email mismatch
     return jsonify({
         "message": "TOTP already configured."
     }), 200
@@ -406,19 +426,19 @@ def confirm_totp_setup():
     if not secret or not email:
         return jsonify({"error": "No pending TOTP enrollment"}), 400
 
-    # 🔥 Confirm: Save secret to user only after clicking "Continue"
+    #  Confirm: Save secret to user only after clicking "Continue"
     user.otp_secret = secret
     user.otp_email_label = email
     db.session.commit()
 
-    # 🔥 Clean up session
+    #  Clean up session
     session.pop('pending_totp_secret', None)
     session.pop('pending_totp_email', None)
 
     return jsonify({"message": "✅ TOTP enrollment confirmed."}), 200
 
 
-# ✅ Verifying the TOTP
+#  Verifying the TOTP
 @auth_bp.route('/verify-totp-login', methods=['POST'])
 def verify_totp_login():   
     try:
@@ -463,7 +483,7 @@ def verify_totp_login():
             location=location,
             device_info=device_info,
             failed_attempts=fail_count,
-            tenant_id=1 # 🔥 tenant_id added
+            tenant_id=1 
         ))
 
         db.session.add(RealTimeLog(
@@ -473,7 +493,7 @@ def verify_totp_login():
             device_info=device_info,
             location=location,
             risk_alert=True,
-            tenant_id=1  # 🔥 tenant_id added
+            tenant_id=1  
         ))
 
         if fail_count >= 5:
@@ -486,10 +506,10 @@ def verify_totp_login():
                 device_info=device_info,
                 location=location,
                 risk_alert=True,
-                tenant_id=1 # 🔥 tenant_id added
+                tenant_id=1 
             ))
 
-            # 🚨 Email alerts to admin and user
+            #  Email alerts to admin and user
             if user.email:
                 send_user_alert(
                     user=user,
@@ -510,7 +530,7 @@ def verify_totp_login():
         db.session.commit()
         return jsonify({"error": "Invalid or expired TOTP code"}), 401
 
-    # ✅ Successful TOTP verification
+    # Successful TOTP verification
     db.session.add(UserAuthLog(
         user_id=user.id,
         auth_method="totp",
@@ -519,7 +539,7 @@ def verify_totp_login():
         location=location,
         device_info=device_info,
         failed_attempts=0,
-        tenant_id=1 # 🔥 tenant_id added
+        tenant_id=1 
     ))
 
     db.session.add(RealTimeLog(
@@ -529,7 +549,7 @@ def verify_totp_login():
         device_info=device_info,
         location=location,
         risk_alert=False,
-        tenant_id=1# 🔥 tenant_id added
+        tenant_id=1
     ))
 
     db.session.commit()
@@ -637,7 +657,6 @@ def debug_cookie():
         user_id = get_jwt_identity()
         return f"✅ JWT verified! User ID: {user_id}"
     except Exception as e:
-        print("❌ JWT Debug error:", e)
         return "❌ Invalid token", 401
 
 
@@ -672,7 +691,7 @@ def log_webauthn_client_failure():
         device_info=device_info,
         location=location,
         risk_alert=False,
-        tenant_id=1# 🛡️ Added
+        tenant_id=1# 
     ))
     db.session.commit()
 
@@ -700,7 +719,7 @@ def forgot_password():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    token = generate_token()  # ✅ Use its hash + expiration in DB
+    token = generate_token()  
     expiry = datetime.utcnow() + timedelta(minutes=15)
 
     user.reset_token = hash_token(token)
@@ -719,7 +738,7 @@ def forgot_password():
         device_info=device_info,
         location=location,
         risk_alert=False,
-        tenant_id=1  # 🛡️ Added
+        tenant_id=1  
     ))
     db.session.commit()
     return jsonify({"message": "Please check your email for a password reset link"}), 200
@@ -757,7 +776,7 @@ def reset_password():
     device_info = request.user_agent.string
     location = get_ip_location(ip)
 
-    # 🚫 Low trust score check
+    #  Low trust score check
     if user.trust_score < 0.4:
         db.session.add(RealTimeLog(
             user_id=user.id,
@@ -782,7 +801,7 @@ def reset_password():
             )
         }), 403
 
-    # 🧠 Reuse check
+    #  Reuse check
     previous_passwords = PasswordHistory.query.filter_by(user_id=user.id).all()
     for record in previous_passwords:
         if check_password_hash(record.password_hash, new_password):
@@ -798,7 +817,7 @@ def reset_password():
             db.session.commit()
             return jsonify({"error": "You’ve already used this password. Please choose a new one."}), 400
 
-    # 🔐 Strength check
+    #  Strength check
     if not is_strong_password(new_password):
         return jsonify({
             "error": (
@@ -807,7 +826,7 @@ def reset_password():
             )
         }), 400
 
-    # 🔐 MFA Checks
+    #  MFA Checks
     has_webauthn = WebAuthnCredential.query.filter_by(user_id=user.id).count() > 0
     has_totp = user.otp_secret is not None
 
@@ -836,7 +855,7 @@ def reset_password():
             device_info=device_info,
             location=location,
             risk_alert=True,
-            tenant_id=1 # 🛡️ Added
+            tenant_id=1 
         ))
         send_admin_alert(
             user=user,
@@ -853,7 +872,7 @@ def reset_password():
             )
         }), 403
 
-    # ✅ Update password and history
+    #  Update password and history
     user.password = new_password
     db.session.add(PasswordHistory(user_id=user.id, password_hash=user.password_hash))
 
@@ -874,7 +893,7 @@ def reset_password():
         device_info=device_info,
         location=location,
         risk_alert=False,
-        tenant_id=1 # 🛡️ Added
+        tenant_id=1
     ))
 
     session.pop("reset_webauthn_verified", None)
@@ -898,14 +917,14 @@ def change_password():
     current_password = data.get('current_password')
     new_password = data.get('new_password')
 
-    # ✅ Step 1: Verify current password
+    # Verify current password
     if not user.check_password(current_password):
         return jsonify({"error": "Current password is incorrect."}), 401
-    # ✅ Step 2: Check password strength
+    # Check password strength
     if not is_strong_password(new_password):
         return jsonify({"error": "Password must be at least 8 characters long, include an uppercase letter, a lowercase letter, a number, and a special character."}), 400
 
-    # ✅ Step 3: Check if new password was previously used
+    # Check if new password was previously used
     previous_passwords = PasswordHistory.query.filter_by(user_id=user.id).all()
     for record in previous_passwords:
         if check_password_hash(record.password_hash, new_password):
@@ -921,16 +940,14 @@ def change_password():
             db.session.commit()
             return jsonify({"error": "You’ve already used this password. Please choose a new one."}), 400
 
-    # ✅ Step 4: Update user password
+    #  Update user password
     user.password = new_password  # triggers password hashing via @password.setter
-
-    # ✅ Step 4: Save current password to password history
     db.session.add(PasswordHistory(
         user_id=user.id,
         password_hash=user.password_hash
     ))
 
-    # ✅ Step 6: Keep only the last 5 password records
+    #  Keep only the last 5 password records
     history_records = PasswordHistory.query.filter_by(user_id=user.id).order_by(
         PasswordHistory.created_at.desc()).all()
 
@@ -938,7 +955,7 @@ def change_password():
         for old_record in history_records[5:]:
             db.session.delete(old_record)
 
-    # ✅ Step 7: Log the event
+    #  Log the event
     db.session.add(UserAuthLog(
         user_id=user.id,
         auth_method="password",
@@ -946,7 +963,7 @@ def change_password():
         ip_address=request.remote_addr,
         location=get_ip_location(request.remote_addr),
         device_info=request.user_agent.string,
-        tenant_id=1 # 🛡️ Added
+        tenant_id=1 
     ))
 
     db.session.add(RealTimeLog(
@@ -956,7 +973,7 @@ def change_password():
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
         risk_alert=False,
-        tenant_id=1# 🛡️ Added
+        tenant_id=1
     ))
 
     db.session.commit()
@@ -972,11 +989,11 @@ def request_reset_totp():
 
     password = data.get('password')
 
-    # ✅ Verify password before resetting TOTP
+    #  Verify password before resetting TOTP
     if not user.check_password(password):
         return jsonify({"error": "Incorrect password."}), 401
 
-    # ✅ Clear TOTP info
+    #  Clear TOTP info
     user.otp_secret = None
     user.otp_email_label = None
 
@@ -987,7 +1004,7 @@ def request_reset_totp():
         ip_address=request.remote_addr,
         location=get_ip_location(request.remote_addr),
         device_info=request.user_agent.string,
-        tenant_id=1 # 🛡️ Added
+        tenant_id=1 
     ))
 
     db.session.add(RealTimeLog(
@@ -997,7 +1014,7 @@ def request_reset_totp():
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
         risk_alert=True,
-        tenant_id=1# 🛡️ Added
+        tenant_id=1
     ))
 
     db.session.commit()
@@ -1025,7 +1042,7 @@ def request_totp_reset():
     if not user:
         return jsonify({"error": "No matching account found."}), 404
 
-    # ✅ Generate secure token
+    #  Generate secure token
     token = generate_token()
     expiry = datetime.utcnow() + timedelta(minutes=15)
     user.reset_token = hash_token(token)
@@ -1038,12 +1055,12 @@ def request_totp_reset():
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
         risk_alert=True,
-        tenant_id=1 # 🛡️ Added
+        tenant_id=1 
     ))
 
     db.session.commit()
 
-    # ✅ Send email with the reset link
+    # Send email with the reset link
     send_totp_reset_email(user, token)
 
     return jsonify({"message": "TOTP reset link has been sent to your email."}), 200
@@ -1067,7 +1084,7 @@ def verify_totp_reset_post():
     if not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
         return jsonify({"error": "Token expired"}), 410
 
-    # ✅ Check password
+    # Check password
     if not user.check_password(password):
         return jsonify({"error": "Incorrect password"}), 401
 
@@ -1075,7 +1092,7 @@ def verify_totp_reset_post():
     device_info = request.user_agent.string
     location = get_ip_location(ip)
 
-    # ✅ Trust Score Check
+    # Trust Score Check
     if user.trust_score < 0.5:
         db.session.add(RealTimeLog(
             user_id=user.id,
@@ -1104,7 +1121,7 @@ def verify_totp_reset_post():
             )
         }), 403
 
-    # ✅ WebAuthn Check: only proceed if verified
+    # WebAuthn Check: only proceed if verified
     has_webauthn = WebAuthnCredential.query.filter_by(user_id=user.id).count() > 0
     webauthn_verified = session.get("reset_webauthn_verified")
 
@@ -1114,7 +1131,7 @@ def verify_totp_reset_post():
             "message": "WebAuthn verification required before TOTP reset."
         }), 202
 
-    # ✅ Passed → reset TOTP
+    # Passed → reset TOTP
     user.otp_secret = None
     user.otp_email_label = None
     user.reset_token = None
@@ -1130,7 +1147,7 @@ def verify_totp_reset_post():
         tenant_id=1 # 🛡️ Added
     ))
 
-    # ✅ Clean up session
+    # Clean up session
     session.pop("reset_webauthn_verified", None)
 
     db.session.commit()
@@ -1159,11 +1176,11 @@ def request_reset_webauthn():
 
     password = data.get('password')
 
-    # ✅ Check current password before reset
+    # Check current password before reset
     if not user.check_password(password):
         return jsonify({"error": "Incorrect password."}), 401
 
-    # ✅ Remove all user's WebAuthn credentials
+    # Remove all user's WebAuthn credentials
     WebAuthnCredential.query.filter_by(user_id=user.id).delete()
 
     db.session.add(UserAuthLog(
@@ -1173,7 +1190,7 @@ def request_reset_webauthn():
         ip_address=request.remote_addr,
         location=get_ip_location(request.remote_addr),
         device_info=request.user_agent.string,
-        tenant_id=1 # 🛡️ Added
+        tenant_id=1 
     ))
 
     db.session.add(RealTimeLog(
@@ -1183,7 +1200,7 @@ def request_reset_webauthn():
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
         risk_alert=True,
-        tenant_id=1 # 🛡️ Added
+        tenant_id=1 
     ))
 
     db.session.commit()
@@ -1194,14 +1211,12 @@ def request_reset_webauthn():
     }), 200
 
 
-
-# Route to handle WebAuthn reset from outside
 # This is the route to show the WebAuthn reset request page
 @auth_bp.route('/out-request-webauthn-reset', methods=['GET'])
 def out_request_webauthn_reset_page():
     return render_template('request_webauthn_reset.html')
 
-# Step 1: Request WebAuthn Reset (Identifier Only)
+# Request WebAuthn Reset (Identifier Only)
 @auth_bp.route('/out-request-webauthn-reset', methods=['POST'])
 def request_webauthn_reset():
     data = request.get_json()
@@ -1232,7 +1247,7 @@ def request_webauthn_reset():
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
         risk_alert=True,
-        tenant_id=1 # 🛡️ Added
+        tenant_id=1
     ))
     db.session.commit()
 
@@ -1244,7 +1259,7 @@ def request_webauthn_reset():
 def out_verify_webauthn_reset_page(token):
     return render_template("verify_webauthn_reset.html", token=token)
 
-# Step 2: Verify Token and Reset WebAuthn (Password + TOTP Required)
+# Verify Token and Reset WebAuthn (Password + TOTP Required)
 @auth_bp.route('/out-verify-webauthn-reset/<token>', methods=['POST'])
 def verify_webauthn_reset(token):
     data = request.get_json()
@@ -1284,7 +1299,7 @@ def verify_webauthn_reset(token):
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
         risk_alert=True,
-        tenant_id=1 # 🛡️ Added
+        tenant_id=1
     ))
 
     db.session.commit()
@@ -1357,17 +1372,17 @@ def verify_sim_swap():
     if not session.get("reset_webauthn_verified"):
         return jsonify({"require_webauthn": True}), 202
 
-    # ✅ Finalize SIM swap
+    #  Finalize SIM swap
     old_sim = SIMCard.query.filter_by(iccid=pending.old_iccid).first()
     new_sim = SIMCard.query.filter_by(iccid=pending.new_iccid).first()
 
     if not old_sim or not new_sim:
         return jsonify({"error": "SIMs not found."}), 404
 
-    # ✅ Preserve user's mobile number
+    #  Preserve user's mobile number
     preserved_mobile_number = old_sim.mobile_number
 
-    # ✅ Generate safe SWP suffix for old SIM
+    #  Generate safe SWP suffix for old SIM
     while True:
         suffix = f"SWP_{int(datetime.utcnow().timestamp())}_{secrets.token_hex(2)}"
         if len(suffix) > 20:
@@ -1375,18 +1390,18 @@ def verify_sim_swap():
         if not SIMCard.query.filter_by(mobile_number=suffix).first():
             break
 
-    # ✅ Update old SIM
+    # Update old SIM
     old_sim.status = "swapped"
     old_sim.mobile_number = suffix
 
-    # ✅ Assign new SIM with preserved number
+    # Assign new SIM with preserved number
     new_sim.status = "active"
     new_sim.user_id = user.id
     new_sim.mobile_number = preserved_mobile_number
     new_sim.registration_date = datetime.utcnow()
     new_sim.registered_by = f"user-{user.id}"
 
-    # ✅ Log success
+    # Log success
     db.session.add(RealTimeLog(
         user_id=user.id,
         action=f"✅ Verified SIM Swap {old_sim.iccid} ➡️ {new_sim.iccid}",
@@ -1397,7 +1412,7 @@ def verify_sim_swap():
         tenant_id=1
     ))
 
-    # ✅ Clean up session and pending
+    # Clean up session and pending
     db.session.delete(pending)
     session.pop("reset_webauthn_verified", None)
     session.pop("reset_user_id", None)
@@ -1406,3 +1421,41 @@ def verify_sim_swap():
     db.session.commit()
 
     return jsonify({"message": "✅ SIM swap completed successfully."}), 200
+
+# MFA Settings
+@auth_bp.route("/preferred-mfa", methods=["PUT"])
+@jwt_required()
+def update_master_user_mfa_preference():
+    try:
+        user_id = int(get_jwt_identity())
+        data = request.get_json()
+        preferred_mfa = data.get("preferred_mfa")
+
+        if preferred_mfa not in ["totp", "webauthn", "both"]:
+            return jsonify({"error": "Invalid MFA selection"}), 400
+
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        user.preferred_mfa = preferred_mfa
+        db.session.commit()
+        print(f"✅ Master user {user.id} updated preferred_mfa to:", preferred_mfa)
+
+        return jsonify({"message": "Preferred MFA updated successfully."}), 200
+
+    except Exception as e:
+        print("❌ Internal MFA preference update error:", e)
+        db.session.rollback()
+        return jsonify({"error": "Failed to update MFA preference."}), 500
+
+@auth_bp.route("/preferred-mfa", methods=["GET"])
+@jwt_required()
+def get_master_user_mfa_preference():
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({"preferred_mfa": user.preferred_mfa or "both"}), 200

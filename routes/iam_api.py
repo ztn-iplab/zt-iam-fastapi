@@ -103,7 +103,7 @@ def register_user():
     if existing_email_user:
         return jsonify({"error": "User with this email already registered under this tenant"}), 400
 
-    # 🔥 Create TenantUser entry
+    #  Create TenantUser entry
     tenant_user = TenantUser(
         tenant_id=g.tenant.id,
         user_id=user.id,
@@ -112,7 +112,7 @@ def register_user():
     )
     db.session.add(tenant_user)
 
-    # ✅ NEW: Assign specified role or fallback to "user"
+    #  NEW: Assign specified role or fallback to "user"
     role_name = data.get("role", "user").lower()
 
     role = UserRole.query.filter_by(role_name=role_name, tenant_id=g.tenant.id).first()
@@ -127,7 +127,7 @@ def register_user():
     )
     db.session.add(access_control)
 
-    # ✅ Log registration event
+    #  Log registration event
     db.session.add(RealTimeLog(
         user_id=user.id,
         tenant_id=g.tenant.id,
@@ -258,15 +258,15 @@ def login_user():
         db.session.commit()
         return jsonify({"error": "Invalid credentials"}), 401
 
-    # ✅ Successful login - now calculate trust score
-    # context = {
-    #     "ip_address": ip_address,
-    #     "device_info": device_info
-    # }
+    # Successful login - now calculate trust score
     context = {
-        "ip_address": "198.51.100.99",  # Simulated new IP
-        "device_info": "MyCustomTestDevice/1.0"  # Simulated new device
+        "ip_address": ip_address,
+        "device_info": device_info
     }
+    # context = {
+    #     "ip_address": "198.51.100.99",  # Simulated new IP
+    #     "device_info": "MyCustomTestDevice/1.0"  # Simulated new device
+    # }
 
 
     trust_score = evaluate_trust(user, context, tenant=g.tenant)
@@ -404,7 +404,7 @@ def forgot_password():
     ))
     db.session.commit()
 
-    # 🔥 Construct tenant-scoped reset link
+    # Construct tenant-scoped reset link
     reset_link = f"{redirect_url}?token={token}"
 
     send_tenant_password_reset_email(
@@ -445,7 +445,7 @@ def reset_password():
     device_info = "IAMaaS API Access"
     location = get_ip_location(ip)
 
-    # 🔐 Trust score enforcement
+    # Trust score enforcement
     if user.trust_score < 0.4:
         db.session.add(RealTimeLog(
             user_id=user.id,
@@ -461,7 +461,7 @@ def reset_password():
             "error": "This reset request was blocked due to suspicious activity."
         }), 403
 
-    # 🔐 Strength check
+    # Strength check
     if not is_strong_password(new_password):
         return jsonify({
             "error": (
@@ -470,7 +470,7 @@ def reset_password():
             )
         }), 400
 
-    # 🔐 Session MFA logic
+    # Session MFA logic
     if session.get("reset_token_checked") != token:
         session["reset_webauthn_verified"] = False
         session["reset_totp_verified"] = False
@@ -509,11 +509,11 @@ def reset_password():
             )
         }), 403
 
-    # 🔐 Reuse check — current password
+    # Reuse check — current password
     if check_password_hash(tenant_user.password_hash, new_password):
         return jsonify({"error": "New password must be different from the current password."}), 400
 
-    # 🔐 Reuse check — history
+    # Reuse check — history
     old_passwords = TenantPasswordHistory.query.filter_by(tenant_user_id=tenant_user.id).all()
     for record in old_passwords:
         if check_password_hash(record.password_hash, new_password):
@@ -529,7 +529,7 @@ def reset_password():
             db.session.commit()
             return jsonify({"error": "You have already used this password. Please choose a new one."}), 400
 
-    # ✅ Hash and update password
+    # Hash and update password
     new_hash = generate_password_hash(new_password)
     tenant_user.password_hash = new_hash
     db.session.add(TenantPasswordHistory(
@@ -544,7 +544,7 @@ def reset_password():
         for old in history[5:]:
             db.session.delete(old)
 
-    # ✅ Clear reset token
+    #Clear reset token
     user.reset_token = None
     user.reset_token_expiry = None
 
@@ -617,7 +617,7 @@ def enroll_totp():
         "manual_key": secret,
         "reset_required": True
     }), 200
-    # 🔥 Already configured and company email matches
+    # Already configured and company email matches
     return jsonify({
         "message": "TOTP already configured.",
         "reset_required": False
@@ -657,7 +657,7 @@ def verify_totp_login():
     user_id = get_jwt_identity()
     tenant_id = g.tenant.id
 
-    # 🔥 Find the TenantUser association
+    # Find the TenantUser association
     tenant_user = TenantUser.query.filter_by(
         user_id=user_id,
         tenant_id=tenant_id
@@ -680,15 +680,11 @@ def verify_totp_login():
     device_info = "IAMaaS API Access"
     location = get_ip_location(ip_address)
 
-    # 🔐 Dev-only logs (remove before production)
-    # print("📟 Expected TOTP:", pyotp.TOTP(tenant_user.otp_secret).now())
-    # print("📥 Provided TOTP:", totp_code)
-
-    # 🔒 Lockout check
+    # Lockout check
     if user.locked_until and user.locked_until > datetime.utcnow():
         return jsonify({"error": f"TOTP locked. Try again after {user.locked_until}."}), 429
 
-    # 🔐 Count recent OTP failures (last 5 minutes)
+    # Count recent OTP failures (last 5 minutes)
     threshold_time = datetime.utcnow() - timedelta(minutes=5)
     recent_otp_fails = UserAuthLog.query.filter_by(
         user_id=user.id,
@@ -735,7 +731,7 @@ def verify_totp_login():
         db.session.commit()
         return jsonify({"error": "Invalid or expired TOTP code."}), 401
 
-    # ✅ Successful TOTP verification
+    # Successful TOTP verification
     db.session.add(UserAuthLog(
         user_id=user.id,
         auth_method="totp",
@@ -759,7 +755,7 @@ def verify_totp_login():
 
     db.session.commit()
 
-    # 🔐 Check WebAuthn fallback status
+    # Check WebAuthn fallback status
     has_webauthn_credentials = WebAuthnCredential.query.filter_by(
         user_id=user.id,
         tenant_id=tenant_id
@@ -769,7 +765,7 @@ def verify_totp_login():
 
     return jsonify({
         "message": "TOTP verified successfully.",
-        "require_webauthn": require_webauthn,  # ✅ based on preference!
+        "require_webauthn": require_webauthn,  
         "has_webauthn_credentials": has_webauthn_credentials,
         "user_id": user.id
     }), 200
@@ -788,7 +784,7 @@ def request_totp_reset():
     if not redirect_url:
         return jsonify({"error": "Missing redirect URL for client-side reset."}), 400
 
-    # 🔎 Resolve user from identifier
+    # Resolve user from identifier
     user = User.query.filter_by(email=identifier).first()
     if not user:
         sim = SIMCard.query.filter_by(mobile_number=identifier, status='active').first()
@@ -797,18 +793,18 @@ def request_totp_reset():
     if not user:
         return jsonify({"error": "No matching account found."}), 404
 
-    # 🛡️ Tenant-aware match
+    # Tenant-aware match
     tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=g.tenant.id).first()
     if not tenant_user:
         return jsonify({"error": "User not registered under this tenant."}), 404
 
-    # ✅ Generate secure reset token
+    # Generate secure reset token
     token = generate_token()
     expiry = datetime.utcnow() + timedelta(minutes=15)
     user.reset_token = hash_token(token)
     user.reset_token_expiry = expiry
 
-    # 🔐 Log request
+    # Log request
     db.session.add(RealTimeLog(
         user_id=user.id,
         tenant_id=g.tenant.id,
@@ -821,9 +817,9 @@ def request_totp_reset():
 
     db.session.commit()
 
-    # 🔥 Construct tenant-scoped reset link
+    # Construct tenant-scoped reset link
     reset_link = f"{redirect_url}?token={token}"
-    # 📧 Send tenant-customized email
+    # Send tenant-customized email
     send_tenant_totp_reset_email(
         user=user,
         raw_token=token,
@@ -850,7 +846,7 @@ def verify_totp_reset_post():
     if not tenant_user:
         return jsonify({"error": "User not registered under this tenant."}), 403
 
-    # ✅ Check password
+    # Check password
     if not user.check_password(password):
         return jsonify({"error": "Incorrect password"}), 401
 
@@ -858,7 +854,7 @@ def verify_totp_reset_post():
     device_info = request.user_agent.string
     location = get_ip_location(ip)
 
-    # ✅ Trust score enforcement
+    # Trust score enforcement
     if user.trust_score < 0.5:
         db.session.add(RealTimeLog(
             user_id=user.id,
@@ -887,7 +883,7 @@ def verify_totp_reset_post():
             )
         }), 403
 
-    # ✅ Optional WebAuthn enforcement
+    # Optional WebAuthn enforcement
     has_webauthn = WebAuthnCredential.query.filter_by(user_id=user.id).count() > 0
     if has_webauthn and not session.get("reset_webauthn_verified"):
         return jsonify({
@@ -895,7 +891,7 @@ def verify_totp_reset_post():
             "message": "WebAuthn verification required before TOTP reset."
         }), 202
 
-    # ✅ Passed → reset tenant-scoped TOTP
+    # Passed → reset tenant-scoped TOTP
     tenant_user.otp_secret = None
     tenant_user.otp_email_label = None
     user.reset_token = None
@@ -927,7 +923,7 @@ def request_reset_totp():
     if not user:
         return jsonify({"error": "User not found."}), 404
 
-    # 🔥 Make sure that user belongs to the tenant calling the API
+    # Make sure that user belongs to the tenant calling the API
     if user.tenant_id != g.tenant.id:
         return jsonify({"error": "Unauthorized access to user."}), 403
 
@@ -962,7 +958,7 @@ def request_reset_totp():
         db.session.commit()
         return jsonify({"error": "Incorrect password."}), 401
 
-    # 🔥 Clear TOTP info safely
+    # Clear TOTP info safely
     TenantUser.otp_secret = None
     TenantUser.otp_email_label = None
 
@@ -1030,17 +1026,17 @@ def begin_webauthn_registration():
     user_id = get_jwt_identity()
     tenant_id = g.tenant.id
 
-    # 🔒 Load user
+    # Load user
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found."}), 404
 
-    # 🔒 Ensure tenant match
+    # Ensure tenant match
     tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=tenant_id).first()
     if not tenant_user:
         return jsonify({"error": "Unauthorized"}), 403
 
-    # 🛡️ Exclude tenant-specific credentials
+    # Exclude tenant-specific credentials
     credentials = [
         {
             "id": c.credential_id,
@@ -1051,7 +1047,7 @@ def begin_webauthn_registration():
     ]
 
     try:
-        # 🔐 Begin WebAuthn registration
+        # Begin WebAuthn registration
         registration_data, state = server.register_begin(
             {
                 "id": str(user.id).encode(),
@@ -1061,10 +1057,10 @@ def begin_webauthn_registration():
             credentials
         )
 
-        # ✅ JSONify registration options
+        # JSONify registration options
         public_key = jsonify_webauthn(registration_data["publicKey"])
 
-        # ✅ Return both publicKey and state in response
+        # Return both publicKey and state in response
         return jsonify({
             "public_key": public_key,
             "state": state  # 🔥 Send state to client
@@ -1087,7 +1083,7 @@ def complete_webauthn_registration():
         user_id = get_jwt_identity()
         tenant_id = g.tenant.id
 
-        # 🔍 Load user + tenant context
+        # Load user + tenant context
         user = User.query.get(user_id)
         if not user:
             return jsonify({"error": "User not found."}), 404
@@ -1104,7 +1100,7 @@ def complete_webauthn_registration():
         if data["id"] != data["rawId"]:
             return jsonify({"error": "Credential ID mismatch."}), 400
 
-        # 🧩 Wrap response data
+        # Wrap response data
         response = {
             "id": data["id"],
             "rawId": data["rawId"],
@@ -1115,12 +1111,12 @@ def complete_webauthn_registration():
             }
         }
 
-        # 🔐 Finalize registration with the passed state
+        # Finalize registration with the passed state
         auth_data = server.register_complete(data["state"], response)
         cred_data = auth_data.credential_data
         public_key_bytes = cbor.encode(cred_data.public_key)
 
-        # 💾 Save the credential
+        # Save the credential
         credential = WebAuthnCredential(
             user_id=user.id,
             tenant_id=tenant_id,
@@ -1131,7 +1127,7 @@ def complete_webauthn_registration():
         )
         db.session.add(credential)
 
-        # 📘 Audit log
+        # Audit log
         db.session.add(RealTimeLog(
             user_id=user.id,
             tenant_id=tenant_id,
@@ -1166,7 +1162,7 @@ def begin_webauthn_assertion():
         user_id = get_jwt_identity()
         tenant_id = g.tenant.id
 
-        # 🧍 Fetch user and confirm tenant membership
+        # Fetch user and confirm tenant membership
         user = User.query.get(user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
@@ -1178,7 +1174,7 @@ def begin_webauthn_assertion():
         if not tenant_user:
             return jsonify({"error": "Unauthorized"}), 403
 
-        # 📦 Only get WebAuthn credentials tied to this tenant
+        # Only get WebAuthn credentials tied to this tenant
         tenant_credentials = WebAuthnCredential.query.filter_by(
             user_id=user.id,
             tenant_id=tenant_id
@@ -1196,7 +1192,7 @@ def begin_webauthn_assertion():
             for cred in tenant_credentials
         ]
 
-        # 🔐 Generate challenge
+        # Generate challenge
         assertion_data, state = server.authenticate_begin(credentials)
 
         session["webauthn_assertion_state"] = state
@@ -1243,7 +1239,7 @@ def complete_webauthn_assertion():
     try:
         data = request.get_json()
         
-        # 🩹 Restore session manually (if using API call with JWT)
+        # Restore session manually (if using API call with JWT)
         if "webauthn_assertion_state" not in session or "assertion_user_id" not in session:
             user_id = get_jwt_identity()
             user = User.query.get(user_id)
@@ -1254,7 +1250,7 @@ def complete_webauthn_assertion():
             session["assertion_user_id"] = user.id
             session["webauthn_assertion_state"] = data.get("state")
         
-        # ✅ Now fetch the restored values
+        # Now fetch the restored values
         state = session.get("webauthn_assertion_state")
         user_id = session.get("assertion_user_id")
         tenant_id = g.tenant.id
@@ -1262,7 +1258,7 @@ def complete_webauthn_assertion():
         if not state or not user_id:
             return jsonify({"error": "No assertion in progress."}), 400
 
-        # ✅ Unpack and rebuild valid state
+        # Unpack and rebuild valid state
         state = {
             "challenge": state.get("challenge"),
             "user_verification": state.get("user_verification")
@@ -1343,7 +1339,7 @@ def complete_webauthn_assertion():
             db.session.commit()
             return jsonify({"error": "Invalid WebAuthn credential."}), 401
 
-        # 🛡 Ensure data is a proper dictionary
+        # Ensure data is a proper dictionary
         if not isinstance(data, dict):
             return jsonify({"error": "Invalid request payload. Expected a JSON object."}), 400
 
@@ -1354,7 +1350,7 @@ def complete_webauthn_assertion():
 
         
 
-       # ✅ Build WebAuthn response object (as dict)
+       # Build WebAuthn response object (as dict)
             assertion = {
                 "id": data["credentialId"],
                 "rawId": websafe_decode(data["credentialId"]),
@@ -1367,7 +1363,7 @@ def complete_webauthn_assertion():
                 }
             }
 
-            # ✅ Credential from DB
+            #  Credential from DB
             public_key_source = {
                 "id": credential.credential_id,
                 "public_key": credential.public_key,
@@ -1376,7 +1372,7 @@ def complete_webauthn_assertion():
                 "user_handle": None,
             }
 
-            # ✅ Final auth check (note: NO brackets on `assertion`)
+            #  Final auth check (note: NO brackets on `assertion`)
             server.authenticate_complete(
                 state,
                 assertion,
@@ -1389,7 +1385,7 @@ def complete_webauthn_assertion():
         session.pop("assertion_user_id", None)
 
         
-        # ✅ Get tenant-specific role for the user
+        # Get tenant-specific role for the user
         tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=tenant_id).first()
 
         role = "user"  # default fallback
@@ -1405,7 +1401,7 @@ def complete_webauthn_assertion():
 
         print("🧪 Resolved tenant role:", role)
 
-        # ✅ Dashboard resolution
+        # Dashboard resolution
         if tenant_id == 1:
             urls = {
                 "admin": url_for("admin.admin_dashboard", _external=True),
@@ -1485,7 +1481,7 @@ def begin_reset_webauthn_assertion():
 
         user = User.query.filter_by(reset_token=hash_token(token)).first()
 
-        # ⚠️ Enforce tenant isolation
+        # Enforce tenant isolation
         tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=g.tenant.id).first() if user else None
         if not tenant_user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
             return jsonify({"error": "Reset token invalid or expired."}), 403
@@ -1506,7 +1502,7 @@ def begin_reset_webauthn_assertion():
 
         session["reset_webauthn_assertion_state"] = state
         session["reset_user_id"] = user.id
-        session["reset_token_checked"] = token  # ✅ Set token to support follow-up
+        session["reset_token_checked"] = token  
         session["reset_context"] = "iam_reset"
 
         return jsonify({
@@ -1530,7 +1526,6 @@ def complete_reset_webauthn_assertion():
             return jsonify({"error": "No reset verification in progress."}), 400
 
         data = request.get_json()
-        print("📥 WebAuthn reset data received:", data, type(data))  # DEBUG
 
         if not isinstance(data, dict):
             return jsonify({"error": "Invalid payload format. Expected a JSON object."}), 400
@@ -1539,7 +1534,7 @@ def complete_reset_webauthn_assertion():
         if not user:
             return jsonify({"error": "User not found."}), 404
 
-        # ⚠️ Enforce tenant isolation
+        #  Enforce tenant isolation
         tenant_user = TenantUser.query.filter_by(user_id=user.id, tenant_id=g.tenant.id).first()
         if not tenant_user:
             return jsonify({"error": "Unauthorized: Wrong tenant."}), 403
@@ -1554,7 +1549,7 @@ def complete_reset_webauthn_assertion():
             return jsonify({"error": "Invalid credential."}), 401
 
         
-        # ✅ Build WebAuthn response object (as dict)
+        #  Build WebAuthn response object (as dict)
             assertion = {
                 "id": data["credentialId"],
                 "rawId": websafe_decode(data["credentialId"]),
@@ -1568,7 +1563,7 @@ def complete_reset_webauthn_assertion():
             }
 
 
-        # ✅ Credential from DB
+        #  Credential from DB
             public_key_source = {
                 "id": credential.credential_id,
                 "public_key": credential.public_key,
@@ -1578,7 +1573,7 @@ def complete_reset_webauthn_assertion():
             }
 
 
-        # ✅ Final auth check (note: NO brackets on `assertion`)
+        #  Final auth check (note: NO brackets on `assertion`)
             server.authenticate_complete(
                 state,
                 assertion,

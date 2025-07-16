@@ -74,7 +74,7 @@ def get_request_fingerprint(tenant_id=None):
     if not has_request_context():
         return "no-request-context"
 
-    # 🌐 Trust headers set by nginx/reverse proxy
+    #  Trust headers set by nginx/reverse proxy
     ip = (
         request.headers.get("X-Real-IP")
         or request.headers.get("X-Forwarded-For")
@@ -84,7 +84,7 @@ def get_request_fingerprint(tenant_id=None):
 
     ua = request.headers.get("User-Agent", "unknown").lower().strip()
 
-    # 🔐 Include tenant-specific salt
+    #  Include tenant-specific salt
     tenant_str = str(tenant_id) if tenant_id else "unknown-tenant"
 
     raw_fp = f"{tenant_str}|{ip}|{ua}"

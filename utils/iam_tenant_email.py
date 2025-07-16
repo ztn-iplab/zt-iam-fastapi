@@ -60,7 +60,6 @@ Best regards,
             body=body
         )
         mail.send(msg)
-        print(f"📧 TOTP reset email sent to {tenant_email} from {tenant_name}")
 
     except Exception as e:
         print(f"❌ Failed to send tenant TOTP reset email: {e}")
@@ -92,7 +91,6 @@ Best regards,
             body=body
         )
         mail.send(msg)
-        print(f"📧 WebAuthn reset email sent to {tenant_email} from {tenant_name}")
 
     except Exception as e:
         print(f"❌ Failed to send tenant WeAbauthn reset email: {e}")

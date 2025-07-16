@@ -4,20 +4,20 @@ from models.models import db, Tenant, RealTimeLog
 from utils.location import get_ip_location
 import secrets
 
-# 📊 Trust Engine Configs
+# Trust Engine Configs
 ERROR_LIMIT = 10
 SCORE_DECAY_HOURS = 6
 WARN_THRESHOLD = 0.5
 BLOCK_THRESHOLD = 1.0
 
-# 🎚️ Plan-specific Rate Limits
+#  Plan-specific Rate Limits
 PLAN_RATE_LIMITS = {
     "basic": 100,
     "premium": 1000,
     "enterprise": 5000
 }
 
-# 🔓 Trusted tenants (bypass all abuse logic)
+#  Trusted tenants (bypass all abuse logic)
 TRUST_ENGINE_BYPASS_TENANTS = ["MasterTenant", "MinistryOfHealth"]
 
 def require_api_key(func):
@@ -32,43 +32,43 @@ def require_api_key(func):
 
         now = datetime.utcnow()
 
-        # ✅ Bypass trust engine for whitelisted tenants (safe for dev/testing)
+        #  Bypass trust engine for whitelisted tenants (safe for dev/testing)
         # if tenant.name in TRUST_ENGINE_BYPASS_TENANTS:
         #     tenant.last_api_access = now
         #     db.session.commit()
         #     g.tenant = tenant
         #     return func(*args, **kwargs)
 
-        # 🔐 Plan-based dynamic rate limits
+        #  Plan-based dynamic rate limits
         plan = (tenant.plan or "basic").lower()
         rate_limit = PLAN_RATE_LIMITS.get(plan, 100)
 
-        # ✅ Initialize fields safely
+        #  Initialize fields safely
         tenant.api_score = getattr(tenant, 'api_score', 0.0) or 0.0
         tenant.api_request_count = getattr(tenant, 'api_request_count', 0) or 0
         tenant.api_error_count = getattr(tenant, 'api_error_count', 0) or 0
 
-        # ♻️ Decay score on window expiry
+        #  Decay score on window expiry
         if not tenant.api_last_reset or (now - tenant.api_last_reset > timedelta(hours=SCORE_DECAY_HOURS)):
             tenant.api_request_count = 0
             tenant.api_error_count = 0
             tenant.api_score = max(tenant.api_score - 0.2, 0.0)
             tenant.api_last_reset = now
 
-        # ⛔ Suspended or expired
+        #  Suspended or expired
         if not tenant.is_active:
             return jsonify({"error": "This API key has been suspended"}), 403
         if tenant.api_key_expires_at and tenant.api_key_expires_at < now:
             return jsonify({"error": "API key has expired. Please renew or upgrade your plan."}), 403
 
-        # ✅ Record usage
+        #  Record usage
         tenant.last_api_access = now
         tenant.api_request_count += 1
 
         if tenant.api_request_count > rate_limit:
             tenant.api_score += 0.1
 
-        # 🚨 Auto-suspend if abusive
+        #  Auto-suspend if abusive
         if tenant.api_score >= BLOCK_THRESHOLD:
             tenant.is_active = False
             db.session.add(tenant)
@@ -83,7 +83,7 @@ def require_api_key(func):
             db.session.commit()
             return jsonify({"error": "API key suspended due to repeated abuse"}), 403
 
-        # ✅ Save usage stats
+        #  Save usage stats
         db.session.add(tenant)
         db.session.commit()
         g.tenant = tenant

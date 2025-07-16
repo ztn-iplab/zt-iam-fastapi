@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import BYTEA
 import base64
 from sqlalchemy.schema import UniqueConstraint
 
-# 📌 User Model (Identity Management)
+#User Model (Identity Management)
 class User(db.Model):
     __tablename__ = 'users'
     
@@ -25,17 +25,18 @@ class User(db.Model):
     otp_email_label = db.Column(db.String(120), nullable=True)
     reset_token = db.Column(db.String(128), nullable=True)
     reset_token_expiry = db.Column(db.DateTime, nullable=True)
+    preferred_mfa = db.Column(db.String(20), default='both') 
 
-    # 🌐 Legacy Tenant Association (primary/master tenant)
+    # Legacy Tenant Association (primary/master tenant)
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
     is_tenant_admin = db.Column(db.Boolean, default=False)
 
-    # 🔐 Account Status
+    #  Account Status
     is_active = db.Column(db.Boolean, default=True)      
     deletion_requested = db.Column(db.Boolean, default=False)
     locked_until = db.Column(db.DateTime, nullable=True)  
 
-    # 🔄 Relationships
+    #  Relationships
     access_controls = db.relationship('UserAccessControl', backref='user', lazy=True)
     auth_logs = db.relationship('UserAuthLog', backref='user', lazy=True)
     transactions = db.relationship('Transaction', backref='user', lazy=True)
@@ -53,13 +54,13 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
     
-    # 🔐 New method: resolve role by tenant
+    #  New method: resolve role by tenant
     def get_role_for_tenant(self, tenant_id):
         from models import UserAccessControl, UserRole  # to avoid circular imports
         access = UserAccessControl.query.filter_by(user_id=self.id, tenant_id=tenant_id).first()
         return UserRole.query.get(access.role_id) if access else None
 
-# 📌 SIM Card Model (Realistic Mobile SIM Registration)
+#  SIM Card Model (Realistic Mobile SIM Registration)
 class SIMCard(db.Model):
     __tablename__ = 'sim_cards'
     
@@ -74,7 +75,7 @@ class SIMCard(db.Model):
     # Many-to-One relationship with User (One user can have multiple SIMs)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
-# 📌 Sim Swapping operations
+#  Sim Swapping operations
 class PendingSIMSwap(db.Model):
     __tablename__ = "pending_sim_swap"
 
@@ -88,7 +89,7 @@ class PendingSIMSwap(db.Model):
     expires_at = db.Column(db.DateTime)
     is_verified = db.Column(db.Boolean, default=False)
 
-# 📌 Wallet Model (User Balance & Transactions)
+#Wallet Model (User Balance & Transactions)
 class Wallet(db.Model):
     __tablename__ = 'wallets'
     id = db.Column(db.Integer, primary_key=True)
@@ -97,7 +98,7 @@ class Wallet(db.Model):
     currency = db.Column(db.String(10), default="RWF")
     last_transaction_at = db.Column(db.DateTime, nullable=True)
 
-# 📌 Authentication Logs (Zero Trust Identity Proofing)
+#Authentication Logs (Zero Trust Identity Proofing)
 class UserAuthLog(db.Model):
     __tablename__ = 'user_auth_logs'
     id = db.Column(db.Integer, primary_key=True)
@@ -113,7 +114,7 @@ class UserAuthLog(db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
 
 
-# 📌 Transactions (Mobile Money Operations)
+#Transactions (Mobile Money Operations)
 class Transaction(db.Model):
     __tablename__ = 'transactions'
     id = db.Column(db.Integer, primary_key=True)
@@ -140,7 +141,7 @@ class PendingTransaction(db.Model):
     expires_at = db.Column(db.DateTime, nullable=False)
     is_used = db.Column(db.Boolean, default=False)
 
-# 📌 Role-Based Access Control (RBAC)
+#Role-Based Access Control (RBAC)
 class UserRole(db.Model):
     __tablename__ = 'user_roles'
     
@@ -176,7 +177,7 @@ class UserAccessControl(db.Model):
 
 
 
-# 📌 Real-Time Logs (Tracks User Behavior & Security)
+# Real-Time Logs (Tracks User Behavior & Security)
 class RealTimeLog(db.Model):
     __tablename__ = 'real_time_logs'
     id = db.Column(db.Integer, primary_key=True)
@@ -187,11 +188,11 @@ class RealTimeLog(db.Model):
     device_info = db.Column(db.String(200))
     location = db.Column(db.String(100))
     risk_alert = db.Column(db.Boolean, default=False)  # Flagged risky actions
-     # ✅ This enables log.user to work
+     # This enables log.user to work
     user = db.relationship("User", backref="real_time_logs")
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=False)
 
-# 📌 One time passowrd for the security purpose
+#One time passowrd for the security purpose
 class OTPCode(db.Model):
     __tablename__ = 'otp_codes'
     id = db.Column(db.Integer, primary_key=True)
@@ -208,7 +209,7 @@ from sqlalchemy import Numeric
 
 class HeadquartersWallet(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    balance = db.Column(Numeric(18, 2), default=0.0)  # 💰 Use DECIMAL type
+    balance = db.Column(Numeric(18, 2), default=0.0)  #  Use DECIMAL type
 
 
 class WebAuthnCredential(db.Model):
@@ -276,7 +277,7 @@ class TenantUser(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # 🔐 New: Per-tenant TOTP
+    # New: Per-tenant TOTP
     otp_secret = db.Column(db.String(64), nullable=True)
     otp_email_label = db.Column(db.String(120), nullable=True)
     preferred_mfa = db.Column(db.String(20), default='both')  # Options: 'totp', 'webauthn', 'both'
@@ -298,10 +299,10 @@ class Tenant(db.Model):
     plan = db.Column(db.String(50), default='free')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
-    # ✅ New: enforce MFA for all users under this tenant/ admin work
+    # New: enforce MFA for all users under this tenant/ admin work
     enforce_strict_mfa = db.Column(db.Boolean, default=False)
 
-    # ⏳ NEW FIELD
+    # NEW FIELD
     api_key_expires_at = db.Column(db.DateTime, nullable=True)
 
     # API abuse and tracking
@@ -320,7 +321,7 @@ class Tenant(db.Model):
         self.api_error_count = kwargs.get('api_error_count', 0)
         self.api_last_reset = kwargs.get('api_last_reset', datetime.utcnow())
         
-        # 🎯 Automatically set expiry based on plan
+        # Automatically set expiry based on plan
         if not self.api_key_expires_at:
             if self.plan == 'free':
                 self.api_key_expires_at = None  # Free = unlimited

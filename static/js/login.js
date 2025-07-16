@@ -36,12 +36,10 @@ document.addEventListener("DOMContentLoaded", () => {
         data = await res.json();
       } catch (jsonErr) {
         if (!res.ok) {
-          // Server error, likely returned plain text instead of JSON
-          const rawText = await res.text();  // ✅ Only happens if .json() failed
+          const rawText = await res.text(); 
           console.error("❌ Server returned non-JSON response:", rawText);
           throw new Error(rawText || "Internal server error. Please try again later.");
         } else {
-          // JSON parse failed but response was OK — weird case
           console.error("❌ JSON parse error on valid response:", jsonErr);
           throw new Error("Unexpected response format.");
         }
@@ -53,19 +51,15 @@ document.addEventListener("DOMContentLoaded", () => {
         );
       }
 
-      console.log("✅ Login successful:", data);
 
       // Allow cookie storage time
       setTimeout(() => {
         if (data.require_totp_setup || data.require_totp_reset) {
           const reason = data.require_totp_reset ? "reset" : "setup";
-          console.log(`➡️ Redirecting to TOTP ${reason}...`);
           window.location.href = `/setup-totp?reason=${reason}`;
         } else if (data.require_totp && data.user_id) {
-          console.log("➡️ Redirecting to TOTP verification...");
           window.location.href = `/api/auth/verify-totp`;
         } else {
-          console.log("✅ Fully authenticated — redirecting to dashboard...");
           window.location.href = data.dashboard_url || "/";
         }
       }, 500);

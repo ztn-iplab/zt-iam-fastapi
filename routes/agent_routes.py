@@ -35,8 +35,8 @@ def generate_unique_iccid():
             return new_iccid
 
 
-#✅ Function to control transaction life time
-WITHDRAWAL_EXPIRY_MINUTES = 5  # Make sure it's the same as the one used in approval route
+# Function to control transaction life time
+WITHDRAWAL_EXPIRY_MINUTES = 5
 
 def expire_pending_withdrawals():
     now = datetime.utcnow()
@@ -56,7 +56,7 @@ def expire_pending_withdrawals():
         db.session.commit()
     return expired_count
 
-# ✅ Function to generate a new sim card
+#  Function to generate a new sim card
 @agent_bp.route("/agent/generate_sim", methods=["POST"])
 @jwt_required()
 @session_protected()
@@ -71,7 +71,7 @@ def generate_sim():
     if network_provider not in ["MTN", "Airtel"]:
         return jsonify({"success": False, "error": "❌ Invalid network provider. Choose MTN or Airtel."}), 400
 
-    # ✅ Generate unique mobile number & ICCID
+    #  Generate unique mobile number & ICCID
     mobile_number = generate_unique_mobile_number(network_provider)
     iccid = generate_unique_iccid()
 
@@ -83,7 +83,7 @@ def generate_sim():
     }), 200
 
 
-# ✅ API: Register SIM Card (Agents Only)
+#  API: Register SIM Card (Agents Only)
 @agent_bp.route("/agent/register_sim", methods=["POST"])
 @jwt_required()
 @session_protected()
@@ -91,7 +91,7 @@ def register_sim():
     logged_in_user = get_jwt_identity()
     agent = User.query.get(logged_in_user)
 
-    # ✅ Check if the user is an agent
+    #  Check if the user is an agent
     user_access = UserAccessControl.query.filter_by(user_id=logged_in_user).first()
     if not user_access:
         return jsonify({"success": False, "error": "❌ Unauthorized. Agent role required."}), 403
@@ -111,12 +111,12 @@ def register_sim():
     if network_provider not in ["MTN", "Airtel"]:
         return jsonify({"success": False, "error": "❌ Invalid network provider. Choose MTN or Airtel."}), 400
 
-    # ✅ Ensure the ICCID is unique before saving
+    #  Ensure the ICCID is unique before saving
     existing_sim = SIMCard.query.filter_by(iccid=iccid).first()
     if existing_sim:
         return jsonify({"success": False, "error": "❌ This ICCID is already registered."}), 400
 
-    # ✅ Save the SIM with the agent's `user_id`
+    #  Save the SIM with the agent's `user_id`
     new_sim = SIMCard(
         iccid=iccid,
         mobile_number=mobile_number,
@@ -136,19 +136,19 @@ def register_sim():
     }), 201
 
 
-# ✅ API: Fetch SIM Registration History
+#  API: Fetch SIM Registration History
 @agent_bp.route("/agent/sim-registrations", methods=["GET"])
 @jwt_required()
 @session_protected()
 def fetch_sim_registration_history():
     agent_id = get_jwt_identity()
 
-    # ✅ Fetch all SIMs registered by this agent
+    #  Fetch all SIMs registered by this agent
     sims = SIMCard.query.filter_by(registered_by=str(agent_id)).order_by(SIMCard.registration_date.desc()).all()
 
     sim_list = []
     for sim in sims:
-        # ✅ Status color logic
+        #  Status color logic
         if sim.status == "active":
             status_class = "text-success"
         elif sim.status == "suspended":
@@ -158,7 +158,7 @@ def fetch_sim_registration_history():
         else:
             status_class = "text-muted"
 
-        # ✅ Show the user's current active mobile number (if different from this SIM)
+        #  Show the user's current active mobile number (if different from this SIM)
         if sim.user_id:
             active_sim = SIMCard.query.filter_by(user_id=sim.user_id, status="active").first()
             display_mobile = active_sim.mobile_number if active_sim else sim.mobile_number
@@ -178,7 +178,7 @@ def fetch_sim_registration_history():
     return jsonify({"sims": sim_list}), 200
 
 
-# ✅ Agent Dashboard (HTML Page)
+#  Agent Dashboard (HTML Page)
 @agent_bp.route("/agent/dashboard", methods=["GET"])
 @jwt_required()
 @session_protected()
@@ -194,7 +194,7 @@ def agent_dashboard():
 
     return render_template("agent_dashboard.html", user=user)
 
-# ✅ Agent Transaction
+#  Agent Transaction
 @agent_bp.route("/agent/transaction", methods=["POST"])
 @jwt_required()
 @session_protected()
@@ -371,7 +371,7 @@ def process_agent_transaction():
     else:
         return jsonify({"error": "Invalid transaction type"}), 400
 
-    # ✅ Commit Transaction and Real-Time Log
+    #  Commit Transaction and Real-Time Log
     db.session.add(new_transaction)
     if rt_log:
         db.session.add(rt_log)
@@ -387,7 +387,7 @@ def process_agent_transaction():
     }), 200
 
 
-# ✅ API: Fetch Agent's Transaction History
+#  API: Fetch Agent's Transaction History
 @agent_bp.route('/agent/transactions', methods=['GET'])
 @jwt_required()
 @session_protected()
@@ -395,14 +395,14 @@ def process_agent_transaction():
 def get_agent_transactions():
     agent_id = int(get_jwt_identity())
 
-    # ✅ Get all SIMs (active + swapped) for historical tracking
+    #  Get all SIMs (active + swapped) for historical tracking
     agent_sims = SIMCard.query.filter(
         SIMCard.user_id == agent_id,
         SIMCard.status.in_(["active", "swapped"])
     ).all()
     agent_mobiles = [sim.mobile_number for sim in agent_sims if sim.mobile_number]
 
-    # ✅ Query transactions agent is involved in
+    #  Query transactions agent is involved in
     transactions = Transaction.query.filter(
         db.or_(
             Transaction.user_id == agent_id,
@@ -419,7 +419,7 @@ def get_agent_transactions():
         try:
             metadata = json.loads(tx.transaction_metadata or "{}")
 
-            # ✅ Determine if agent was involved
+            #  Determine if agent was involved
             involved = False
             if tx.user_id == agent_id:
                 involved = True
@@ -431,7 +431,7 @@ def get_agent_transactions():
             if not involved:
                 continue
 
-            # ✅ Determine recipient mobile
+            #  Determine recipient mobile
             if tx.transaction_type in ["deposit", "transfer"]:
                 recipient_mobile = metadata.get("recipient_mobile", "N/A")
             elif tx.transaction_type == "withdrawal":
@@ -441,7 +441,7 @@ def get_agent_transactions():
             else:
                 recipient_mobile = "Self"
 
-            # ✅ Build descriptive label
+            #  Build descriptive label
             admin_msg = metadata.get("admin_message")
             if tx.transaction_type == "withdrawal":
                 if tx.status == "pending":
@@ -463,7 +463,7 @@ def get_agent_transactions():
             else:
                 label = tx.transaction_type.capitalize()
 
-            # ✅ Determine status class for UI
+            #  Determine status class for UI
             status_class = ""
             if tx.status == "rejected":
                 status_class = "text-danger"
@@ -474,7 +474,7 @@ def get_agent_transactions():
             elif tx.status == "expired":
                 status_class = "text-muted"
 
-            # ✅ Final output structure
+            #  Final output structure
             transaction_list.append({
                 "transaction_id": tx.id,
                 "amount": tx.amount,
@@ -494,7 +494,7 @@ def get_agent_transactions():
 
 
 
-# ✅ API: Fetch Agent Wallet Info
+#  API: Fetch Agent Wallet Info
 @agent_bp.route("/agent/wallet", methods=["GET"])
 @jwt_required()
 @session_protected()
@@ -510,11 +510,11 @@ def agent_wallet():
     return jsonify({
         "balance": wallet.balance,
         "currency": wallet.currency,
-        "can_deposit": False  # ✅ Agents cannot deposit into their own wallets
+        "can_deposit": False  
     }), 200
 
 
-# ✅ API: Fetch Agent Dashboard Data (Transactions + SIM Registrations Count)
+#  API: Fetch Agent Dashboard Data (Transactions + SIM Registrations Count)
 @agent_bp.route("/agent/dashboard/data", methods=["GET"])
 @jwt_required()
 @role_required(["agent"])
@@ -526,28 +526,28 @@ def agent_dashboard_data():
     if not agent:
         return jsonify({"error": "Agent not found"}), 404
 
-    # ✅ Count transactions made by this agent (withdrawal, transfer, deposits into user accounts)
+    #  Count transactions made by this agent (withdrawal, transfer, deposits into user accounts)
     total_transactions = Transaction.query.filter(
         (Transaction.user_id == agent.id) | 
         (Transaction.transaction_metadata.like(f'%\"deposited_by\": \"Agent\", \"agent_id\": {agent.id}%'))
     ).count()
 
-    # ✅ Get total SIMs registered by this agent
+    #  Get total SIMs registered by this agent
     total_sims = SIMCard.query.filter_by(registered_by=str(agent.id)).count()
 
-    # ✅ Get total deposits made BY THE AGENT into user accounts
+    #  Get total deposits made BY THE AGENT into user accounts
     total_deposits = db.session.query(db.func.sum(Transaction.amount)).filter(
         Transaction.transaction_type == "deposit",
         Transaction.transaction_metadata.like(f'%\"deposited_by\": \"Agent\", \"agent_id\": {agent.id}%')
     ).scalar() or 0
 
-    # ✅ Get total withdrawals by the agent
+    #  Get total withdrawals by the agent
     total_withdrawals = db.session.query(db.func.sum(Transaction.amount)).filter(
         Transaction.user_id == agent.id,
         Transaction.transaction_type == "withdrawal"
     ).scalar() or 0
 
-    # ✅ Get total transfers by the agent
+    #  Get total transfers by the agent
     total_transfers = db.session.query(db.func.sum(Transaction.amount)).filter(
         Transaction.user_id == agent.id,
         Transaction.transaction_type == "transfer"
@@ -556,14 +556,14 @@ def agent_dashboard_data():
     return jsonify({
         "total_transactions": total_transactions,
         "total_sims": total_sims,
-        "total_deposits": total_deposits,  # ✅ Now counts deposits made by agents
+        "total_deposits": total_deposits,
         "total_withdrawals": total_withdrawals,
         "total_transfers": total_transfers
     }), 200
 
 
 
-# ✅ API: Fetch Agent Profile (Ensure Name is Returned)
+# API: Fetch Agent Profile (Ensure Name is Returned)
 @agent_bp.route('/agent/profile', methods=['GET'])
 @jwt_required()
 @role_required(["agent"])
@@ -575,13 +575,13 @@ def agent_profile():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # ✅ Fetch the most recently assigned SIM card for the agent
+    # Fetch the most recently assigned SIM card for the agent
     latest_sim = SIMCard.query.filter_by(user_id=user.id).order_by(SIMCard.registration_date.desc()).first()
     mobile_number = latest_sim.mobile_number if latest_sim else "Not Assigned"  # ✅ Fix: Fetch mobile from SIMCard
 
     return jsonify({
         "id": user.id,
-        "mobile_number": mobile_number,  # ✅ Fetch mobile from SIMCard
+        "mobile_number": mobile_number,
         "first_name": user.first_name or "Unknown",
         "last_name": user.last_name or "",
         "full_name": f"{user.first_name} {user.last_name}".strip(),
@@ -622,7 +622,7 @@ def activate_sim():
     sim.status = "active"
     db.session.commit()
 
-    # ✅ Log the SIM activation to RealTimeLog
+    # Log the SIM activation to RealTimeLog
     agent_id = get_jwt_identity()
     
     rt_log = RealTimeLog(
@@ -654,7 +654,7 @@ def suspend_sim():
     sim.status = "suspended"
     db.session.commit()
 
-    # ✅ Log to RealTimeLog
+    #Log to RealTimeLog
     agent_id = get_jwt_identity()
     rt_log = RealTimeLog(
         user_id=agent_id,
@@ -688,7 +688,7 @@ def reactivate_sim():
     sim.status = "active"
     db.session.commit()
 
-    # ✅ Log the action
+    # Log the action
     agent_id = get_jwt_identity()
     rt_log = RealTimeLog(
         user_id=agent_id,
@@ -721,7 +721,7 @@ def delete_sim():
     db.session.delete(sim)
     db.session.commit()
 
-    # ✅ Log SIM deletion in RealTimeLog
+    # Log SIM deletion in RealTimeLog
     agent_id = get_jwt_identity()
     rt_log = RealTimeLog(
         user_id=agent_id,
@@ -738,7 +738,7 @@ def delete_sim():
     return jsonify({"message": "🗑️ SIM deleted successfully!"}), 200
 
 
-# ✅ AGENT VIEWS PENDING WITHDRAWALS 
+#  AGENT VIEWS PENDING WITHDRAWALS 
 @agent_bp.route("/agent/pending-withdrawals", methods=["GET"])
 @jwt_required()
 @role_required(["agent"])
@@ -764,7 +764,7 @@ def get_pending_withdrawals():
 
             if assigned_agent_id != agent_id:
                 print("⛔ Skipping — this withdrawal is not assigned to this agent.\n")
-                continue  # 🔐 Do not show unassigned transactions
+                continue  # Do not show unassigned transactions
 
             user = User.query.get(tx.user_id)
 
@@ -778,8 +778,6 @@ def get_pending_withdrawals():
                 "metadata": metadata
             })
 
-            print("✅ Included in result ✅\n")
-
         except Exception as e:
             print(f"❌ Skipping transaction ID {tx.id}: Metadata parsing error - {e}")
             continue
@@ -787,7 +785,7 @@ def get_pending_withdrawals():
     return jsonify({"pending_withdrawals": result}), 200
     
 
-# ✅ AGENT APPROVES WITHDRAWAL
+# AGENT APPROVES WITHDRAWAL
 @agent_bp.route("/agent/approve-withdrawal/<int:transaction_id>", methods=["POST"])
 @jwt_required()
 @role_required(["agent"])
@@ -808,7 +806,7 @@ def approve_user_withdrawal(transaction_id):
     if transaction.timestamp and now - transaction.timestamp > timedelta(minutes=WITHDRAWAL_EXPIRY_MINUTES):
         transaction.status = "expired"
 
-        # ✅ Real-time log for expiration
+        # Real-time log for expiration
         rt_log = RealTimeLog(
             user_id=agent_id,
             action=f"⏳ Withdrawal request of {transaction.amount} RWF for User {transaction.user_id} expired",
@@ -840,13 +838,13 @@ def approve_user_withdrawal(transaction_id):
 
     db.session.commit()
 
-    # ✅ Real-time log for approval
+    #  Real-time log for approval
     rt_log = RealTimeLog(
         user_id=agent_id,
         action=f"✅ Approved withdrawal of {transaction.amount} RWF for User {transaction.user_id}",
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Unknown"),
-        location="Agent location",  # or data.get("location") if passed
+        location="Agent location",
         risk_alert=False,
         tenant_id=1
     )
@@ -863,7 +861,7 @@ def approve_user_withdrawal(transaction_id):
 
 
 
-# ✅ AGENT Rejects WITHDRAWAL
+#  AGENT Rejects WITHDRAWAL
 @agent_bp.route("/agent/reject-withdrawal/<int:transaction_id>", methods=["POST"])
 @jwt_required()
 @role_required(["agent"])
@@ -888,7 +886,7 @@ def reject_user_withdrawal(transaction_id):
 
     db.session.commit()
 
-    # ✅ Log to RealTimeLog
+    #  Log to RealTimeLog
     rt_log = RealTimeLog(
         user_id=agent_id,
         action=f"❌ Rejected withdrawal of {transaction.amount} RWF for User {transaction.user_id}",

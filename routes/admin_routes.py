@@ -11,7 +11,8 @@ from models.models import (
     UserAuthLog, 
     SIMCard, 
     RealTimeLog,
-    Tenant, 
+    Tenant,
+    TenantUser, 
     HeadquartersWallet)
 import random
 import json
@@ -24,14 +25,14 @@ from datetime import datetime, timedelta
 from utils.decorators import session_protected
 from utils.email_alerts import send_tenant_api_key_email, send_rotated_api_key_email
 from utils.location import get_ip_location
+from werkzeug.security import check_password_hash, generate_password_hash
 
 admin_bp = Blueprint("admin", __name__)
 
-# ✅ FINALIZE FUNCTION 
+# FINALIZE FUNCTION 
 def finalize_reversal(app, reversal_id, sender_wallet_id, amount):
     try:
         with app.app_context():
-            print("🧠 finalize_reversal() running...")
 
             reversal_tx = db.session.get(Transaction, reversal_id)
             sender_wallet = db.session.get(Wallet, sender_wallet_id)
@@ -101,7 +102,7 @@ def admin_dashboard():
     return render_template('admin_dashboard.html', user=admin_user)
 
 
-# ✅ List all users (Admin Only)
+#  List all users (Admin Only)
 @admin_bp.route("/admin/users", methods=["GET"])
 @jwt_required()
 @session_protected()
@@ -113,13 +114,25 @@ def get_all_users():
         users_list = []
 
         for u in users:
-            # ✅ Fetch active SIM only
+            # 📱 Fetch active SIM only
             primary_sim = SIMCard.query.filter_by(user_id=u.id, status="active").first()
 
-            # ✅ Enforce Master Tenant role only
-            access = UserAccessControl.query.filter_by(user_id=u.id, tenant_id=1).first()
-            user_role = UserRole.query.get(access.role_id) if access else None
-            role_name = user_role.role_name if user_role else "N/A"
+            # 🔐 Enforce Master Tenant access (must match both tenant + role)
+            access = (
+                UserAccessControl.query
+                .join(UserRole, UserAccessControl.role_id == UserRole.id)
+                .filter(
+                    UserAccessControl.user_id == u.id,
+                    UserAccessControl.tenant_id == 1,         # 👈 Must be from Master Tenant
+                    UserRole.tenant_id == 1                   # 👈 Role must also belong to Master Tenant
+                )
+                .first()
+            )
+
+            if not access or not access.role:
+                continue  # Skip users who do not have a valid MasterTenant role
+
+            role_name = access.role.role_name
 
             is_locked = u.locked_until is not None and u.locked_until > datetime.utcnow()
 
@@ -141,9 +154,8 @@ def get_all_users():
             "details": str(e)
         }), 500
 
-# ✅ Assign Role to User (Fixed for New Approach)
+#  Assign Role to User (Fixed for New Approach)
 ZTN_MASTER_TENANT_ID = 1
-
 @admin_bp.route("/admin/assign_role", methods=["POST"])
 @jwt_required()
 @role_required(["admin"])
@@ -158,11 +170,11 @@ def assign_role():
     if not role:
         return jsonify({"error": "Invalid role ID"}), 400
 
-    # ✅ Enforce that the role is from master tenant
+    # Enforce that the role is from master tenant
     if role.tenant_id != ZTN_MASTER_TENANT_ID:
         return jsonify({"error": "Cross-tenant role assignment is not allowed"}), 400
 
-    # 🔍 Assign or update access control for master tenant
+    #  Assign or update access control for master tenant
     user_access = UserAccessControl.query.filter_by(
         user_id=user.id,
         tenant_id=ZTN_MASTER_TENANT_ID
@@ -212,7 +224,7 @@ def suspend_user(user_id):
 
     current_user_id = get_jwt_identity()
 
-    # 🚫 Prevent self-suspension
+    #  Prevent self-suspension
     if current_user_id == user_id:
         return jsonify({"error": "Admins are not allowed to suspend their own accounts."}), 403
 
@@ -220,11 +232,11 @@ def suspend_user(user_id):
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # 🔒 Suspend user and flag for deletion
+    #  Suspend user and flag for deletion
     user.is_active = False
     user.deletion_requested = True
 
-    # ✅ Log suspension
+    #  Log suspension
     admin_user = User.query.get(current_user_id)
     user_sim = SIMCard.query.filter_by(user_id=user.id).first()
     mobile_number = user_sim.mobile_number if user_sim else "N/A"
@@ -235,7 +247,7 @@ def suspend_user(user_id):
         ip_address=request.remote_addr,
         device_info=request.headers.get("User-Agent", "Admin Panel"),
         location="Headquarters",
-        risk_alert=True, # ✅ You can mark this as risky
+        risk_alert=True, 
         tenant_id=1
     )
     db.session.add(rt_log)
@@ -257,19 +269,19 @@ def verify_user(user_id):
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # ✅ Restore user account
+    #  Restore user account
     user.is_active = True
     user.deletion_requested = False
 
-    # ✅ Admin details
+    #  Admin details
     admin_id = int(get_jwt_identity())
     admin_user = User.query.get(admin_id)
 
-    # ✅ Get user's mobile number (if available)
+    #  Get user's mobile number (if available)
     user_sim = SIMCard.query.filter_by(user_id=user.id).first()
     mobile_number = user_sim.mobile_number if user_sim else "N/A"
 
-    # ✅ Log admin verification action
+    # Log admin verification action
     rt_log = RealTimeLog(
         user_id=admin_user.id,
         action=f"✅ Verified and reactivated user {user.first_name} {user.last_name} ({mobile_number})",
@@ -296,7 +308,7 @@ def delete_user(user_id):
 
     current_user_id = get_jwt_identity()
 
-    # 🚫 Prevent self-deletion
+    # Prevent self-deletion
     if current_user_id == user_id:
         return jsonify({"error": "Admins are not allowed to delete their own accounts."}), 403
 
@@ -307,11 +319,11 @@ def delete_user(user_id):
     if not user.deletion_requested:
         return jsonify({"error": "User has not requested account deletion."}), 400
 
-    # ✅ Fetch user's SIM card before deleting
+    # Fetch user's SIM card before deleting
     user_sim = SIMCard.query.filter_by(user_id=user.id).first()
     mobile_number = user_sim.mobile_number if user_sim else "N/A"
 
-    # ✅ Log the deletion BEFORE removing the user
+    # Log the deletion BEFORE removing the user
     admin_user = User.query.get(current_user_id)
     rt_log = RealTimeLog(
         user_id=admin_user.id,
@@ -324,7 +336,7 @@ def delete_user(user_id):
     )
     db.session.add(rt_log)
 
-    # ✅ Delete related records
+    # Delete related records
     Wallet.query.filter_by(user_id=user_id).delete()
     Transaction.query.filter_by(user_id=user_id).delete()
     UserAuthLog.query.filter_by(user_id=user_id).delete()
@@ -332,7 +344,7 @@ def delete_user(user_id):
     UserAccessControl.query.filter_by(user_id=user_id).delete()
     RealTimeLog.query.filter_by(user_id=user_id).delete()  # Clear user-specific logs
 
-    # ✅ Finally, delete the user
+    #Finally, delete the user
     db.session.delete(user)
     db.session.commit()
 
@@ -343,7 +355,7 @@ def delete_user(user_id):
 
 
    
-# ✅ Admin Updates a User's Information
+# Admin Updates a User's Information
 @admin_bp.route("/admin/edit_user/<int:user_id>", methods=["PUT"])
 @jwt_required()
 @session_protected()
@@ -358,7 +370,7 @@ def edit_user(user_id):
     data = request.get_json()
     changes = []  # To track what was modified
 
-    # ✅ Update only the provided fields
+    #  Update only the provided fields
     if "first_name" in data:
         user.first_name = data["first_name"]
         changes.append("first_name")
@@ -374,7 +386,7 @@ def edit_user(user_id):
         user.email = data["email"]
         changes.append("email")
 
-    # ✅ Handle Mobile Number Update
+    #  Handle Mobile Number Update
     if "mobile_number" in data:
         existing_sim = SIMCard.query.filter_by(mobile_number=data["mobile_number"]).first()
         if existing_sim and existing_sim.user_id != user_id:
@@ -387,7 +399,7 @@ def edit_user(user_id):
         else:
             return jsonify({"error": "No SIM card linked to this user"}), 400
 
-    # ✅ Log admin edit action
+    #  Log admin edit action
     if changes:
         admin_id = int(get_jwt_identity())
         admin_user = User.query.get(admin_id)
@@ -410,7 +422,7 @@ def edit_user(user_id):
     return jsonify({"message": "User updated successfully!"}), 200
 
 
-# 📌 ✅ Generate Unique Mobile Number
+# Generate Unique Mobile Number
 def generate_unique_mobile_number():
     """Generate a mobile number that does not exist in the database."""
     while True:
@@ -419,7 +431,7 @@ def generate_unique_mobile_number():
         if not existing_number:
             return new_number
 
-# 📌 ✅ Generate Unique ICCID
+#  Generate Unique ICCID
 def generate_unique_iccid():
     """Generate a unique SIM Serial Number (ICCID)."""
     while True:
@@ -428,7 +440,7 @@ def generate_unique_iccid():
         if not existing_iccid:
             return new_iccid
 
-# 📌 ✅ API: Generate New SIM for User Registration
+# API: Generate New SIM for User Registration
 @admin_bp.route("/admin/generate_sim", methods=["GET"])
 @jwt_required()
 @session_protected()
@@ -436,8 +448,8 @@ def generate_unique_iccid():
 def generate_sim():
     """Admin generates a new SIM card for a user."""
     try:
-        new_iccid = generate_unique_iccid()  # ✅ Generate ICCID
-        new_mobile_number = generate_unique_mobile_number()  # ✅ Generate Mobile Number
+        new_iccid = generate_unique_iccid()
+        new_mobile_number = generate_unique_mobile_number()
 
         new_sim = SIMCard(
             iccid=new_iccid,
@@ -449,7 +461,7 @@ def generate_sim():
 
         db.session.add(new_sim)
 
-        # ✅ Real-time log entry
+        #  Real-time log entry
         admin_id = int(get_jwt_identity())
         admin_user = User.query.get(admin_id)
 
@@ -488,10 +500,10 @@ def view_user(user_id):
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # ✅ Get active SIM
+    #  Get active SIM
     primary_sim = SIMCard.query.filter_by(user_id=user.id, status="active").first()
 
-    # ✅ Get role scoped to master tenant
+    #  Get role scoped to master tenant
     access = UserAccessControl.query.filter_by(
         user_id=user.id,
         tenant_id=ZTN_MASTER_TENANT_ID
@@ -500,7 +512,7 @@ def view_user(user_id):
     user_role = UserRole.query.get(access.role_id) if access else None
     role_name = user_role.role_name if user_role else "N/A"
 
-    # ✅ Log view action
+    #  Log view action
     admin_id = int(get_jwt_identity())
     admin_user = User.query.get(admin_id)
 
@@ -516,7 +528,7 @@ def view_user(user_id):
     db.session.add(rt_log)
     db.session.commit()
 
-    # ✅ Prepare user details
+    #  Prepare user details
     user_details = {
         "id": user.id,
         "name": f"{user.first_name} {user.last_name or ''}".strip(),
@@ -560,15 +572,14 @@ def fund_agent():
         print(f"[ERROR] Amount parse error: {e}")
         return jsonify({"error": "Amount must be a valid number."}), 400
 
-    # ✅ Fetch HQ wallet
+    #  Fetch HQ wallet
     hq_wallet = HeadquartersWallet.query.first()
     if not hq_wallet:
         print("[ERROR] HQ Wallet not found.")
         return jsonify({"error": "HQ Wallet not found"}), 404
 
-    hq_balance = hq_wallet.balance  # Should be Decimal if DB column is Numeric
+    hq_balance = hq_wallet.balance
 
-    # print(f"[DEBUG] HQ balance: {hq_balance}, Amount requested: {amount}")
 
     if hq_balance < amount:
         print(f"[BLOCKED] HQ balance too low. Requested: {amount}, Available: {hq_balance}")
@@ -576,7 +587,7 @@ def fund_agent():
             "error": f"Insufficient HQ funds. Available: {hq_balance} RWF, Requested: {amount} RWF"
         }), 400
 
-    # ✅ Find the agent
+    # Find the agent
     agent_sim = SIMCard.query.filter_by(mobile_number=agent_mobile).first()
     if not agent_sim or not agent_sim.user_id:
         return jsonify({"error": "Agent SIM is not assigned to any user."}), 400
@@ -589,10 +600,10 @@ def fund_agent():
     if not agent_wallet:
         return jsonify({"error": "Agent wallet not found"}), 404
 
-    # 💸 Perform the float transfer
+    #Perform the float transfer
     hq_wallet.balance -= amount
     agent_wallet.balance += float(amount)
-    # 🧾 Record the transaction
+    # Record the transaction
     float_tx = Transaction(
         user_id=agent.id,
         amount=float(amount),  # If Transaction.amount is still Float
@@ -611,7 +622,7 @@ def fund_agent():
     )
     db.session.add(float_tx)
 
-    # 🪵 Log to RealTimeLog
+    # Log to RealTimeLog
     rt_log = RealTimeLog(
         user_id=admin_id,
         action=f"💸 Funded agent {agent.first_name} ({agent_mobile}) with {amount} RWF from HQ Wallet",
@@ -624,9 +635,6 @@ def fund_agent():
     db.session.add(rt_log)
 
     db.session.commit()
-
-    # print(f"[SUCCESS] {amount} RWF sent to {agent.first_name} ({agent_mobile})")
-
     return jsonify({
         "message": f"✅ {amount} RWF successfully sent to {agent.first_name} ({agent_mobile})"
     }), 200
@@ -735,11 +743,11 @@ def unlock_user(user_id):
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # ✅ Unlock the user
+    # Unlock the user
     user.locked_until = None
     db.session.commit()
 
-    # ✅ Log the action to RealTimeLog
+    # Log the action to RealTimeLog
     admin_id = get_jwt_identity()
     admin_user = User.query.get(admin_id)
     user_sim = SIMCard.query.filter_by(user_id=user.id).first()
@@ -786,7 +794,7 @@ def all_transactions():
 
 
 
-# ✅ ROUTE (cleaned + safe)
+# ROUTE (cleaned + safe)
 @admin_bp.route("/admin/reverse-transfer/<int:transaction_id>", methods=["POST"])
 @jwt_required()
 @session_protected()
@@ -863,9 +871,9 @@ def reverse_transfer(transaction_id):
     db.session.add(rt_log)
     db.session.commit()
 
-    # ✅ 10-second test delay (increase in prod)
+    # 10-second test delay (increase in prod)
     app = current_app._get_current_object()
-    print("🌀 Scheduling finalize_reversal in 10 seconds...")
+    print("Scheduling finalize_reversal in 10 seconds...")
 
     threading.Timer(10, finalize_reversal, args=(app, reversal.id, sender_wallet.id, transaction.amount)).start()
 
@@ -901,14 +909,14 @@ def admin_dashboard_metrics():
     except Exception:
         return jsonify({"error": "Invalid date format"}), 400
 
-    # ✅ Login method breakdown
+    #Login method breakdown
     login_methods = {
         "password": UserAuthLog.query.filter_by(auth_method="password", auth_status="success").count(),
         "totp": UserAuthLog.query.filter_by(auth_method="totp", auth_status="success").count(),
         "webauthn": UserAuthLog.query.filter_by(auth_method="webauthn", auth_status="success").count()
     }
 
-    # ✅ Authentication failures padded by day
+    # Authentication failures padded by day
     failures = (
         db.session.query(
             func.date(UserAuthLog.auth_timestamp).label('day'),
@@ -931,7 +939,7 @@ def admin_dashboard_metrics():
         "counts": padded_counts
     }
 
-    # ✅ Transaction source detection
+    # Transaction source detection
     actor_query = text("""
         SELECT
             CASE
@@ -952,13 +960,13 @@ def admin_dashboard_metrics():
         actor_counts.get("admin", 0)
     ]
 
-    # ✅ Flagged vs Clean transactions
+    #  Flagged vs Clean transactions
     flagged = {
         "flagged": Transaction.query.filter(Transaction.risk_score >= 0.7).count(),
         "clean": Transaction.query.filter(Transaction.risk_score < 0.7).count()
     }
 
-    # ✅ User states
+    # User states
     user_states = {
         "active": User.query.filter_by(is_active=True).count(),
         "inactive": User.query.filter_by(is_active=False).count(),
@@ -967,14 +975,14 @@ def admin_dashboard_metrics():
     }
 
 
-    # ✅ SIM stats (only if SIMCard model exists)
+    #  SIM stats (only if SIMCard model exists)
     sim_stats = {
         "new": SIMCard.query.filter(SIMCard.status == "active").count(),
         "swapped": SIMCard.query.filter(SIMCard.status == "swapped").count(),
         "suspended": SIMCard.query.filter(SIMCard.status == "suspended").count()
     }
 
-    # ✅ Anomaly detection
+    #  Anomaly detection
     multi_failures = (
         db.session.query(UserAuthLog.user_id, func.count().label("fail_count"))
         .filter(
@@ -1001,7 +1009,7 @@ def admin_dashboard_metrics():
         ]
     }
 
-    # ✅ Heatmap logs (basic location-based grouping)
+    #  Heatmap logs (basic location-based grouping)
     logs = [
         {"location": log.location or "Unknown"}
         for log in RealTimeLog.query
@@ -1046,61 +1054,113 @@ def register_tenant():
     name = data.get('name')
     contact_email = data.get('contact_email')
     custom_api_key = data.get('api_key')
-
-    # Prevent duplicate tenant name
-    existing_name = Tenant.query.filter_by(name=name).first()
-
-    if existing_name:
-        return jsonify({"error": "A tenant with this name already exists."}), 409
+    admin_info = data.get("admin_user")
 
     if not name:
         return jsonify({"error": "Tenant name is required."}), 400
-
     if not contact_email:
         return jsonify({"error": "Contact email is required."}), 400
+    if Tenant.query.filter_by(name=name).first():
+        return jsonify({"error": "A tenant with this name already exists."}), 409
 
     from utils.security import generate_custom_api_key
 
     tenant_api_key = custom_api_key or generate_custom_api_key(name)
 
+    # Step 1: Create the tenant
     new_tenant = Tenant(
         name=name,
         api_key=tenant_api_key,
         contact_email=contact_email
     )
-
     db.session.add(new_tenant)
+    db.session.flush()  # So new_tenant.id is available
 
-    # 🔥 Log tenant creation to RealTimeLog
+    # Step 2: Optionally create initial admin user
+    if admin_info:
+        required_fields = ['mobile_number', 'first_name', 'email', 'password']
+        for field in required_fields:
+            if not admin_info.get(field):
+                return jsonify({"error": f"Admin user {field} is required."}), 400
+
+        sim_card = SIMCard.query.filter_by(mobile_number=admin_info['mobile_number'], status="active").first()
+        if not sim_card:
+            return jsonify({"error": "Mobile number not valid or not active"}), 404
+
+        linked_user = User.query.get(sim_card.user_id)
+        if not linked_user:
+            return jsonify({"error": "SIM not linked to any user"}), 404
+
+        # Check if already exists under tenant
+        if TenantUser.query.filter_by(tenant_id=new_tenant.id, user_id=linked_user.id).first():
+            return jsonify({"error": "Admin user already exists under this tenant."}), 400
+
+        # Create TenantUser
+        tenant_user = TenantUser(
+            tenant_id=new_tenant.id,
+            user_id=linked_user.id,
+            company_email=admin_info['email'],
+            password_hash=generate_password_hash(admin_info['password'])
+        )
+        db.session.add(tenant_user)
+
+        # Ensure 'admin' role exists for this tenant
+        admin_role = UserRole.query.filter_by(role_name='admin', tenant_id=new_tenant.id).first()
+        if not admin_role:
+            admin_role = UserRole(role_name='admin', tenant_id=new_tenant.id)
+            db.session.add(admin_role)
+            db.session.flush()
+
+        # Assign access
+        access = UserAccessControl(
+            user_id=linked_user.id,
+            role_id=admin_role.id,
+            access_level="full",
+            tenant_id=new_tenant.id
+        )
+        db.session.add(access)
+
+        # Log this action
+        db.session.add(RealTimeLog(
+            user_id=linked_user.id,
+            action=f"🆕 Initial Admin User Registered for Tenant: {name}",
+            ip_address=request.remote_addr,
+            device_info=request.user_agent.string,
+            location=get_ip_location(request.remote_addr),
+            tenant_id=new_tenant.id,
+            risk_alert=False
+        ))
+
+    # Log tenant registration (initiator = platform admin)
     db.session.add(RealTimeLog(
         user_id=user.id,
         action=f"🏢 Registered new Tenant: {name}",
         ip_address=request.remote_addr,
         device_info=request.user_agent.string,
         location=get_ip_location(request.remote_addr),
-        risk_alert=False,
-        tenant_id=1  # Optional: update later to link the actual new_tenant.id
+        tenant_id=new_tenant.id
     ))
 
     db.session.commit()
 
-    # ✅ Email API key to tenant contact
+    # Email API key to tenant
     email_sent = False
     try:
         send_tenant_api_key_email(name, tenant_api_key, contact_email)
         email_sent = True
     except Exception as e:
-        print(f"❌ Email delivery failed for tenant contact: {e}")
+        print(f"❌ Email delivery failed: {e}")
 
     return jsonify({
-        "message": "Tenant registered successfully.",
+        "message": "Tenant and Admin registered successfully.",
         "tenant_id": new_tenant.id,
         "api_key": tenant_api_key,
-        "email_sent": email_sent  # ✅ inform frontend
+        "email_sent": email_sent
     }), 201
 
 
-# ✅ Rotate Tenant API Key
+
+#Rotate Tenant API Key
 @admin_bp.route('/admin/rotate-api-key/<int:tenant_id>', methods=['POST'])
 @jwt_required()
 @session_protected()
@@ -1206,7 +1266,7 @@ def update_tenant(tenant_id):
         tenant.plan = new_plan.strip().lower()
         plan_changed = True
 
-    # ✅ Automatically upgrade settings if plan changed
+    # Automatically upgrade settings if plan changed
     if plan_changed:
         if tenant.plan == "premium":
             tenant.api_key_expires_at = datetime.utcnow() + timedelta(days=90)

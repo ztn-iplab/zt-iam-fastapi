@@ -24,7 +24,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_cors import CORS
 
 # ==========================
-# 🔧 Flask App Setup
+# Flask App Setup
 # ==========================
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -46,16 +46,16 @@ def expired_token_callback(jwt_header, jwt_payload):
 
 @jwt.invalid_token_loader
 def invalid_token_callback(error):
-    print(f"❌ INVALID TOKEN: {error}")  # <-- Add this!
+    print(f"❌ INVALID TOKEN: {error}")
     return jsonify({"error": f"Invalid token: {error}"}), 422
 
 @jwt.unauthorized_loader
 def missing_token_callback(error):
-    print(f"❌ UNAUTHORIZED (Missing or Bad Token): {error}")  # <-- Add this!
+    print(f"❌ UNAUTHORIZED (Missing or Bad Token): {error}")
     return jsonify({"error": f"Missing access token: {error}"}), 401
 
 # ==========================
-# 🔗 Register Blueprints
+# Register Blueprints
 # ==========================
 app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(user_bp)
@@ -72,7 +72,7 @@ db.init_app(app)
 migrate = Migrate(app, db)
 
 # ==========================
-# 🌐 Routes
+# Routes
 # ==========================
 @app.route('/')
 def index():
@@ -114,7 +114,7 @@ def debug_jwt():
 
 
 # ==========================
-# 🚀 App Main Function
+# App Main Function
 # ==========================
 if __name__ == '__main__':
     with app.app_context():

@@ -18,7 +18,13 @@
         <li><a href="#" id="show-overview-link">Overview</a></li>
         <li><a href="#" id="show-transactions-link">Transactions</a></li>
         <li><a href="#" id="show-profile-link">Profile</a></li>
-        <li><a href="{{ url_for('settings.settings_home') }}" id="show-settings-link">Settings</a></li>
+        <li>
+          <a
+            href="{{ url_for('settings.settings_home') }}"
+            id="show-settings-link"
+            >Settings</a
+          >
+        </li>
         <li><a href="#" id="logout-link">Logout</a></li>
       </ul>
       {% endblock %}
@@ -31,7 +37,8 @@
       <div class="top-bar-left">
         <h1 id="welcome-title">Welcome, {{ user.first_name }}!</h1>
       </div>
-      <div class="top-bar-right">
+
+      <div class="top-bar-right" style="position: relative">
         <div class="top-bar-icon" title="Notifications">
           <i class="fas fa-bell"></i>
         </div>
@@ -41,11 +48,43 @@
         <div class="top-bar-icon" title="Help">
           <i class="fas fa-question-circle"></i>
         </div>
+
+        <!-- Profile Icon -->
         <a href="#" id="topbar-profile-link" title="Your Profile">
           <div class="top-bar-avatar">
             <i class="fas fa-user-circle"></i>
           </div>
         </a>
+
+        <!-- 🔐 Themed Preferred MFA Dropdown -->
+        <div id="profile-dropdown" class="profile-dropdown d-none">
+          <h6 class="fw-bold text-center mb-2" style="color: var(--brand-blue)">
+            Preferred MFA Method
+          </h6>
+          <p class="small mb-2" style="color: var(--text-placeholder)">
+            ⚠️ Using a single MFA method may weaken account protection. Enable both for enhanced security.
+          </p>
+          <select
+            id="preferred-mfa-select"
+            class="form-select form-select-sm mb-2"
+            style="
+              background-color: var(--input-bg);
+              color: white;
+              border: 1px solid var(--input-border);
+            "
+          >
+            <option value="both">Both (Recommended)</option>
+            <option value="totp">TOTP Only</option>
+            <option value="webauthn">WebAuthn Only</option>
+          </select>
+          <button
+            id="save-mfa-btn"
+            class="btn btn-sm w-100"
+            style="background-color: var(--brand-green); color: white"
+          >
+            Save
+          </button>
+        </div>
       </div>
     </header>
 
@@ -56,4 +95,53 @@
     </footer>
   </main>
 </div>
-{% block scripts %}{% endblock %} {% endblock %}
+{% block scripts %}{% endblock %} 
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const profileLink = document.getElementById("topbar-profile-link");
+  const dropdown = document.getElementById("profile-dropdown");
+  const select = document.getElementById("preferred-mfa-select");
+  const saveBtn = document.getElementById("save-mfa-btn");
+
+  profileLink?.addEventListener("click", (e) => {
+    e.preventDefault();
+    dropdown?.classList.toggle("d-none");
+  });
+
+  fetch("/api/auth/preferred-mfa", {
+    method: "GET",
+    credentials: "include"
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.preferred_mfa) select.value = data.preferred_mfa;
+    });
+
+  saveBtn?.addEventListener("click", () => {
+    const selected = select.value;
+    fetch("/api/auth/preferred-mfa", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ preferred_mfa: selected })
+    })
+    .then(res => res.json())
+    .then(() => {
+      Toastify({
+        text: "✅ MFA preference saved.",
+        duration: 3000,
+        backgroundColor: "#2e7d32"
+      }).showToast();
+      dropdown.classList.add("d-none");
+    })
+    .catch(() => {
+      Toastify({
+        text: "❌ Could not save preference.",
+        duration: 3000,
+        backgroundColor: "#dc3545"
+      }).showToast();
+    });
+  });
+});
+</script>
+{% endblock %}

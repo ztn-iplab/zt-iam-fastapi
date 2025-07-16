@@ -78,7 +78,7 @@ def create_transaction():
     risk_score = evaluate_trust(user, context, tenant=None)
     fraud_flag = risk_score >= 0.7
 
-    # ✅ Withdrawal
+    #  Withdrawal
     if transaction_type == "withdrawal":
         if sender_wallet.balance < amount:
             return jsonify({"error": "Insufficient funds"}), 400
@@ -119,7 +119,7 @@ def create_transaction():
 
         db.session.add(transaction)
 
-        # ✅ Real-time log
+        #  Real-time log
         log_msg = f"{transaction_type.title()} of {amount} RWF"
         if fraud_flag:
             log_msg = f"⚠️ Suspicious {log_msg} flagged"
@@ -135,7 +135,7 @@ def create_transaction():
         )
         db.session.add(rt_log)
 
-        # ✅ Send Email
+        #  Send Email
         subject = "🚨 Fraud Alert: Suspicious Transaction Detected"
         body = f"""
         A suspicious transaction has been flagged.
@@ -169,7 +169,7 @@ def create_transaction():
             "risk_score": transaction.risk_score
         }), 200
 
-    # ✅ Transfer
+    #  Transfer
     elif transaction_type == "transfer":
         recipient_mobile = data.get('recipient_mobile')
         if not recipient_mobile:
@@ -215,7 +215,7 @@ def create_transaction():
 
         db.session.add(transaction)
 
-        # ✅ Real-time log
+        # Real-time log
         log_msg = f"{transaction_type.title()} of {amount} RWF"
         if fraud_flag:
             log_msg = f"⚠️ Suspicious {log_msg} flagged"
@@ -279,7 +279,7 @@ def get_transactions():
             initiated_by = metadata.get("initiated_by", None)
             approved_by_agent = metadata.get("approved_by_agent", None)
 
-            # ✅ Normalize any swapped agent mobile
+            #  Normalize any swapped agent mobile
             if isinstance(agent_mobile, str) and agent_mobile.startswith("SWP_"):
                 assigned_agent_id = metadata.get("assigned_agent_id")
                 if assigned_agent_id:
@@ -294,11 +294,11 @@ def get_transactions():
                     if deposited_sim:
                         agent_mobile = deposited_sim.mobile_number
 
-            # ✅ Fetch sender mobile number (for transfer receiver label)
+            #  Fetch sender mobile number (for transfer receiver label)
             sender_sim = SIMCard.query.filter_by(user_id=tx.user_id, status="active").first()
             sender_mobile = sender_sim.mobile_number if sender_sim else "Unknown"
 
-            # ✅ Labeling logic based on transaction type
+            #  Labeling logic based on transaction type
             if tx.transaction_type == "deposit":
                 label = f"Deposit from Agent {agent_mobile}"
 
@@ -326,7 +326,7 @@ def get_transactions():
             else:
                 label = tx.transaction_type.capitalize()
 
-            # ✅ Optional: style class based on status
+            #  Optional: style class based on status
             status_class = ""
             if tx.status == "rejected":
                 status_class = "text-danger"
@@ -394,7 +394,7 @@ def delete_transaction(transaction_id):
     return jsonify({"message": "Transaction deleted successfully"}), 200
 
 # Under agent approval withdraws
-# ✅ USER INITIATES WITHDRAWAL
+#  USER INITIATES WITHDRAWAL
 @transaction_bp.route('/user/initiated-withdrawal', methods=['POST'])
 @jwt_required()
 @session_protected()
@@ -453,8 +453,4 @@ def verify_transaction_otp():
     if not totp.verify(otp_input, valid_window=1):
         return jsonify({"error": "Invalid or expired OTP"}), 401
 
-    # ✅ OTP is valid — proceed to finalize the transaction
-    # You can re-use the `transaction_data` from earlier or include it in this request
-
-    # Example placeholder:
     return jsonify({"message": "✅ Transaction authorized!"}), 200

@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const data = await res.json();
 
-      // ✅ WebAuthn required → trigger it and return
+      //  WebAuthn required → trigger it and return
       if (res.status === 202 && data.require_webauthn) {
         Toastify({
           text: "🔐 WebAuthn required. Please use your security key...",
@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // ✅ Success
+      //  Success
       Toastify({
         text: data.message || "✅ TOTP has been reset.",
         duration: 3000,
@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const result = await verifyRes.json();
       if (!verifyRes.ok) throw new Error(result.error || "WebAuthn reset verification failed.");
 
-      // ✅ Now retry the actual reset
+      //  Now retry the actual reset
       const retry = await fetch('/api/auth/verify-totp-reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

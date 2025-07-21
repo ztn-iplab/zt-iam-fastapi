@@ -4,7 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const continueBtn = document.getElementById("continue-btn");
   const messageContainer = document.getElementById("totp-reason-message");
 
-  // ✅ Handle reason message
+  //  Handle reason message
   const urlParams = new URLSearchParams(window.location.search);
   const reason = urlParams.get("reason");
 
@@ -16,9 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
       "🔐 Two-Factor Authentication is required. Please scan the QR code to secure your login.";
   }
 
-  // ✅ Fetch QR code and secret using JWT from cookie
-  console.log("📡 Fetching /api/auth/setup-totp using cookie-based JWT...");
-
+  //  Fetch QR code and secret using JWT from cookie
   fetch("/api/auth/setup-totp", {
     method: "GET",
     credentials: "include",
@@ -63,13 +61,12 @@ document.addEventListener("DOMContentLoaded", () => {
       manualKey.innerText = "-";
     });
 
-  // ✅ Redirect to verification
+  // Redirect to verification
   continueBtn.addEventListener("click", async () => {
     const userConfirmed = confirm("🛡️ Are you sure you have scanned the QR code or registered the manual key?");
   
     if (!userConfirmed) {
-      console.log("🛑 User canceled TOTP confirmation.");
-      return;  // 🔥 STOP: No spinner, no request, no toast
+      return;
     }
   
     continueBtn.disabled = true;
@@ -81,7 +78,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const res = await fetch("/api/auth/setup-totp/confirm", {
         method: "POST",
-        credentials: "include",  // 🛡️ Use cookie JWT
+        credentials: "include",  //  Use cookie JWT
       });
   
       const data = await res.json();

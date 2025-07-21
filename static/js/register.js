@@ -25,9 +25,6 @@ document
       );
       return;
     }
-
-    console.log("Form submission intercepted");
-
     fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -49,7 +46,6 @@ document
         return data;
       })
       .then((data) => {
-        console.log("Registration successful, received data:", data);
         showToast("✅ Registration successful! Redirecting...", "success");
         setTimeout(() => {
           window.location.href = "/api/auth/login_form?registered=1";
@@ -61,7 +57,7 @@ document
       });
   });
 
-// 🔹 Toastify wrapper
+// Toastify wrapper
 function showToast(message, type = "info") {
   Toastify({
     text: message,

@@ -25,7 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ totp: code }), // ⛔ No user_id in body — use JWT!
+        body: JSON.stringify({ totp: code }),
       });
 
       const data = await res.json();
@@ -36,14 +36,11 @@ document.addEventListener("DOMContentLoaded", () => {
       
       if (data.require_webauthn && data.user_id) {
         if (data.has_webauthn_credentials) {
-          console.log("🧬 WebAuthn required — redirecting to biometric verification...");
           window.location.href = "/api/auth/verify-biometric";
         } else {
-          console.log("🧬 No WebAuthn credential found — redirecting to enroll...");
           window.location.href = "/api/auth/enroll-biometric";
         }
       } else {
-        console.log("✅ Fully authenticated — redirecting to dashboard...");
         window.location.href = data.dashboard_url || "/";
       }     
          

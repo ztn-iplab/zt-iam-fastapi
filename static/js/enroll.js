@@ -31,8 +31,6 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(json.error || "Incomplete registration options from server");
       }
 
-      console.log("🧬 WebAuthn register options:", options);
-
       // Step 2: Format binary fields
       options.challenge = base64urlToBuffer(options.challenge);
       options.user.id = base64urlToBuffer(options.user.id);
@@ -80,7 +78,7 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(result.error || "Registration failed.");
       }
 
-      // ✅ Display feedback based on transport type
+      //  Display feedback based on transport type
       let methodUsed = "biometric/passkey";
       if (transports.includes("usb")) {
         methodUsed = "USB security key";
@@ -94,7 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
       statusDiv.style.color = "green";
       enrollBtn.disabled = true;
 
-      // ✅ If server gives redirect, go verify
+      //  If server gives redirect, go verify
       if (result.redirect) {
         setTimeout(() => {
           window.location.href = result.redirect;
@@ -109,7 +107,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // 🔄 Helpers
+  //  Helpers
   function base64urlToBuffer(base64url) {
     const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
     const pad = base64.length % 4 ? 4 - (base64.length % 4) : 0;

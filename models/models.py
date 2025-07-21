@@ -323,9 +323,9 @@ class Tenant(db.Model):
         
         # Automatically set expiry based on plan
         if not self.api_key_expires_at:
-            if self.plan == 'free':
-                self.api_key_expires_at = None  # Free = unlimited
-            elif self.plan == 'pro':
+            if self.plan == 'basic':
+                self.api_key_expires_at = None  # basic = unlimited
+            elif self.plan == 'premium':
                 self.api_key_expires_at = datetime.utcnow() + timedelta(days=90)
             elif self.plan == 'enterprise':
                 self.api_key_expires_at = datetime.utcnow() + timedelta(days=365)

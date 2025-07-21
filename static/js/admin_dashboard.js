@@ -634,9 +634,9 @@ function bindFundAgentForm() {
             ? `<p class='text-success'>${data.message}</p>`
             : `<p class='text-danger'>${data.error || "Funding failed."}</p>`;
 
-          fetchHqBalance();       // ✅ Live update the HQ balance
-          fetchFloatHistory();    // ✅ Update recent float transfers (optional)
-          fundForm.reset();       // ✅ Clear the form
+          fetchHqBalance();       
+          fetchFloatHistory();
+          fundForm.reset();       
         })
         .catch((err) => {
           console.error(err);
@@ -651,106 +651,6 @@ function bindFundAgentForm() {
 // // -------------------------------
 // // Funcction for Tenant Management
 // // -------------------------------
-// //
-// function bindRegisterTenantForm() {
-//   const tenantForm = document.getElementById("register-tenant-form");
-
-//   if (tenantForm && !tenantForm.dataset.bound) {
-//     tenantForm.dataset.bound = "true";
-
-//     tenantForm.addEventListener("submit", async function (e) {
-//       e.preventDefault();
-
-//       const name = document.getElementById("tenant-name").value.trim();
-//       const contactEmail = document.getElementById("tenant-contact").value.trim();
-//       const apiKey = document.getElementById("tenant-api-key").value.trim();
-//       const device_info = getDeviceInfo();
-//       const location = await getLocation();
-
-//       // ✅ Validate required fields
-//       if (!name || !contactEmail) {
-//         Toastify({
-//           text: "❌ Name and contact email are required.",
-//           duration: 4000,
-//           gravity: "top",
-//           position: "right",
-//           backgroundColor: "#dc3545",
-//         }).showToast();
-//         return;
-//       }
-
-//       // ✅ Validate email format
-//       const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail);
-//       if (!isValidEmail) {
-//         Toastify({
-//           text: "❌ Please enter a valid email address.",
-//           duration: 4000,
-//           gravity: "top",
-//           position: "right",
-//           backgroundColor: "#dc3545",
-//         }).showToast();
-//         return;
-//       }
-
-//       // ✅ Submit registration
-//       fetch("/admin/register-tenant", {
-//         method: "POST",
-//         headers: { "Content-Type": "application/json" },
-//         credentials: "include",
-//         body: JSON.stringify({
-//           name,
-//           api_key: apiKey || null,
-//           contact_email: contactEmail,
-//           device_info,
-//           location,
-//         }),
-//       })
-//         .then(async (res) => {
-//           const data = await res.json();
-//           if (!res.ok) throw new Error(data.error || "Request failed");
-
-//           const toastText = data.email_sent
-//             ? `✅ Tenant registered — API Key sent to ${contactEmail}`
-//             : `⚠️ Tenant registered, but email delivery failed.`;
-
-//           const toastColor = data.email_sent ? "#198754" : "#ffc107";
-
-//           Toastify({
-//             text: toastText,
-//             duration: 5000,
-//             gravity: "top",
-//             position: "right",
-//             backgroundColor: toastColor,
-//           }).showToast();
-
-//           // ✅ Show result
-//           document.getElementById("register-tenant-result").innerHTML = `
-//             <div class="alert alert-light border text-start">
-//               <strong>Tenant ID:</strong> ${data.tenant_id}<br>
-//               <strong>API Key:</strong> <code>${data.api_key}</code>
-//             </div>
-//           `;
-
-//           e.target.reset();
-
-//           // ✅ Reload the tenant list
-//           if (typeof loadTenants === "function") {
-//             loadTenants();
-//           }
-//         })
-
-//         .catch((err) => {
-//           Toastify({
-//             text: `❌ ${err.message}`,
-//             duration: 5000,
-//             gravity: "top",
-//             position: "right",
-//             backgroundColor: "#dc3545",
-//           }).showToast();
-//         });
-//     });
-//   }
-// }
 
 function bindRegisterTenantForm() {
   const tenantForm = document.getElementById("register-tenant-form");
@@ -860,7 +760,7 @@ function bindRegisterTenantForm() {
             </div>
           `;
 
-          // ✅ Reset form and UI AFTER everything is rendered
+          //  Reset form and UI AFTER everything is rendered
           e.target.reset();
 
           const toggleSwitch = document.getElementById("toggle-admin-user");
@@ -914,7 +814,7 @@ async function loadTenants() {
       return;
     }
 
-    fullTenantList = data; // 🧠 Cache for filters
+    fullTenantList = data; //  Cache for filters
     tableBody.innerHTML = ""; // Clear table before rendering
     fullTenantList.forEach(renderTenantRow);
   } catch (error) {
@@ -924,8 +824,7 @@ async function loadTenants() {
   }
 }
 
-// 👇 Render each row (used in loadTenants + filtering)
-// 👇 Render each row (used in loadTenants + filtering)
+// Render each row (used in loadTenants + filtering)
 function renderTenantRow(tenant) {
   const tableBody = document.getElementById("tenant-table-body");
   const row = document.createElement("tr");
@@ -1176,7 +1075,7 @@ function resetTrustScore(tenantId, tenantName) {
     .then((res) => res.json())
     .then((data) => {
       alert(data.message || "Trust score reset.");
-      loadTenants(); // refresh UI
+      loadTenants(); // refresh
     })
     .catch((err) => {
       console.error("❌ Failed to reset trust score:", err);
@@ -1447,7 +1346,7 @@ function fetchUsersForAdmin() {
     });
 }
 
-// ✅ Function to toggle dropdown and adjust position
+//  Function to toggle dropdown and adjust position
 window.toggleDropdown = function (triggerButton) {
   console.log("✅ Dropdown Clicked!");
 
@@ -1458,18 +1357,18 @@ window.toggleDropdown = function (triggerButton) {
     return;
   }
 
-  // ✅ Close all other dropdowns before opening the clicked one
+  //  Close all other dropdowns before opening the clicked one
   document.querySelectorAll(".dropdown-menu").forEach((menu) => {
     if (menu !== dropdown) {
       menu.style.display = "none";
     }
   });
 
-  // ✅ Toggle the visibility of the clicked dropdown
+  //  Toggle the visibility of the clicked dropdown
   dropdown.style.display =
     dropdown.style.display === "block" ? "none" : "block";
 
-  // ✅ Adjust positioning dynamically (drop up/down based on space)
+  //  Adjust positioning dynamically (drop up/down based on space)
   const rect = triggerButton.getBoundingClientRect();
   const dropdownHeight = dropdown.scrollHeight;
   const viewportHeight = window.innerHeight;
@@ -1485,7 +1384,7 @@ window.toggleDropdown = function (triggerButton) {
   }
 };
 
-// ✅ Close dropdowns when clicking outside
+//  Close dropdowns when clicking outside
 document.addEventListener("click", function (event) {
   if (!event.target.closest(".dropdown")) {
     document.querySelectorAll(".dropdown-menu").forEach((dropdown) => {
@@ -1494,15 +1393,14 @@ document.addEventListener("click", function (event) {
   }
 });
 
-// ✅ Ensure dropdowns start hidden on page load
+//  Ensure dropdowns start hidden on page load
 document.addEventListener("DOMContentLoaded", function () {
-  console.log("✅ Ensuring dropdowns start hidden.");
   document.querySelectorAll(".dropdown-menu").forEach((menu) => {
     menu.style.display = "none";
   });
 });
 
-// ✅ Make Modal Draggable
+//  Make Modal Draggable
 function makeModalDraggable() {
   const modal = document.getElementById("adminDetailsModal");
   const header = document.querySelector("#adminDetailsModal .modal-header");
@@ -1516,7 +1414,7 @@ function makeModalDraggable() {
     isDragging = true;
     offsetX = e.clientX - modal.getBoundingClientRect().left;
     offsetY = e.clientY - modal.getBoundingClientRect().top;
-    modal.style.position = "absolute"; // ✅ Ensure absolute positioning
+    modal.style.position = "absolute"; 
   });
 
   document.addEventListener("mousemove", (e) => {
@@ -1530,10 +1428,10 @@ function makeModalDraggable() {
   });
 }
 
-// ✅ Load users when the page is ready
+//  Load users when the page is ready
 document.addEventListener("DOMContentLoaded", fetchUsersForAdmin);
 
-// ✅ View User Info function
+//  View User Info function
 function viewUser(userId) {
   fetch(`/admin/view_user/${userId}`, {
     method: "GET",
@@ -1547,13 +1445,13 @@ function viewUser(userId) {
         return;
       }
 
-      // ✅ Remove existing content before adding new content
+      //  Remove existing content before adding new content
       const modalContent = document.querySelector(
         "#userDetailsModal .modal-content"
       );
       modalContent.innerHTML = "";
 
-      // ✅ Add formatted data WITHOUT extra space
+      //  Add formatted data WITHOUT extra space
       modalContent.innerHTML = `
           <div class="modal-header">
               <h2 style="color: #4CAF50; margin-bottom: 5px;">User Details</h2>
@@ -1569,22 +1467,22 @@ function viewUser(userId) {
           </div>
       `;
 
-      // ✅ Show the modal
+      //  Show the modal
       const modal = document.getElementById("userDetailsModal");
       modal.style.display = "block";
 
-      // ✅ Attach the close event again (since we replaced modal content)
+      //  Attach the close event again (since we replaced modal content)
       document
         .getElementById("closeUserDetails")
         .addEventListener("click", function () {
           modal.style.display = "none";
         });
 
-      // ✅ Ensure modal resizes properly
+      //  Ensure modal resizes properly
       modal.style.height = "auto";
       modal.style.minHeight = "auto";
 
-      // ✅ Make the modal draggable
+      //  Make the modal draggable
       makeModalDraggable();
     })
     .catch((error) => console.error("❌ Error fetching user details:", error));
@@ -1593,7 +1491,6 @@ function viewUser(userId) {
 // ---------------------------
 // Admin User Actions
 // ---------------------------
-// ✅ Update User Role Function (Now Displays Assigned Mobile Number)
 
 function assignUserRole(userId) {
   let newRole = prompt("Enter new role (admin, agent, user):");
@@ -1603,7 +1500,7 @@ function assignUserRole(userId) {
     return;
   }
 
-  // ✅ Convert role name to role ID
+  //  Convert role name to role ID
   const roleMapping = {
     admin: 1,
     agent: 2,
@@ -1623,7 +1520,7 @@ function assignUserRole(userId) {
       "Content-Type": "application/json",
     },
     credentials: "include",
-    body: JSON.stringify({ user_id: userId, role_id: roleId }), // ✅ Send role ID, not string
+    body: JSON.stringify({ user_id: userId, role_id: roleId }), // Send role ID, not string
   })
     .then((response) => response.json())
     .then((data) => {
@@ -1637,7 +1534,7 @@ function assignUserRole(userId) {
     .catch((error) => console.error("❌ Error updating role:", error));
 }
 
-// ✅ Ensure Assign Role button triggers the prompt-based role change
+//  Ensure Assign Role button triggers the prompt-based role change
 document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll(".assign-role").forEach((button) => {
     button.addEventListener("click", function () {
@@ -1940,12 +1837,11 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // ---------------------------
-  // 🎯 Open Add User Modal
+  //  Open Add User Modal
   // ---------------------------
   const addUserBtn = document.getElementById("add-user-btn");
   if (addUserBtn) {
     addUserBtn.addEventListener("click", function () {
-      console.log("✅ Add User button clicked");
 
       const modalEl = document.getElementById("addUserModal");
       if (!modalEl) {
@@ -1953,11 +1849,11 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
 
-      // ✅ Bootstrap 5 API to show the modal
+      //  Bootstrap 5 API to show the modal
       const addUserModal = new bootstrap.Modal(modalEl);
       addUserModal.show();
 
-      // ✅ Ensure fetchGeneratedSIM() only runs if function exists
+      //  Ensure fetchGeneratedSIM() only runs if function exists
       if (typeof fetchGeneratedSIM === "function") {
         fetchGeneratedSIM();
       } else {
@@ -1971,7 +1867,7 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // ---------------------------
-  // 🎯 Handle Manual SIM Refresh
+  //  Handle Manual SIM Refresh
   // ---------------------------
   const genBtn = document.getElementById("generate-mobile-btn");
   if (genBtn) {
@@ -1981,7 +1877,7 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // ---------------------------
-  // 🎯 Fetch Auto-Generated SIM Details & Update Input Fields
+  //  Fetch Auto-Generated SIM Details & Update Input Fields
   // ---------------------------
   function fetchGeneratedSIM() {
     fetch("/admin/generate_sim", { method: "GET", credentials: "include" })
@@ -1990,20 +1886,16 @@ document.addEventListener("DOMContentLoaded", function () {
         if (data.error) {
           alert("❌ Error fetching SIM details: " + data.error);
         } else {
-          // ✅ Update the input fields with generated values
+          //  Update the input fields with generated values
           document.getElementById("generated-mobile").value =
             data.mobile_number;
           document.getElementById("generated-iccid").value = data.iccid;
 
-          // ✅ Store values globally for form submission
+          //  Store values globally for form submission
           window.generatedSIM = {
             mobile_number: data.mobile_number,
             iccid: data.iccid,
           };
-
-          console.log(
-            `✅ SIM Updated: ICCID ${data.iccid}, Mobile ${data.mobile_number}`
-          );
         }
       })
       .catch((error) => {
@@ -2020,7 +1912,7 @@ document.addEventListener("DOMContentLoaded", function () {
     addUserForm.addEventListener("submit", async function (e) {
       e.preventDefault();
 
-      // ✅ Get values from the form fields (not from background storage)
+      //  Get values from the form fields (not from background storage)
       const firstName = document.getElementById("add-first-name").value.trim();
       const lastName = document.getElementById("add-last-name").value.trim();
       const email = document.getElementById("add-email").value.trim();
@@ -2028,8 +1920,8 @@ document.addEventListener("DOMContentLoaded", function () {
       const password = document.getElementById("add-password").value.trim();
       const mobileNumber = document
         .getElementById("generated-mobile")
-        .value.trim(); // ✅ Use the visible input field
-      const iccid = document.getElementById("generated-iccid").value.trim(); // ✅ Use the visible input field
+        .value.trim(); //  Use the visible input field
+      const iccid = document.getElementById("generated-iccid").value.trim();
 
       if (
         !firstName ||
@@ -2043,18 +1935,18 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
 
-      // ✅ Build user payload with displayed values
+      //  Build user payload with displayed values
       const payload = {
         first_name: firstName,
         last_name: lastName,
         email: email,
         password: password,
         country: country,
-        mobile_number: mobileNumber, // ✅ Now using displayed input value
-        iccid: iccid, // ✅ Now using displayed input value
+        mobile_number: mobileNumber,
+        iccid: iccid, //  
       };
 
-      // ✅ Step 3: Send registration request
+      //  Step 3: Send registration request
       const registerResponse = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2063,7 +1955,6 @@ document.addEventListener("DOMContentLoaded", function () {
       });
 
       const registerData = await registerResponse.json();
-      console.log("✅ Server Response:", registerData);
 
       if (registerData.error) {
         alert("❌ Error registering user: " + registerData.error);
@@ -2071,9 +1962,9 @@ document.addEventListener("DOMContentLoaded", function () {
         alert(
           `✅ User registered successfully with Mobile: ${registerData.mobile_number}, ICCID: ${registerData.iccid}`
         );
-        fetchUsersForAdmin(); // ✅ Refresh user list
+        fetchUsersForAdmin(); //  Refresh user list
 
-        // ✅ Hide the modal after successful registration
+        //  Hide the modal after successful registration
         const addUserModal = bootstrap.Modal.getOrCreateInstance(
           document.getElementById("addUserModal")
         );

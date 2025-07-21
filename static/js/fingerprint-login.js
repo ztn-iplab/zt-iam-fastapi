@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", async () => {
   const statusDiv = document.getElementById("biometric-status");
 
-  // 🔧 Utility: Buffer → Base64URL
+  // Utility: Buffer → Base64URL
   function bufferToBase64url(buffer) {
     const bytes = new Uint8Array(buffer);
     let str = "";
@@ -9,7 +9,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
 
-  // 🔧 Utility: Base64URL → Buffer
+  // Utility: Base64URL → Buffer
   function base64urlToBuffer(base64url) {
     if (!base64url || typeof base64url !== "string") {
       throw new Error("Invalid base64url input");
@@ -26,7 +26,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   try {
-    // 🟢 Step 1: Begin WebAuthn assertion
+    //  Step 1: Begin WebAuthn assertion
     const res = await fetch("/webauthn/assertion-begin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -40,21 +40,17 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const publicKey = result.public_key;
 
-    // 🔁 Convert challenge & credential IDs
+    //  Convert challenge & credential IDs
     publicKey.challenge = base64urlToBuffer(publicKey.challenge);
     publicKey.allowCredentials = (publicKey.allowCredentials || []).map(c => ({
       ...c,
       id: base64urlToBuffer(c.id)
     }));
 
-    console.log("🟢 WebAuthn assertion options ready:", publicKey);
-
-    // 👆 Step 2: Prompt for fingerprint or USB key
+    //  Step 2: Prompt for fingerprint or USB key
     const assertion = await navigator.credentials.get({ publicKey });
 
-    console.log("✅ WebAuthn assertion successful:", assertion);
-
-    // 🧾 Step 3: Build payload
+    //  Step 3: Build payload
     const payload = {
       credentialId: bufferToBase64url(assertion.rawId),
       authenticatorData: bufferToBase64url(assertion.response.authenticatorData),
@@ -64,10 +60,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         ? bufferToBase64url(assertion.response.userHandle)
         : null
     };
-
-    console.log("🛂 WebAuthn Assertion Payload:", payload);
-
-    // 📨 Step 4: Send to server
+    //  Step 4: Send to server
     const finalRes = await fetch("/webauthn/assertion-complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -81,7 +74,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       throw new Error(finalResult.error || "Passkey verification failed.");
     }
 
-    // ✅ Step 5: Show success
+    //  Step 5: Show success
     statusDiv.textContent = "✅ Identity verified. Redirecting...";
     statusDiv.style.color = "green";
     window.location.href = finalResult.dashboard_url || "/";

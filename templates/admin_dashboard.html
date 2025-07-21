@@ -22,7 +22,7 @@
         </p>
       </div>
       <section id="dashboard-metrics" class="container-fluid mt-4">
-        <!-- 🔢 Metrics Charts -->
+        <!--  Metrics Charts -->
         <div class="row">
           <div class="col-md-6 mb-4">
             <div class="card shadow-sm bg-dark text-white">
@@ -80,7 +80,7 @@
           </div>
         </div>
 
-        <!-- 🌍 Location Heatmap -->
+        <!-- Location Heatmap -->
         <div class="row">
           <div class="col-md-12 mb-4">
             <div class="card shadow-sm bg-dark text-white">
@@ -94,7 +94,7 @@
           </div>
         </div>
 
-        <!-- 🚨 Anomalies -->
+        <!-- Anomalies -->
         <div class="row">
           <div class="col-md-12 mb-4">
             <div id="anomaly-panel"></div>
@@ -465,7 +465,11 @@
         </div>
 
         <!-- Admin User Fields -->
-        <div id="admin-user-fields" class="border rounded p-3 d-none text-white" style="background-color: transparent;">
+        <div
+          id="admin-user-fields"
+          class="border rounded p-3 d-none text-white"
+          style="background-color: transparent"
+        >
           <h6 class="text-center text-danger mb-3">👤 Initial Admin User</h6>
 
           <div class="mb-2">
@@ -480,29 +484,17 @@
 
           <div class="mb-2">
             <label class="form-label">First Name</label>
-            <input
-              type="text"
-              id="admin-firstname"
-              class="form-control"
-            />
+            <input type="text" id="admin-firstname" class="form-control" />
           </div>
 
           <div class="mb-2">
             <label class="form-label">Email</label>
-            <input
-              type="email"
-              id="admin-email"
-              class="form-control"
-            />
+            <input type="email" id="admin-email" class="form-control" />
           </div>
 
           <div class="mb-2">
             <label class="form-label">Password</label>
-            <input
-              type="password"
-              id="admin-password"
-              class="form-control"
-            />
+            <input type="password" id="admin-password" class="form-control" />
           </div>
         </div>
 
@@ -539,7 +531,7 @@
         </button>
       </div>
 
-      <!-- 🔽 Registered Tenants Table -->
+      <!-- Registered Tenants Table -->
       <div class="widget mt-5">
         <h5 class="text-center">📋 Registered Tenants</h5>
         <table class="admin-table mt-3">
@@ -685,20 +677,20 @@
 {% endblock %} {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-document.addEventListener("DOMContentLoaded", () => {
-  const toggle = document.getElementById("toggle-admin-user");
-  const adminFields = document.getElementById("admin-user-fields");
+  document.addEventListener("DOMContentLoaded", () => {
+    const toggle = document.getElementById("toggle-admin-user");
+    const adminFields = document.getElementById("admin-user-fields");
 
-  if (toggle && adminFields) {
-    toggle.addEventListener("change", () => {
-      if (toggle.checked) {
-        adminFields.classList.remove("d-none");
-      } else {
-        adminFields.classList.add("d-none");
-      }
-    });
-  }
-});
+    if (toggle && adminFields) {
+      toggle.addEventListener("change", () => {
+        if (toggle.checked) {
+          adminFields.classList.remove("d-none");
+        } else {
+          adminFields.classList.add("d-none");
+        }
+      });
+    }
+  });
 </script>
 <script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
 <!--  -->

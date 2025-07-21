@@ -1,6 +1,5 @@
-{% extends "base_dashboard.html" %}
-{% block title %}User Dashboard{% endblock %}
-{% block dashboard_content %}
+{% extends "base_dashboard.html" %} {% block title %}User Dashboard{% endblock
+%} {% block dashboard_content %}
 
 <div class="dashboard-content">
   <!-- Overview Section -->
@@ -24,7 +23,11 @@
   </section>
 
   <!-- Transactions Section -->
-  <section id="content-transactions" class="content-section" style="display: none">
+  <section
+    id="content-transactions"
+    class="content-section"
+    style="display: none"
+  >
     <div class="widgets">
       <div class="widget transactions-widget" style="flex: 1 1 100%">
         <h2>Transactions</h2>
@@ -38,13 +41,18 @@
             required
           />
 
-          <select name="transaction_type" id="transaction-type" class="input-field" required>
+          <select
+            name="transaction_type"
+            id="transaction-type"
+            class="input-field"
+            required
+          >
             <option value="">Select Transaction Type</option>
             <option value="withdrawal">Withdrawal</option>
             <option value="transfer">Transfer</option>
           </select>
 
-          <!-- ✅ Recipient Mobile (for transfers only) -->
+          <!--Recipient Mobile (for transfers only) -->
           <div id="recipient-mobile-group" style="display: none">
             <input
               type="text"
@@ -54,7 +62,7 @@
             />
           </div>
 
-          <!-- ✅ Agent Mobile (for withdrawals only) -->
+          <!--Agent Mobile (for withdrawals only) -->
           <div id="agent-mobile-group" style="display: none">
             <input
               type="text"
@@ -64,7 +72,7 @@
             />
           </div>
 
-          <!-- ✅ TOTP Input -->
+          <!-- TOTP Input -->
           <div id="totp-group" style="display: none">
             <input
               type="text"
@@ -75,7 +83,9 @@
             />
           </div>
 
-          <button type="submit" class="btn btn-primary">Submit Transaction</button>
+          <button type="submit" class="btn btn-primary">
+            Submit Transaction
+          </button>
         </form>
 
         <h3>Transaction History</h3>
@@ -101,22 +111,36 @@
     <div class="widgets">
       <div class="widget profile-widget">
         <h2>Your Profile</h2>
-        <p><strong>Name:</strong> <span id="full-name">{{ user.first_name }} {{ user.last_name }}</span></p>
-        <p><strong>Mobile Number:</strong> <span id="mobile-number">{{ user.mobile_number }}</span></p>
-        <p><strong>Country:</strong> <span id="user-country">{{ user.country }}</span></p>
-        <p><strong>Trust Score:</strong> <span id="user-trust-score">{{user.trust_score}}</span></p>
+        <p>
+          <strong>Name:</strong>
+          <span id="full-name">{{ user.first_name }} {{ user.last_name }}</span>
+        </p>
+        <p>
+          <strong>Mobile Number:</strong>
+          <span id="mobile-number">{{ user.mobile_number }}</span>
+        </p>
+        <p>
+          <strong>Country:</strong>
+          <span id="user-country">{{ user.country }}</span>
+        </p>
+        <p>
+          <strong>Trust Score:</strong>
+          <span id="user-trust-score">{{user.trust_score}}</span>
+        </p>
 
-        <!-- ⚙️ Settings Access Button -->
+        <!--Settings Access Button -->
         <div class="mt-4">
-          <a href="{{ url_for('settings.settings_home') }}#profile-tab" class="btn btn-secondary">⚙️ Go to Settings</a>
+          <a
+            href="{{ url_for('settings.settings_home') }}#profile-tab"
+            class="btn btn-secondary"
+            >⚙️ Go to Settings</a
+          >
         </div>
       </div>
     </div>
   </section>
 </div>
 
-{% endblock %}
-
-{% block scripts %}
+{% endblock %} {% block scripts %}
 <script src="{{ url_for('static', filename='js/user_dashboard.js') }}"></script>
 {% endblock %}

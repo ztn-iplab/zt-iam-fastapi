@@ -1,5 +1,5 @@
 // ---------------------------
-// 🔁 Silent Token Refresh
+//  Silent Token Refresh
 // ---------------------------
 const AUTO_REFRESH_INTERVAL = 60 * 60 * 1000; // Every 
 
@@ -10,7 +10,6 @@ setInterval(() => {
   })
     .then((res) => {
       if (res.ok) {
-        console.log("🔁 Access token refreshed");
       } else {
         console.warn("⚠️ Refresh failed. Redirecting to login...");
         window.location.href = "/api/auth/login_form";

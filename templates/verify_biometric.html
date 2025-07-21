@@ -1,8 +1,5 @@
-{% extends "base.html" %}
-{% block title %}Verify Biometric Login{% endblock %}
-{% block body_class %}auth-page{% endblock %}
-
-{% block body %}
+{% extends "base.html" %} {% block title %}Verify Biometric Login{% endblock %}
+{% block body_class %}auth-page{% endblock %} {% block body %}
 <div class="home-link-container">
   <a href="{{ url_for('index') }}" class="home-link">&larr; Back to Home</a>
 </div>
@@ -11,43 +8,52 @@
   <h1>🔐 Verify Your Identity</h1>
   <p>Please verify using your passkey, fingerprint, or trusted device.</p>
 
-  <div id="biometric-status" style="margin-top: 15px; color: green;">
+  <div id="biometric-status" style="margin-top: 15px; color: green">
     Waiting for biometric input...
   </div>
-  <div id="biometric-error" style="margin-top: 10px; color: red;"></div>
+  <div id="biometric-error" style="margin-top: 10px; color: red"></div>
 
-  <!-- ✨ Optional fallback -->
-  <div style="margin-top: 20px; text-align: center;">
-    <p style="color: orange;">
-      ⚠️ Your device does not support fingerprint login via browser.
-      Try another browser a passkey or security key instead.
+  <!-- Optional fallback -->
+  <div style="margin-top: 20px; text-align: center">
+    <p style="color: orange">
+      ⚠️ Your device does not support fingerprint login via browser. Try another
+      browser a passkey or security key instead.
     </p>
-    <a href="{{ url_for('auth.enroll_biometric_page') }}" class="btn btn-outline-secondary">
+    <a
+      href="{{ url_for('auth.enroll_biometric_page') }}"
+      class="btn btn-outline-secondary"
+    >
       Setup Passkey or Security Key
     </a>
   </div>
   <!-- ✨ WebAuthn Reset Link (if needed) -->
-<div style="margin-top: 20px; text-align: center;">
-  <p>
-    If you've lost access to your passkey or device, 
-    <a href="{{ url_for('auth.out_request_webauthn_reset_page') }}" style="color: #007bff; text-decoration: underline;">
-      click here
-    </a> to reset it and enroll a new one.
-  </p>
-</div>
-
+  <div style="margin-top: 20px; text-align: center">
+    <p>
+      If you've lost access to your passkey or device,
+      <a
+        href="{{ url_for('auth.out_request_webauthn_reset_page') }}"
+        style="color: #007bff; text-decoration: underline"
+      >
+        click here
+      </a>
+      to reset it and enroll a new one.
+    </p>
+  </div>
 </div>
 
 <script src="{{ url_for('static', filename='js/fingerprint-login.js') }}"></script>
 <script>
-  PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then((available) => {
-    if (!available) {
-      const status = document.getElementById("biometric-status");
-      if (status) {
-        status.textContent = "⚠️ Fingerprint login not available on this device.";
-        status.style.color = "orange";
+  PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(
+    (available) => {
+      if (!available) {
+        const status = document.getElementById("biometric-status");
+        if (status) {
+          status.textContent =
+            "⚠️ Fingerprint login not available on this device.";
+          status.style.color = "orange";
+        }
       }
     }
-  });
+  );
 </script>
 {% endblock %}

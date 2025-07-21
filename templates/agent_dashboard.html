@@ -5,7 +5,13 @@
   <li><a href="#" id="show-transactions">Transactions</a></li>
   <li><a href="#" id="show-sim-registration">SIM Registrations</a></li>
   <li><a href="#" id="show-profile">Profile</a></li>
-  <li><a href="{{ url_for('settings.settings_home') }}#profile-tab" id="show-settings">Settings</a></li>
+  <li>
+    <a
+      href="{{ url_for('settings.settings_home') }}#profile-tab"
+      id="show-settings"
+      >Settings</a
+    >
+  </li>
   <li><a href="#" id="logout-link">Logout</a></li>
 </ul>
 {% endblock %} {% block dashboard_content %}
@@ -24,7 +30,9 @@
       <!-- Transaction Summary -->
       <div class="widget wallet-widget">
         <h2>Transaction Summary</h2>
-        <p>Total Transactions: <span id="total-transactions">Loading...</span></p>
+        <p>
+          Total Transactions: <span id="total-transactions">Loading...</span>
+        </p>
         <p>Total SIMs Registered: <span id="total-sims">Loading...</span></p>
       </div>
     </div>
@@ -39,12 +47,10 @@
             <option value="daily" selected>Daily Totals</option>
             <option value="monthly">Monthly Summaries</option>
           </select>
-          <canvas id="transactionChart" style="max-height: 300px;"></canvas>
+          <canvas id="transactionChart" style="max-height: 300px"></canvas>
         </div>
       </div>
     </div>
-    
-
   </section>
 
   <!-- Transactions Section -->
@@ -131,7 +137,7 @@
       <div class="widget sim-widget">
         <h2>SIM Card Registration</h2>
 
-        <!-- ✅ SIM Registration Form -->
+        <!--  SIM Registration Form -->
         <form id="sim-registration-form" class="transaction-form">
           <div class="row g-2">
             <!-- Mobile Number (Auto-Generated) -->
@@ -196,7 +202,7 @@
           </div>
         </form>
 
-        <!-- ✅ SIM Registration History -->
+        <!-- SIM Registration History -->
         <h3 class="mt-4">SIM Registration History</h3>
         <table id="sim-registration-history" class="sim-table">
           <thead>
@@ -217,48 +223,68 @@
     </div>
   </section>
 
-  <!-- 🔄 SIM Swap Modal -->
-<div class="modal fade" id="swapSimModal" tabindex="-1" aria-labelledby="swapSimModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <form id="swap-sim-form">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">🔄 Swap SIM</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-
-        <div class="modal-body">
-          <input type="hidden" id="old-iccid" />
-
-          <div class="mb-3">
-            <label for="swap-new-iccid" class="form-label">Select New ICCID</label>
-            <select id="swap-new-iccid" class="form-select" required>
-              <option value="">Choose ICCID...</option>
-              <!-- Options will be populated dynamically -->
-            </select>
+  <!-- SIM Swap Modal -->
+  <div
+    class="modal fade"
+    id="swapSimModal"
+    tabindex="-1"
+    aria-labelledby="swapSimModalLabel"
+    aria-hidden="true"
+  >
+    <div class="modal-dialog">
+      <form id="swap-sim-form">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">🔄 Swap SIM</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
           </div>
-          
 
-          <div class="mb-3">
-            <label for="swap-network" class="form-label">Network Provider</label>
-            <select id="swap-network" class="form-select" required>
-              <option value="">Select provider</option>
-              <option value="MTN">MTN</option>
-              <option value="Airtel">Airtel</option>
-            </select>
+          <div class="modal-body">
+            <input type="hidden" id="old-iccid" />
+
+            <div class="mb-3">
+              <label for="swap-new-iccid" class="form-label"
+                >Select New ICCID</label
+              >
+              <select id="swap-new-iccid" class="form-select" required>
+                <option value="">Choose ICCID...</option>
+                <!-- Options will be populated dynamically -->
+              </select>
+            </div>
+
+            <div class="mb-3">
+              <label for="swap-network" class="form-label"
+                >Network Provider</label
+              >
+              <select id="swap-network" class="form-select" required>
+                <option value="">Select provider</option>
+                <option value="MTN">MTN</option>
+                <option value="Airtel">Airtel</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-success">Confirm Swap</button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Cancel
+            </button>
           </div>
         </div>
-
-        <div class="modal-footer">
-          <button type="submit" class="btn btn-success">Confirm Swap</button>
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        </div>
-      </div>
-    </form>
+      </form>
+    </div>
   </div>
-</div>
 
-  <!-- ✅ SIM Details Modal -->
+  <!-- SIM Details Modal -->
   <div id="simDetailsModal" class="modal">
     <div class="modal-content">
       <span id="closeSimDetails" class="close">&times;</span>

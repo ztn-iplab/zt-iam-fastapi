@@ -1,5 +1,5 @@
 // ---------------------------
-// 💤 Inactivity Logout
+// Inactivity Logout
 // ---------------------------
 const INACTIVITY_LIMIT = 60 * 60 * 1000; // 1 hour
 let lastActivityTime = Date.now();

@@ -120,7 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const result = await verifyRes.json();
       if (!verifyRes.ok) throw new Error(result.error || "WebAuthn reset verification failed.");
 
-      // ✅ Retry SIM swap with WebAuthn verified
+      //  Retry SIM swap with WebAuthn verified
       const retry = await fetch('/api/auth/verify-sim-swap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

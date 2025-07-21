@@ -131,7 +131,6 @@ function fetchWalletInfo() {
       return res.json();
     })
     .then((data) => {
-      console.log("Wallet info received:", data);
       document.getElementById("wallet-balance").textContent = data.balance;
       document.getElementById("wallet-currency").textContent = data.currency;
     })
@@ -152,7 +151,6 @@ function fetchTransactions() {
       return res.json();
     })
     .then((response) => {
-      console.log("Transactions received:", response);
 
       const transactions = response.transactions;
       if (!Array.isArray(transactions)) {
@@ -175,7 +173,7 @@ function fetchTransactions() {
         historyTable.appendChild(row);
       });
 
-      // ✅ Aggregate transaction data for chart rendering
+      //  Aggregate transaction data for chart rendering
       const aggregationSelect = document.getElementById("aggregation-type");
       const aggregationType = aggregationSelect
         ? aggregationSelect.value
@@ -260,7 +258,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const agentGroup = document.getElementById("agent-mobile-group");
   const totpGroup = document.getElementById("totp-group");
 
-  // 🔄 Show/hide inputs dynamically
+  //  Show/hide inputs dynamically
   transactionTypeSelect.addEventListener("change", function () {
     const selectedType = transactionTypeSelect.value;
 
@@ -279,7 +277,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // ✅ Transaction Form Submission with Confirmation Modal
+  //  Transaction Form Submission with Confirmation Modal
   if (transactionForm) {
     transactionForm.addEventListener("submit", async function (e) {
       e.preventDefault();
@@ -305,7 +303,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const device_info = getDeviceInfo();
       const location = await getLocation();
 
-      // ✅ Validate amount
+      //  Validate amount
       if (isNaN(amount) || amount <= 0) {
         Toastify({
           text: "❌ Invalid amount. Please enter a value greater than 0 RWF.",
@@ -315,7 +313,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
 
-      // ✅ Validate transaction type
+      //  Validate transaction type
       if (!transactionType) {
         Toastify({
           text: "❌ Please select a transaction type.",
@@ -325,7 +323,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
 
-      // ✅ Validate TOTP
+      //  Validate TOTP
       if (!totp || totp.length < 6) {
         Toastify({
           text: "❌ Please enter a valid TOTP code.",
@@ -343,7 +341,7 @@ document.addEventListener("DOMContentLoaded", function () {
         totp,
       };
 
-      // ✅ Handle Transfer
+      //  Handle Transfer
       if (transactionType === "transfer") {
         if (!recipient_mobile) {
           Toastify({
@@ -385,7 +383,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       }
 
-      // ✅ Handle Withdrawal
+      //  Handle Withdrawal
       if (transactionType === "withdrawal") {
         if (!agent_mobile) {
           Toastify({
@@ -427,7 +425,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       }
 
-      // ✅ Submit transaction
+      //  Submit transaction
       fetch("/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

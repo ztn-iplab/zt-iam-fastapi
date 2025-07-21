@@ -10,7 +10,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const profileSection = document.getElementById("content-profile");
   let transactionChart;
 
-  // ✅ Ensure the modal and close button exist before adding event listeners
+  //  Ensure the modal and close button exist before adding event listeners
   setTimeout(() => {
     const modal = document.getElementById("simDetailsModal");
     const closeButton = document.getElementById("closeSimDetails");
@@ -19,15 +19,14 @@ document.addEventListener("DOMContentLoaded", function () {
       closeButton.addEventListener("click", function () {
         modal.style.display = "none";
       });
-      console.log("✅ Close button event listener added.");
     } else {
       console.warn(
         "⚠️ Warning: SIM Details modal or close button not found. The modal may not exist on this page."
       );
     }
-  }, 500); // ✅ Delay checking elements for 500ms to allow rendering
+  }, 500); //  Delay checking elements for 500ms to allow rendering
 
-  // ✅ Assign functions to `window` to ensure they work globally
+  //  Assign functions to `window` to ensure they work globally
   window.viewSIM = viewSIM;
   window.activateSIM = activateSIM;
   window.suspendSIM = suspendSIM;
@@ -36,7 +35,7 @@ document.addEventListener("DOMContentLoaded", function () {
   window.reactivateSIM = reactivateSIM;
   window.showSwapSIMModal = showSwapSIMModal;
 
-  // ✅ Function to Show Sections
+  //  Function to Show Sections
   function showSection(section, callback = null) {
     document
       .querySelectorAll(".content-section")
@@ -45,7 +44,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (callback) callback();
   }
 
-  // ✅ Fetch Agent Dashboard Data
+  // Fetch Agent Dashboard Data
   function fetchAgentDashboardData() {
     fetch("/agent/dashboard/data", { method: "GET", credentials: "include" })
       .then((response) => {
@@ -55,7 +54,6 @@ document.addEventListener("DOMContentLoaded", function () {
         return response.json();
       })
       .then((data) => {
-        console.log("Agent Dashboard Data:", data);
         document.getElementById("total-transactions").textContent =
           data.total_transactions || 0;
         document.getElementById("total-sims").textContent =
@@ -70,24 +68,22 @@ document.addEventListener("DOMContentLoaded", function () {
       });
   }
 
-  // ✅ Fetch Wallet Info
+  //  Fetch Wallet Info
   function fetchWalletInfo() {
     fetch("/agent/wallet", { method: "GET", credentials: "include" })
       .then((response) => response.json())
       .then((data) => {
-        console.log("Wallet Info:", data);
         document.getElementById("wallet-balance").textContent = data.balance;
         document.getElementById("wallet-currency").textContent = data.currency;
       })
       .catch((error) => console.error("Error fetching wallet info:", error));
   }
 
-  // ✅ Fetch Transaction History and Render Chart
+  //  Fetch Transaction History and Render Chart
   function fetchTransactionHistory() {
     fetch("/agent/transactions", { method: "GET", credentials: "include" })
       .then((response) => response.json())
       .then((data) => {
-        console.log("Transaction History:", data);
         const historyTable = document
           .getElementById("transaction-history")
           .querySelector("tbody");
@@ -139,7 +135,7 @@ document.addEventListener("DOMContentLoaded", function () {
       );
   }
 
-  // ✅ Function to approve withdrwals
+  //  Function to approve withdrwals
   window.approveWithdrawal = function (transactionId) {
     if (!confirm("Are you sure you want to approve this withdrawal?")) return;
 
@@ -156,7 +152,7 @@ document.addEventListener("DOMContentLoaded", function () {
           return;
         }
 
-        // ✅ Success
+        //  Success
         alert(data.message || "✅ Withdrawal approved.");
         fetchTransactionHistory(); // refresh the list
         if (typeof fetchWalletInfo === "function") fetchWalletInfo(); // optional
@@ -168,7 +164,7 @@ document.addEventListener("DOMContentLoaded", function () {
       });
   };
 
-  // ✅ Function to reject withdrwals
+  //  Function to reject withdrwals
   window.rejectWithdrawal = function (transactionId) {
     if (!confirm("Are you sure you want to reject this withdrawal?")) return;
 
@@ -186,7 +182,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         alert(data.message || "❌ Withdrawal rejected.");
         fetchTransactionHistory(); // Refresh table
-        if (typeof fetchWalletInfo === "function") fetchWalletInfo(); // Optional
+        if (typeof fetchWalletInfo === "function") fetchWalletInfo(); 
       })
       .catch((err) => {
         alert("❌ Network or server error.");
@@ -194,7 +190,7 @@ document.addEventListener("DOMContentLoaded", function () {
       });
   };
 
-  // ✅ Function to Get User Location
+  //  Function to Get User Location
   function getLocation() {
     return new Promise((resolve) => {
       if (navigator.geolocation) {
@@ -218,7 +214,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // // ✅ Submit Agent Transaction with Confirmation
+  // //  Submit Agent Transaction with Confirmation
   async function submitTransaction(event) {
     event.preventDefault();
 
@@ -290,7 +286,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
       let confirmMsg = "";
       if (transactionType === "deposit" || transactionType === "transfer") {
-        // ✅ Fetch user name using shared endpoint
+        //  Fetch user name using shared endpoint
         const res = await fetch(`/user-info/${recipientMobile}`, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
@@ -309,7 +305,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const confirmed = confirm(confirmMsg);
       if (!confirmed) return;
 
-      // ✅ Submit the transaction
+      //  Submit the transaction
       const response = await fetch("/agent/transaction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -328,15 +324,15 @@ document.addEventListener("DOMContentLoaded", function () {
         style: { background: "#27ae60" },
       }).showToast();
 
-      // ✅ Reset the form
+      //  Reset the form
       event.target.reset();
 
-      // ✅ Reset transaction type dropdown to placeholder and trigger change
+      //  Reset transaction type dropdown to placeholder and trigger change
       const transactionTypeSelect = document.getElementById("transaction-type");
       transactionTypeSelect.value = ""; // Go back to "Select Transaction Type"
       transactionTypeSelect.dispatchEvent(new Event("change")); // Hide TOTP & recipient fields
 
-      // ✅ Refresh data
+      //  Refresh data
       fetchWalletInfo();
       fetchTransactionHistory();
     } catch (error) {
@@ -348,7 +344,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // ✅ Attach Event Listener for Transactions
+  //  Attach Event Listener for Transactions
   document.addEventListener("DOMContentLoaded", function () {
     const transactionForm = document.getElementById("transaction-form");
     if (transactionForm) {
@@ -356,7 +352,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // ✅ Show Mobile Input for Transfer & Deposit Transactions
+  //  Show Mobile Input for Transfer & Deposit Transactions
   document
     .getElementById("transaction-type")
     .addEventListener("change", function () {
@@ -373,26 +369,26 @@ document.addEventListener("DOMContentLoaded", function () {
         recipientMobileField.removeAttribute("required");
       }
 
-      // ✅ TOTP is required for ALL transaction types
+      //  TOTP is required for ALL transaction types
       totpField.style.display = "block";
       totpField.setAttribute("required", "true");
     });
 
-  // ✅ Render Transaction Chart
+  //  Render Transaction Chart
   function renderTransactionChart(transactions) {
     const ctx = document.getElementById("transactionChart").getContext("2d");
 
-    // ✅ Check if transactions exist before rendering
+    //  Check if transactions exist before rendering
     if (!transactions || transactions.length === 0) {
       console.warn("No transactions available for chart rendering.");
       if (window.transactionChart) {
-        window.transactionChart.destroy(); // ✅ Destroy chart if there are no transactions
-        window.transactionChart = null; // ✅ Reset reference
+        window.transactionChart.destroy(); //  Destroy chart if there are no transactions
+        window.transactionChart = null; //  Reset reference
       }
       return;
     }
 
-    // ✅ Ensure previous chart is destroyed
+    //  Ensure previous chart is destroyed
     if (
       window.transactionChart &&
       typeof window.transactionChart.destroy === "function"
@@ -400,13 +396,13 @@ document.addEventListener("DOMContentLoaded", function () {
       window.transactionChart.destroy();
     }
 
-    // ✅ Extract labels (dates) and data (amounts)
+    //  Extract labels (dates) and data (amounts)
     const labels = transactions.map((tx) =>
       new Date(tx.timestamp).toLocaleDateString()
     );
     const data = transactions.map((tx) => tx.amount);
 
-    // ✅ Ensure transactionChart is correctly assigned
+    //  Ensure transactionChart is correctly assigned
     window.transactionChart = new Chart(ctx, {
       type: "line",
       data: {
@@ -431,7 +427,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // ✅ New simcard generation
+  //  New simcard generation
   function generateNewSIM() {
     const networkProvider = document.getElementById("network-provider").value;
 
@@ -444,7 +440,7 @@ document.addEventListener("DOMContentLoaded", function () {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ network_provider: networkProvider }), // ✅ Send network provider
+      body: JSON.stringify({ network_provider: networkProvider }), //  Send network provider
     })
       .then((response) => response.json())
       .then((data) => {
@@ -460,12 +456,12 @@ document.addEventListener("DOMContentLoaded", function () {
       .catch((error) => console.error("❌ Error generating new SIM:", error));
   }
 
-  // ✅ Attach event listener to the button
+  //  Attach event listener to the button
   document
     .getElementById("generate-mobile-btn")
     .addEventListener("click", generateNewSIM);
 
-  // ✅ Function to Register SIM (Agent Registers SIMs)
+  //  Function to Register SIM (Agent Registers SIMs)
   function registerSIM(event) {
     event.preventDefault();
 
@@ -475,7 +471,7 @@ document.addEventListener("DOMContentLoaded", function () {
       .value.trim();
     const networkProvider = document.getElementById("network-provider").value;
 
-    // ✅ Validate all required fields
+    //  Validate all required fields
     if (!networkProvider || networkProvider === "") {
       alert("❌ Please select a network provider before registering a SIM.");
       return;
@@ -508,53 +504,50 @@ document.addEventListener("DOMContentLoaded", function () {
         } else {
           alert(`✅ Success: ${data.message}`);
 
-          // ✅ Clear the form after successful registration
+          //  Clear the form after successful registration
           document.getElementById("generated-iccid").value = "";
           document.getElementById("generated-mobile").value = "";
           document.getElementById("network-provider").value = "";
 
-          // ✅ Refresh the SIM registration history
+          //  Refresh the SIM registration history
           fetchSimRegistrationHistory();
         }
       })
       .catch((error) => console.error("❌ Error registering SIM:", error));
   }
 
-  // ✅ Attach event listener
+  //  Attach event listener
   document
     .getElementById("sim-registration-form")
     .addEventListener("submit", registerSIM);
 
-  // ✅ Attach event listener
+  //  Attach event listener
   document
     .getElementById("sim-registration-form")
     .addEventListener("submit", registerSIM);
 
-  // ✅ Ensure registerSIM is Loaded Before Event Listeners
+  //  Ensure registerSIM is Loaded Before Event Listeners
   document.addEventListener("DOMContentLoaded", function () {
-    console.log("✅ Agent Dashboard Loaded");
 
     const simRegistrationForm = document.getElementById(
       "sim-registration-form"
     );
     if (simRegistrationForm) {
       simRegistrationForm.addEventListener("submit", registerSIM);
-      console.log("✅ SIM Registration Form Event Listener Attached.");
     } else {
       console.error("❌ SIM Registration Form Not Found!");
     }
 
-    // ✅ Ensure "Get New SIM" Button Works
+    //  Ensure "Get New SIM" Button Works
     const generateSimBtn = document.getElementById("generate-mobile-btn");
     if (generateSimBtn) {
       generateSimBtn.addEventListener("click", generateNewSIM);
-      console.log("✅ 'Get New SIM' button is now active.");
     } else {
       console.error("❌ 'Get New SIM' button not found!");
     }
   });
 
-// ✅ Function SIM SWAPPING (Patched with pending check and Toastify)
+//  Function SIM SWAPPING (Patched with pending check and Toastify)
 function showSwapSIMModal(oldIccid, mobileNumber) {
   document.getElementById("old-iccid").value = oldIccid;
   document.getElementById("swap-network").value = "";
@@ -562,7 +555,7 @@ function showSwapSIMModal(oldIccid, mobileNumber) {
   const iccidDropdown = document.getElementById("swap-new-iccid");
   iccidDropdown.innerHTML = "<option value=''>Loading available ICCIDs...</option>";
 
-  // 🔄 Fetch unregistered SIMs with pending flag
+  //  Fetch unregistered SIMs with pending flag
   fetch("/agent/sim-registrations", {
     method: "GET",
     headers: { "Content-Type": "application/json" },
@@ -603,7 +596,7 @@ function showSwapSIMModal(oldIccid, mobileNumber) {
   modal.show();
 }
 
-// ✅ Submit handler with secure flow
+//  Submit handler with secure flow
 document.getElementById("swap-sim-form").addEventListener("submit", function (e) {
   e.preventDefault();
 
@@ -646,7 +639,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
 
         const modal = bootstrap.Modal.getInstance(document.getElementById("swapSimModal"));
         modal.hide();
-        fetchSimRegistrationHistory(); // 🔁 Refresh list
+        fetchSimRegistrationHistory(); //  Refresh list
       } else {
         Toastify({
           text: data.error || "❌ Something went wrong.",
@@ -669,7 +662,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
     });
 });
 
-  // ✅ Function to fetch and display the SIMs registered by the agent.
+  //  Function to fetch and display the SIMs registered by the agent.
   function fetchSimRegistrationHistory() {
     fetch("/agent/sim-registrations", {
       method: "GET",
@@ -678,12 +671,11 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
     })
       .then((response) => response.json())
       .then((data) => {
-        console.log("SIM Registration History:", data);
         const simTable = document
           .getElementById("sim-registration-history")
           .querySelector("tbody");
 
-        simTable.innerHTML = ""; // ✅ Clear table before adding new rows
+        simTable.innerHTML = ""; //  Clear table before adding new rows
 
         if (!data.sims || data.sims.length === 0) {
           simTable.innerHTML = `<tr><td colspan='6' class="text-center">No SIMs registered yet.</td></tr>`;
@@ -770,9 +762,8 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
       });
   }
 
-  // ✅ Ensure function is globally accessible
+  //  Ensure function is globally accessible
   window.toggleDropdown = function (button) {
-    console.log("✅ Agent Table Dropdown Clicked!");
 
     // Get the dropdown menu related to the clicked button
     const dropdownMenu = button.nextElementSibling;
@@ -782,7 +773,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
       return;
     }
 
-    // ✅ Close all other dropdowns before opening this one
+    //  Close all other dropdowns before opening this one
     document.querySelectorAll(".dropdown-menu").forEach((menu) => {
       if (menu !== dropdownMenu) {
         menu.style.display = "none";
@@ -790,17 +781,17 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
       }
     });
 
-    // ✅ Show the dropdown to calculate position properly
+    //  Show the dropdown to calculate position properly
     dropdownMenu.style.display = "block";
 
-    // ✅ Calculate available space above and below
+    //  Calculate available space above and below
     const rect = button.getBoundingClientRect();
     const viewportHeight = window.innerHeight;
     const dropdownHeight = dropdownMenu.scrollHeight;
     const spaceAbove = rect.top;
     const spaceBelow = viewportHeight - rect.bottom;
 
-    // ✅ Adjust dropdown position dynamically
+    //  Adjust dropdown position dynamically
     if (spaceBelow > dropdownHeight) {
       dropdownMenu.style.top = "100%";
       dropdownMenu.style.bottom = "auto";
@@ -812,15 +803,9 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
       dropdownMenu.classList.add("dropup");
       dropdownMenu.classList.remove("dropdown-down");
     }
-
-    console.log(
-      `Dropdown Position: ${
-        dropdownMenu.classList.contains("dropup") ? "UP" : "DOWN"
-      }`
-    );
   };
 
-  // ✅ Close dropdown when clicking outside
+  //  Close dropdown when clicking outside
   document.addEventListener("click", function (event) {
     if (!event.target.closest(".dropdown")) {
       document.querySelectorAll(".dropdown-menu").forEach((menu) => {
@@ -830,7 +815,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
     }
   });
 
-  // ✅ Make Modal Draggable
+  //  Make Modal Draggable
   function makeModalDraggable() {
     const modal = document.getElementById("simDetailsModal");
     const header = document.querySelector("#simDetailsModal .modal-header");
@@ -844,7 +829,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
       isDragging = true;
       offsetX = e.clientX - modal.getBoundingClientRect().left;
       offsetY = e.clientY - modal.getBoundingClientRect().top;
-      modal.style.position = "absolute"; // ✅ Ensure absolute positioning
+      modal.style.position = "absolute"; 
     });
 
     document.addEventListener("mousemove", (e) => {
@@ -858,7 +843,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
     });
   }
 
-  // ✅ View SIM Info function
+  //  View SIM Info function
 
   function viewSIM(iccid) {
     fetch(`/agent/view_sim/${iccid}`, {
@@ -873,13 +858,13 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
           return;
         }
 
-        // ✅ Remove existing content before adding new content
+        //  Remove existing content before adding new content
         const modalContent = document.querySelector(
           "#simDetailsModal .modal-content"
         );
         modalContent.innerHTML = "";
 
-        // ✅ Add formatted data WITHOUT extra space
+        //  Add formatted data WITHOUT extra space
         modalContent.innerHTML = `
           <div class="modal-header">
               <h2 style="color: #4CAF50; margin-bottom: 5px;">SIM Details</h2>
@@ -894,28 +879,28 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
           </div>
       `;
 
-        // ✅ Show the modal
+        //  Show the modal
         const modal = document.getElementById("simDetailsModal");
         modal.style.display = "block";
 
-        // ✅ Attach the close event again (since we replaced modal content)
+        //  Attach the close event again (since we replaced modal content)
         document
           .getElementById("closeSimDetails")
           .addEventListener("click", function () {
             modal.style.display = "none";
           });
 
-        // ✅ Ensure modal resizes properly
+        //  Ensure modal resizes properly
         modal.style.height = "auto";
         modal.style.minHeight = "auto";
 
-        // ✅ Make the modal draggable
+        //  Make the modal draggable
         makeModalDraggable();
       })
       .catch((error) => console.error("❌ Error fetching SIM details:", error));
   }
 
-  // ✅ Activate SIM Function
+  //  Activate SIM Function
   function activateSIM(iccid) {
     if (!confirm("Are you sure you want to activate this SIM?")) return;
 
@@ -931,13 +916,13 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
           alert(`❌ Error: ${data.error}`);
         } else {
           alert(`✅ Success: ${data.message}`);
-          fetchSimRegistrationHistory(); // ✅ Refresh the SIM list
+          fetchSimRegistrationHistory(); //  Refresh the SIM list
         }
       })
       .catch((error) => console.error("❌ Error activating SIM:", error));
   }
 
-  // ✅ Reactivate SIM Function
+  //  Reactivate SIM Function
   function reactivateSIM(iccid) {
     if (!confirm("Are you sure you want to re-activate this SIM?")) return;
   
@@ -962,7 +947,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
       });
   }
   
-  // ✅ Suspend SIM Function
+  //  Suspend SIM Function
   function suspendSIM(iccid) {
     if (!confirm("⚠️ Are you sure you want to suspend this SIM?")) return;
 
@@ -978,7 +963,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
           alert(`❌ Error: ${data.error}`);
         } else {
           alert(`⚠️ Success: ${data.message}`);
-          fetchSimRegistrationHistory(); // ✅ Refresh the SIM list
+          fetchSimRegistrationHistory(); //  Refresh the SIM list
         }
       })
       .catch((error) => console.error("❌ Error suspending SIM:", error));
@@ -992,7 +977,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
       return;
     }
 
-    // ✅ Transfer SIM function
+    //  Transfer SIM function
     fetch("/agent/transfer_sim", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1005,13 +990,13 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
           alert(`❌ Error: ${data.error}`);
         } else {
           alert(`🔄 Success: ${data.message}`);
-          fetchSimRegistrationHistory(); // ✅ Refresh the SIM list
+          fetchSimRegistrationHistory(); //  Refresh the SIM list
         }
       })
       .catch((error) => console.error("❌ Error transferring SIM:", error));
   }
 
-  // ✅ Delete SIM function
+  //  Delete SIM function
   function deleteSIM(iccid) {
     if (
       !confirm(
@@ -1032,13 +1017,13 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
           alert(`❌ Error: ${data.error}`);
         } else {
           alert(`🗑️ Success: ${data.message}`);
-          fetchSimRegistrationHistory(); // ✅ Refresh the SIM list
+          fetchSimRegistrationHistory(); //  Refresh the SIM list
         }
       })
       .catch((error) => console.error("❌ Error deleting SIM:", error));
   }
 
-  // ✅ Fetch Profile Information
+  //  Fetch Profile Information
   function fetchProfileInfo() {
     fetch("/agent/profile", {
       method: "GET",
@@ -1047,7 +1032,6 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
     })
       .then((response) => response.json())
       .then((data) => {
-        console.log("Profile Info:", data);
 
         if (data.error) {
           alert(`❌ Error: ${data.error}`);
@@ -1064,7 +1048,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
       .catch((error) => console.error("Error fetching profile info:", error));
   }
 
-  // ✅ Ensure Sections Work
+  //  Ensure Sections Work
   document
     .getElementById("transaction-form")
     .addEventListener("submit", submitTransaction);
@@ -1090,7 +1074,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
     .getElementById("sim-registration-form")
     .addEventListener("submit", registerSIM);
 
-  // ✅ Logout Button
+  //  Logout Button
   document
     .getElementById("logout-link")
     .addEventListener("click", function (e) {
@@ -1100,7 +1084,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
       );
     });
 
-  // ✅ Show Overview on First Load
+  //  Show Overview on First Load
   showSection(overviewSection);
   fetchAgentDashboardData();
   fetchWalletInfo();

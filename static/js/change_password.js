@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      // 💪 Check for strong password before sending request
+      // Check for strong password before sending request
     const strongRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
     if (!strongRegex.test(newPass)) {
       Toastify({

@@ -12,7 +12,8 @@ from models.models import (
     SIMCard, 
     RealTimeLog,
     Tenant,
-    TenantUser, 
+    TenantUser,
+    TenantPasswordHistory, 
     HeadquartersWallet)
 import random
 import json
@@ -1228,15 +1229,15 @@ def toggle_tenant(tenant_id):
     db.session.commit()
     return jsonify({"message": f"Tenant {'enabled' if tenant.is_active else 'suspended'}."})
 
+from utils.admin_tools import delete_tenant_cascade
+from utils.logger import app_logger
+
 @admin_bp.route('/admin/delete-tenant/<int:tenant_id>', methods=['DELETE'])
 @jwt_required()
 @session_protected()
 def delete_tenant(tenant_id):
-    tenant = Tenant.query.get_or_404(tenant_id)
-    db.session.delete(tenant)
-    db.session.commit()
-    return jsonify({"message": "Tenant deleted."})
-
+    result, status = delete_tenant_cascade(tenant_id, logger=app_logger)
+    return jsonify(result), status
 
 @admin_bp.route('/admin/update-tenant/<int:tenant_id>', methods=['PUT'])
 @jwt_required()

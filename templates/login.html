@@ -43,11 +43,13 @@ body_class %}auth-page{% endblock %} {% block body %}
     <button type="submit" class="btn btn-primary">Login</button>
   </form>
 
-  <!-- ✅ Add "Forgot password?" link here -->
-  <div class="auth-note" style="margin-top: -10px; margin-bottom: 15px;">
-    <a href="{{ url_for('auth.forgot_password_form') }}" class="auth-link">Forgot password?</a>
+  <!-- Add "Forgot password?" link here -->
+  <div class="auth-note" style="margin-top: -10px; margin-bottom: 15px">
+    <a href="{{ url_for('auth.forgot_password_form') }}" class="auth-link"
+      >Forgot password?</a
+    >
   </div>
-  
+
   <div class="auth-note">
     Don’t have an account?
     <a href="{{ url_for('auth.register_form') }}" class="auth-link"

@@ -15,7 +15,6 @@ fetch("/api/user/profile", {
     return response.json();
   })
   .then((data) => {
-    // Assuming your API returns data with keys: first_name, last_name, mobile_number, country, trust_score
     const fullName =
       data.first_name + (data.last_name ? " " + data.last_name : "");
     document.getElementById("full-name").textContent = fullName || "N/A";

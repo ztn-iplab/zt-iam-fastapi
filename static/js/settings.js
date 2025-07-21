@@ -6,20 +6,6 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.style.display = 'block';
     backdrop.style.display = 'block';
   }
-
-  // function getRedirectPath() {
-  //   if (userRole === 'user') return '/user/dashboard';
-  //   if (userRole === 'agent') return '/agent/dashboard';
-  //   if (userRole === 'admin') return '/admin/dashboard';
-  //   return '/';  // only fallback if role is undefined or mistyped
-  // }
-  
-  // function closeModalAndRedirect() {
-  //   document.getElementById('settings-modal').style.display = 'none';
-  //   document.getElementById('settings-backdrop').style.display = 'none';
-  //   window.location.href = getRedirectPath();  // ✅ this actually redirects
-  // }
-  
   const closeBtn = document.getElementById('close-settings-btn');
   if (closeBtn) {
     closeBtn.addEventListener('click', closeModalAndRedirect);
@@ -34,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   
 
-  // 👤 Handle profile info update (optional section)
+  //  Handle profile info update (optional section)
   const personalForm = document.getElementById('personal-info-form');
   if (personalForm) {
     personalForm.addEventListener('submit', async (e) => {
@@ -59,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 🔐 Change password form (on its dedicated subpage)
+  //  Change password form (on its dedicated subpage)
   const passwordForm = document.getElementById('change-password-form');
   if (passwordForm) {
     passwordForm.addEventListener('submit', async (e) => {
@@ -94,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 🔁 Reset TOTP (on reset_totp.html)
+  //  Reset TOTP (on reset_totp.html)
   const resetTOTPForm = document.getElementById('reset-totp-form');
   if (resetTOTPForm) {
     resetTOTPForm.addEventListener('submit', async (e) => {
@@ -123,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 🗝️ Reset WebAuthn (on reset_webauthn.html)
+  //  Reset WebAuthn (on reset_webauthn.html)
   const resetWebAuthnForm = document.getElementById('reset-webauthn-form');
   if (resetWebAuthnForm) {
     resetWebAuthnForm.addEventListener('submit', async (e) => {
@@ -152,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 🧨 Request account deletion (linked directly from settings.html)
+  //  Request account deletion (linked directly from settings.html)
   const deleteBtn = document.getElementById('delete-account-button');
   if (deleteBtn) {
     deleteBtn.addEventListener('click', async () => {

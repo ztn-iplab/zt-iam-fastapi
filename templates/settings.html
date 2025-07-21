@@ -1,11 +1,10 @@
-{% extends "base_dashboard.html" %}
-{% block title %}Settings{% endblock %}
-{% block dashboard_content %}
+{% extends "base_dashboard.html" %} {% block title %}Settings{% endblock %} {%
+block dashboard_content %}
 
-<!-- 🧩 Modal Backdrop -->
+<!--  Modal Backdrop -->
 <div id="settings-backdrop" class="modal-backdrop"></div>
 
-<!-- ⚙️ Draggable Settings Modal -->
+<!--  Draggable Settings Modal -->
 <div id="settings-modal" class="modal-panel" draggable="true">
   <div class="modal-header">
     <h2 class="modal-title">⚙️ Account Settings</h2>
@@ -25,44 +24,56 @@
     <section>
       <h3 class="modal-section-title">🔐 Security</h3>
       <ul class="modal-links">
-        <li><a href="{{ url_for('settings.change_password') }}">Change Password</a></li>
+        <li>
+          <a href="{{ url_for('settings.change_password') }}"
+            >Change Password</a
+          >
+        </li>
         <li><a href="{{ url_for('settings.reset_totp') }}">Reset TOTP</a></li>
-        <li><a href="{{ url_for('settings.reset_webauthn') }}">Reset WebAuthn</a></li>
+        <li>
+          <a href="{{ url_for('settings.reset_webauthn') }}">Reset WebAuthn</a>
+        </li>
       </ul>
     </section>
 
     <!-- Danger Zone -->
     <section class="danger-zone">
       <h3 class="modal-section-title text-red">🧨 Danger Zone</h3>
-      <p>This will flag your account for deletion. This action is not reversible.</p>
-      <button id="delete-account-button" class="btn-danger">Request Account Deletion</button>
+      <p>
+        This will flag your account for deletion. This action is not reversible.
+      </p>
+      <button id="delete-account-button" class="btn-danger">
+        Request Account Deletion
+      </button>
     </section>
   </div>
 </div>
 
-{% endblock %}
-
-{% block scripts %}
+{% endblock %} {% block scripts %}
 <script src="{{ url_for('static', filename='js/settings.js') }}"></script>
 <script>
   // Close modal
-  document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('close-settings-btn').addEventListener('click', () => {
-      document.getElementById('settings-modal').style.display = 'none';
-      document.getElementById('settings-backdrop').style.display = 'none';
-    });
+  document.addEventListener("DOMContentLoaded", () => {
+    document
+      .getElementById("close-settings-btn")
+      .addEventListener("click", () => {
+        document.getElementById("settings-modal").style.display = "none";
+        document.getElementById("settings-backdrop").style.display = "none";
+      });
 
     // Dragging modal
-    const modal = document.getElementById('settings-modal');
-    let isDragging = false, x = 0, y = 0;
+    const modal = document.getElementById("settings-modal");
+    let isDragging = false,
+      x = 0,
+      y = 0;
 
-    modal.addEventListener('dragstart', e => {
+    modal.addEventListener("dragstart", (e) => {
       isDragging = true;
       x = e.clientX - modal.offsetLeft;
       y = e.clientY - modal.offsetTop;
     });
 
-    modal.addEventListener('dragend', e => {
+    modal.addEventListener("dragend", (e) => {
       if (isDragging) {
         modal.style.left = `${e.clientX - x}px`;
         modal.style.top = `${e.clientY - y}px`;
@@ -75,9 +86,4 @@
 <script>
   const userRole = "{{ role }}";
 </script>
-
-<script>
-  console.log("🧠 Injected role:", "{{ role }}");
-</script>
-
 {% endblock %}

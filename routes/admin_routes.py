@@ -1095,6 +1095,10 @@ def register_tenant():
         # Check if already exists under tenant
         if TenantUser.query.filter_by(tenant_id=new_tenant.id, user_id=linked_user.id).first():
             return jsonify({"error": "Admin user already exists under this tenant."}), 400
+        from utils.security import is_strong_password
+        # Validate password strength
+        if not is_strong_password(admin_info['password']):
+            return jsonify({"error": "Admin password does not meet security requirements."}), 400
 
         # Create TenantUser
         tenant_user = TenantUser(

@@ -264,17 +264,20 @@ def login_user():
     #     "device_info": device_info
     # }
     context = {
-        "ip_address": "198.51.100.90",  # Simulated new IP
+        "ip_address": "192.51.100.80",  # Simulated new IP
         "device_info": "MyCustomTestDevice/1.01"  # Simulated new device
     }
 
-
     trust_score = evaluate_trust(user, context, tenant=g.tenant)
-    risk_level = (
-        "high" if trust_score >= 0.7 else
-        "medium" if trust_score >= 0.4 else
-        "low"
-    )
+
+    def determine_risk_level(score):
+        if score >= 0.7:
+            return "high"
+        elif score >= 0.4:
+            return "medium"
+        return "low"
+
+    risk_level = determine_risk_level(trust_score)
 
     access_token = create_access_token(identity=str(user.id))
 
@@ -315,22 +318,27 @@ def login_user():
     if g.tenant.enforce_strict_mfa:
         preferred_mfa = "both"
 
-    # Determine MFA requirements based on trust score and preference
+    # 🔐 Enforce strong MFA if risk score is high
     require_totp = False
     require_webauthn = False
     skip_all_mfa = False
 
-    if trust_score >= 0.95:
-        skip_all_mfa = True
+    if trust_score >= 0.85:
+        # 🔥 Force both MFA methods for very high risk
+        require_totp = bool(tenant_user.otp_secret)
+        require_webauthn = True
+        print("⚠️ High Risk > 0.85: Enforcing BOTH MFA methods.")
+    else:
+        # Tenant preference applies if risk is moderate or low
+        if not skip_all_mfa:
+            if preferred_mfa == "totp":
+                require_totp = bool(tenant_user.otp_secret)
+            elif preferred_mfa == "webauthn":
+                require_webauthn = True
+            elif preferred_mfa == "both":
+                require_totp = bool(tenant_user.otp_secret)
+                require_webauthn = True
 
-    if not skip_all_mfa:
-        if preferred_mfa == "totp":
-            require_totp = bool(tenant_user.otp_secret)
-        elif preferred_mfa == "webauthn":
-            require_webauthn = True
-        elif preferred_mfa == "both":
-            require_totp = bool(tenant_user.otp_secret)
-            require_webauthn = True
     print(f"🔐 MFA Settings for user {user.id}: {preferred_mfa}")
     print(f"➡️ TOTP: {require_totp}, WebAuthn: {require_webauthn}, Skip All: {skip_all_mfa}")
 

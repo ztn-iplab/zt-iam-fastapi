@@ -69,7 +69,7 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
             print("📂 No tenant policy found. Using BaseTrustEngine.")
             return super().run()
 
-        config = policy_file.config_json  # ✅ Already stored as JSON in DB
+        config = policy_file.config_json  #  Already stored as JSON in DB
 
         if not isinstance(config, dict):
             print("⚠️ Invalid config format. Using BaseTrustEngine.")
@@ -79,7 +79,7 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
         score = 0.0
         ctx = self.context
 
-        # ✅ Odd Hours
+        #  Odd Hours
         if rules.get("odd_hours", {}).get("enabled"):
             hour = (datetime.utcnow().hour + 9) % 24  # Adjust to JST
             # hour = datetime.utcnow().hour
@@ -88,7 +88,7 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
                 score += rules["odd_hours"].get("weight", 0.2)
 
 
-        # ✅ New Device/IP
+        #  New Device/IP
         if rules.get("new_device_or_ip", {}).get("enabled"):
             device_info = ctx.get("device_info")
             ip_address = ctx.get("ip_address")
@@ -102,14 +102,14 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
                 print("📌 new device rule triggered")
                 score += rules["new_device_or_ip"].get("weight", 0.2)
 
-        # ✅ Geo Trust
+        #  Geo Trust
         if rules.get("geo_trust", {}).get("enabled"):
             min_score = rules["geo_trust"].get("min_trust_score", 0.3)
             if self.user.trust_score < min_score:
                 print("📌 geo_trust triggered")
                 score += rules["geo_trust"].get("weight", 0.2)
 
-        # ✅ Login Frequency Rule
+        #  Login Frequency Rule
         if rules.get("login_frequency", {}).get("enabled"):
             threshold = rules["login_frequency"].get("threshold", 3)
             weight = rules["login_frequency"].get("weight", 0.2)
@@ -134,7 +134,7 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
 # -------------------------------
 
 def evaluate_trust(user, context, tenant=None):
-    # ✅ Optional custom callable hook
+    #  Optional custom callable hook
     if tenant and hasattr(tenant, "custom_trust_logic") and callable(tenant.custom_trust_logic):
         try:
             score = tenant.custom_trust_logic(user, context)
@@ -143,7 +143,7 @@ def evaluate_trust(user, context, tenant=None):
         except Exception as e:
             print(f"⚠️ Failed to use custom trust logic: {e}")
 
-    # ✅ Use tenant.id to load policy if present
+    #  Use tenant.id to load policy if present
     if tenant:
         policy_file = TenantTrustPolicyFile.query.filter_by(tenant_id=tenant.id).first()
         if policy_file:
@@ -158,7 +158,7 @@ def evaluate_trust(user, context, tenant=None):
     else:
         print("⚠️ No tenant provided. Using BaseTrustEngine.")
 
-    # ✅ Fallback
+    #  Fallback
     score = BaseTrustEngine(user, context).run()
     print(f"📊 Trust Score (Base Engine Fallback): {score}")
     return score

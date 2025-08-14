@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it."
+title: "ZTN_SIM"
+version: "1.0.0"
+doi: ""
+date-released: "2025-08-14"
+authors:
+  - family-names: Mutabazi
+    given-names: Patrick
+    affiliation: "Nara Institute of Science and Technology (NAIST), Cyber Resilience Lab"
+  - family-names: Ndalama
+    given-names: Festus Edward
+  - affiliation: "Nara Institute of Science and Technology (NAIST), Cyber Resilience Lab"
+keywords:
+  - Zero Trust
+  - Identity and Access Management
+  - SIM Management
+  - Mobile Money
+  - Flask
+license: MIT
+repository-code: "https://github.com/<your-username>/ZTN_SIM"
+abstract: >
+  ZTN_SIM is a Flask-based microservice for SIM card registration, user identity
+  management, and mobile-money operations with a Zero Trust approach. It includes
+  JWT authentication, role-based access control, and secure multi-tenant support.

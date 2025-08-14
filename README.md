@@ -87,6 +87,67 @@ To stop the services:
 - Database URL and other settings are configured in `config.py`.
 - Logging writes to `logs/ztn_momo.log` via utilities under `utils/logger.py`.
 - Default Docker image uses Python 3.10 and runs Gunicorn for production.
+## Role Management & Dashboards
+
+### Seed Default Roles and Admin
+
+After applying database migrations, seed the core roles and create an initial
+admin account who can manage other users:
+
+```bash
+flask shell
+```
+
+```python
+from models.models import db, User, UserRole, UserAccessControl
+admin = User(
+    email="admin@example.com", first_name="Admin", tenant_id=1,
+    password="ChangeMe123", is_tenant_admin=True
+)
+db.session.add(admin); db.session.flush()
+
+roles = {
+    "admin": UserRole(role_name="admin", tenant_id=1),
+    "agent": UserRole(role_name="agent", tenant_id=1),
+    "user": UserRole(role_name="user", tenant_id=1),
+}
+db.session.add_all(roles.values()); db.session.flush()
+
+db.session.add(UserAccessControl(
+    user_id=admin.id, role_id=roles["admin"].id, tenant_id=1
+))
+db.session.commit()
+exit()
+```
+
+### Adding Users and Promoting Agents
+
+New sign-ups receive the `user` role and access the user dashboard. The admin
+can promote a user to an agent either via the admin dashboard or role assignment API:
+
+```bash
+curl -X POST /roles/assign_role -H "Authorization: Bearer <admin_token>" \
+     -H "Content-Type: application/json" \
+     -d '{"user_id": 2, "role_id": <agent_role_id>, "access_level": "write"}'
+```
+
+or by running the helper script:
+
+```bash
+python assign_roles.py
+```
+
+### Dashboards
+
+- **Admin Dashboard** (`/admin/dashboard`): manage users and roles, review
+  transactions, fund agents, inspect real-time logs, and administer tenants.
+- **Agent Dashboard** (`/agent/dashboard`): register SIM cards, view registration
+  history, and process withdrawals or transfers for customers.
+- **User Dashboard** (`/user/dashboard`): view wallet balance, execute personal
+  transfers or withdrawals, and manage profile information.
+
+By default, newly created users remain on the user dashboard until an admin
+upgrades them to agent status.
 
 ## License
 

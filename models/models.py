@@ -154,7 +154,7 @@ class UserRole(db.Model):
 
     __table_args__ = (
         sa.UniqueConstraint('role_name', 'tenant_id', name='uq_role_per_tenant'),
-        {'extend_existing': True},  # <<< ✨ THIS IS THE PATCH ✨
+        {'extend_existing': True},
     )
 
 class UserAccessControl(db.Model):

@@ -1,11 +1,11 @@
 # ZTN_SIM API Reference
 
-This document consolidates the public and internal API surface exposed by the Flask application. It groups endpoints by blueprint, clarifies authentication, and highlights notable side effects (logging, trust scoring, or MFA requirements). The interface is versioned (`/api/v1/auth` for IAMaaS) and mirrored in the OpenAPI 3.0 schema so external systems can contract-test against the same definitions used by the `auth-gateway` and policy decision point.
+This document consolidates the public and internal API surface exposed by the Flask application. It groups endpoints by blueprint, clarifies authentication, and highlights notable side effects (logging, trust scoring, or MFA requirements). The interface is treated as a first-class, versioned RESTful contract (`/api/v1/auth` for IAMaaS) and is mirrored in a machine-readable OpenAPI 3.0 schema so external systems—and internal components like the `auth-gateway` and policy decision point—share the same request/response definitions for authentication, token issuance, trust-score inspection, policy management, and audit retrieval.
 
 ## Machine-Readable Contract & Tooling
-- **OpenAPI 3.0 schema:** Serves as the canonical contract for request/response types, error codes, auth headers, and rate limits, enabling static analysis and contract testing before deployment.
-- **Client generation:** Tested with auto-generated clients (Python, JavaScript, Go) to validate that the documented interface is executable and self-consistent during integration and load exercises.
-- **Developer tooling:** The schema can be consumed by Swagger UI, Postman collections, and AI-assisted code-completion tools to propose correctly structured API calls and error-handling patterns, reducing integration friction.
+- **OpenAPI 3.0 schema (present):** `docs/openapi.yaml` is the canonical contract for request/response types, error codes, auth headers, and rate limits, enabling static analysis and contract testing before deployment.
+- **Client generation (ready):** Auto-generated clients in Python, JavaScript, and Go can be produced from `docs/openapi.yaml` with tools such as `openapi-generator-cli` and validated via smoke/load calls against the documented endpoints using those SDKs.
+- **Developer tooling:** The schema can be consumed by Swagger UI, Postman collections, and AI-assisted code-completion tools to propose correctly structured API calls and error-handling patterns, reducing integration friction and supporting mixed-literacy teams.
 - **Versioning:** Stable, versioned endpoints support staged pilots for external partners (e.g., HMS, MNOs) using synthetic identifiers to exercise trust-score behaviors around SIM lifecycle events, device changes, and policy variations without exposing production data.
 
 ## Conventions

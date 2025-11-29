@@ -1,0 +1,1522 @@
+openapi: 3.0.3
+info:
+  title: ZTN_SIM IAMaaS API
+  version: "1.0.0"
+  description: |
+    Versioned REST contract for IAMaaS tenants and core platform operations. The schema documents
+    authentication, token issuance, trust-score inspection, policy management, audit/log retrieval,
+    and supporting wallet/transaction flows. It is intended to be consumed by the auth-gateway,
+    policy decision point, external HMS integrations, and telecom or mobile-money pilots.
+servers:
+  - url: https://api.example.com
+    description: Production server
+  - url: http://localhost:5000
+    description: Development server
+security:
+  - BearerAuth: []
+    ApiKeyAuth: []
+paths:
+  /api/v1/auth/register:
+    post:
+      tags: [IAM]
+      summary: Register an existing SIM user under the calling tenant
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/auth/login:
+    post:
+      tags: [IAM]
+      summary: Tenant-scoped login issuing JWTs and MFA directives
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/auth/forgot-password:
+    post:
+      tags: [IAM]
+      summary: Request a tenant-scoped password reset email
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/reset-password:
+    post:
+      tags: [IAM]
+      summary: Complete password reset with optional MFA verification
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/enroll-totp:
+    get:
+      tags: [IAM]
+      summary: Provide a QR image to enroll a TOTP secret
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: TOTP enrollment QR response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qr_image_base64:
+                    type: string
+                    format: byte
+                    description: Base64-encoded QR image
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/setup-totp/confirm:
+    post:
+      tags: [IAM]
+      summary: Confirm TOTP enrollment by verifying a passcode
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpConfirmRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/verify-totp-login:
+    post:
+      tags: [IAM]
+      summary: Validate a TOTP code during login
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpVerifyRequest'
+      responses:
+        '200':
+          description: TOTP accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/request-totp-reset:
+    post:
+      tags: [IAM]
+      summary: Email a TOTP reset token with rate limiting
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpResetRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/verify-totp-reset:
+    post:
+      tags: [IAM]
+      summary: Validate a TOTP reset token before updating secrets
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpResetVerifyRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/verify-fallback-totp:
+    post:
+      tags: [IAM]
+      summary: Verify backup TOTP codes for break-glass scenarios
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpVerifyRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/webauthn/register-begin:
+    post:
+      tags: [IAM]
+      summary: Begin WebAuthn registration flow
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: PublicKeyCredentialCreationOptions
+          content:
+            application/json:
+              schema:
+                type: object
+                description: WebAuthn registration challenge
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/webauthn/register-complete:
+    post:
+      tags: [IAM]
+      summary: Finalize WebAuthn registration and persist credentials
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: WebAuthn attestation response
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/webauthn/assertion-begin:
+    post:
+      tags: [IAM]
+      summary: Begin a WebAuthn assertion during login
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebauthnAssertionBeginRequest'
+      responses:
+        '200':
+          description: PublicKeyCredentialRequestOptions
+          content:
+            application/json:
+              schema:
+                type: object
+                description: WebAuthn assertion challenge
+  /api/v1/auth/webauthn/assertion-complete:
+    post:
+      tags: [IAM]
+      summary: Complete WebAuthn assertion for login
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: WebAuthn assertion response
+      responses:
+        '200':
+          description: Assertion accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/webauthn/reset-assertion-begin:
+    post:
+      tags: [IAM]
+      summary: Start WebAuthn recovery during password reset
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /api/v1/auth/webauthn/reset-assertion-complete:
+    post:
+      tags: [IAM]
+      summary: Finish WebAuthn recovery for password reset
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /api/v1/auth/logout:
+    post:
+      tags: [IAM]
+      summary: Invalidate the current session token
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/refresh:
+    post:
+      tags: [IAM]
+      summary: Refresh JWT when a valid refresh token exists
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      responses:
+        '200':
+          description: New access token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/health-check:
+    get:
+      tags: [IAM]
+      summary: Lightweight service probe
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/v1/auth/trust-score:
+    get:
+      tags: [IAM]
+      summary: Return the current user trust score for the tenant
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      responses:
+        '200':
+          description: Trust score retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustScoreResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/out-request-webauthn-reset:
+    post:
+      tags: [IAM]
+      summary: Send out-of-band WebAuthn reset email containing a token
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /api/v1/auth/out-verify-webauthn-reset/{token}:
+    post:
+      tags: [IAM]
+      summary: Validate emailed reset token before WebAuthn reset
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/tenant/roles:
+    get:
+      tags: [Tenant]
+      summary: List tenant roles
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      responses:
+        '200':
+          description: List of roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+    post:
+      tags: [Tenant]
+      summary: Create a tenant role
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleCreateRequest'
+      responses:
+        '201':
+          description: Role created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+  /api/v1/auth/tenant/users:
+    get:
+      tags: [Tenant]
+      summary: List tenant users
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      responses:
+        '200':
+          description: Tenant user list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TenantUser'
+    post:
+      tags: [Tenant]
+      summary: Create a tenant user mapping with role assignment
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantUserCreateRequest'
+      responses:
+        '201':
+          description: Tenant user created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantUser'
+  /api/v1/auth/tenant/users/{userId}:
+    get:
+      tags: [Tenant]
+      summary: Retrieve tenant user details
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantUser'
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Tenant]
+      summary: Update tenant user details or status
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantUserUpdateRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Tenant]
+      summary: Delete or suspend tenant user
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: User removed
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/auth/tenant-settings:
+    get:
+      tags: [Tenant]
+      summary: Retrieve tenant settings including MFA and plan controls
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantSettings'
+    put:
+      tags: [Tenant]
+      summary: Update tenant security or plan settings
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantSettingsUpdateRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /api/v1/auth/change-plan:
+    post:
+      tags: [Tenant]
+      summary: Change tenant plan and rate-limit profile
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plan:
+                  type: string
+                  description: New plan identifier
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /api/v1/auth/tenant/system-metrics:
+    get:
+      tags: [Tenant]
+      summary: Retrieve tenant-level usage and health metrics
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/auth/tenant/trust-policy/upload:
+    post:
+      tags: [Tenant]
+      summary: Upload trust policy file for the risk engine
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201': { $ref: '#/components/responses/MessageResponse' }
+  /api/v1/auth/tenant/trust-policy:
+    get:
+      tags: [Tenant]
+      summary: View trust policy metadata
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustPolicyFile'
+  /api/v1/auth/tenant/trust-policy/edit:
+    put:
+      tags: [Tenant]
+      summary: Edit trust policy metadata or content
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrustPolicyUpdateRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /api/v1/auth/tenant/trust-policy/clear:
+    delete:
+      tags: [Tenant]
+      summary: Clear trust policy file
+      security:
+        - BearerAuth: []
+          ApiKeyAuth: []
+      responses:
+        '204':
+          description: Trust policy cleared
+  /users:
+    post:
+      tags: [Users]
+      summary: Create a new user record
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /user:
+    get:
+      tags: [Users]
+      summary: Retrieve authenticated user profile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Users]
+      summary: Update authenticated user
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+    delete:
+      tags: [Users]
+      summary: Delete authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /user/profile:
+    get:
+      tags: [Users]
+      summary: Retrieve concise profile information
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+  /user/request_deletion:
+    post:
+      tags: [Users]
+      summary: Request account deletion
+      security:
+        - BearerAuth: []
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /user-info/{mobileNumber}:
+    get:
+      tags: [Users]
+      summary: Fetch user info by mobile number
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: mobileNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserLookup'
+        '404': { $ref: '#/components/responses/NotFound' }
+  /wallets:
+    get:
+      tags: [Wallets]
+      summary: List wallets or retrieve current balance
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Wallet'
+    put:
+      tags: [Wallets]
+      summary: Update wallet details
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WalletUpdateRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+    delete:
+      tags: [Wallets]
+      summary: Remove a wallet association
+      security:
+        - BearerAuth: []
+      responses:
+        '204': { description: Wallet removed }
+  /transactions:
+    post:
+      tags: [Transactions]
+      summary: Create a transfer or withdrawal with TOTP verification
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionCreateRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+    get:
+      tags: [Transactions]
+      summary: List transactions for the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+  /transactions/{transactionId}:
+    put:
+      tags: [Transactions]
+      summary: Update transaction status/details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionUpdateRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+    delete:
+      tags: [Transactions]
+      summary: Cancel a transaction
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204': { description: Transaction cancelled }
+  /user/initiated-withdrawal:
+    post:
+      tags: [Transactions]
+      summary: Begin a withdrawal awaiting agent approval
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawalRequest'
+      responses:
+        '201': { $ref: '#/components/responses/MessageResponse' }
+  /verify-transaction-otp:
+    post:
+      tags: [Transactions]
+      summary: Verify OTP for sensitive transactions
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionOtpVerifyRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /roles:
+    get:
+      tags: [Roles]
+      summary: List all roles
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+  /user/{userId}:
+    get:
+      tags: [Roles]
+      summary: Fetch roles for a specific user
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+  /assign_role:
+    post:
+      tags: [Roles]
+      summary: Assign a role with access level to a user
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRoleRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /agent/generate_sim:
+    post:
+      tags: [Agents]
+      summary: Create SIM card for a user
+      security:
+        - BearerAuth: []
+      responses:
+        '201': { $ref: '#/components/responses/MessageResponse' }
+  /agent/register_sim:
+    post:
+      tags: [Agents]
+      summary: Register SIM for a user
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterSimRequest'
+      responses:
+        '201': { $ref: '#/components/responses/MessageResponse' }
+  /agent/view_sim/{iccid}:
+    get:
+      tags: [Agents]
+      summary: View SIM details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: iccid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimCard'
+        '404': { $ref: '#/components/responses/NotFound' }
+  /agent/activate_sim:
+    post:
+      tags: [Agents]
+      summary: Activate SIM
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimActionRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /agent/suspend_sim:
+    post:
+      tags: [Agents]
+      summary: Suspend SIM
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimActionRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /agent/reactivate_sim:
+    post:
+      tags: [Agents]
+      summary: Reactivate SIM
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimActionRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /agent/delete_sim:
+    post:
+      tags: [Agents]
+      summary: Delete SIM
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimActionRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /agent/transaction:
+    post:
+      tags: [Agents]
+      summary: Process agent transaction
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentTransactionRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+  /agent/transactions:
+    get:
+      tags: [Agents]
+      summary: List transactions managed by agent
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+  /agent/pending-withdrawals:
+    get:
+      tags: [Agents]
+      summary: List pending withdrawals awaiting approval
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+  /agent/approve-withdrawal/{id}:
+    post:
+      tags: [Agents]
+      summary: Approve withdrawal
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /agent/reject-withdrawal/{id}:
+    post:
+      tags: [Agents]
+      summary: Reject withdrawal
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /agent/request-sim-swap:
+    post:
+      tags: [Agents]
+      summary: Initiate SIM swap workflow with OTP verification
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimSwapRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List users for administration
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+  /admin/assign_role:
+    post:
+      tags: [Admin]
+      summary: Assign role to a user as admin
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRoleRequest'
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /admin/fund-agent:
+    post:
+      tags: [Admin]
+      summary: Fund an agent wallet
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_id:
+                  type: integer
+                amount:
+                  type: number
+                  format: float
+      responses:
+        '200': { $ref: '#/components/responses/MessageResponse' }
+  /api/admin/metrics:
+    get:
+      tags: [Admin]
+      summary: JSON metrics feed
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: integer
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    MessageResponse:
+      description: Operation succeeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+    Message:
+      type: object
+      properties:
+        message:
+          type: string
+    RegisterRequest:
+      type: object
+      required: [mobile_number, first_name, password, email]
+      properties:
+        mobile_number:
+          type: string
+        first_name:
+          type: string
+        password:
+          type: string
+          format: password
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          description: Role name to assign (default user)
+        access_level:
+          type: string
+          description: Access level for the role
+    RegisterResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        mobile_number:
+          type: string
+        tenant_email:
+          type: string
+        role:
+          type: string
+    LoginRequest:
+      type: object
+      required: [identifier, password]
+      properties:
+        identifier:
+          type: string
+          description: Mobile number or email
+        password:
+          type: string
+          format: password
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        mfa_required:
+          type: boolean
+        trust_score:
+          type: number
+          format: float
+    ForgotPasswordRequest:
+      type: object
+      required: [identifier]
+      properties:
+        identifier:
+          type: string
+          description: Mobile number or email
+    ResetPasswordRequest:
+      type: object
+      required: [token, new_password]
+      properties:
+        token:
+          type: string
+        new_password:
+          type: string
+          format: password
+        totp_code:
+          type: string
+          description: Optional TOTP or WebAuthn assertion to satisfy MFA
+    TotpConfirmRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+    TotpVerifyRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+    TotpResetRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    TotpResetVerifyRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+    WebauthnAssertionBeginRequest:
+      type: object
+      properties:
+        identifier:
+          type: string
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+    TrustScoreResponse:
+      type: object
+      properties:
+        trust_score:
+          type: number
+          format: float
+    Role:
+      type: object
+      properties:
+        id:
+          type: integer
+        role_name:
+          type: string
+        access_level:
+          type: string
+    RoleCreateRequest:
+      type: object
+      required: [role_name]
+      properties:
+        role_name:
+          type: string
+        access_level:
+          type: string
+    TenantUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        company_email:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+    TenantUserCreateRequest:
+      type: object
+      required: [user_id, role_id]
+      properties:
+        user_id:
+          type: integer
+        role_id:
+          type: integer
+        company_email:
+          type: string
+          format: email
+        access_level:
+          type: string
+    TenantUserUpdateRequest:
+      type: object
+      properties:
+        role_id:
+          type: integer
+        access_level:
+          type: string
+        status:
+          type: string
+    TenantSettings:
+      type: object
+      properties:
+        enforce_strict_mfa:
+          type: boolean
+        plan:
+          type: string
+        rate_limit:
+          type: integer
+    TenantSettingsUpdateRequest:
+      type: object
+      properties:
+        enforce_strict_mfa:
+          type: boolean
+        plan:
+          type: string
+    TrustPolicyFile:
+      type: object
+      properties:
+        id:
+          type: integer
+        filename:
+          type: string
+        uploaded_at:
+          type: string
+          format: date-time
+    TrustPolicyUpdateRequest:
+      type: object
+      properties:
+        description:
+          type: string
+    UserCreateRequest:
+      type: object
+      required: [mobile_number, first_name]
+      properties:
+        mobile_number:
+          type: string
+        first_name:
+          type: string
+        country:
+          type: string
+        identity_verified:
+          type: boolean
+    UserUpdateRequest:
+      type: object
+      properties:
+        first_name:
+          type: string
+        country:
+          type: string
+        identity_verified:
+          type: boolean
+        password:
+          type: string
+          format: password
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        mobile_number:
+          type: string
+        first_name:
+          type: string
+        email:
+          type: string
+        country:
+          type: string
+        identity_verified:
+          type: boolean
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        mobile_number:
+          type: string
+        first_name:
+          type: string
+        country:
+          type: string
+        identity_verified:
+          type: boolean
+    UserLookup:
+      type: object
+      properties:
+        id:
+          type: integer
+        mobile_number:
+          type: string
+        name:
+          type: string
+    Wallet:
+      type: object
+      properties:
+        id:
+          type: integer
+        balance:
+          type: number
+          format: float
+        currency:
+          type: string
+    WalletUpdateRequest:
+      type: object
+      properties:
+        balance:
+          type: number
+          format: float
+        currency:
+          type: string
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        amount:
+          type: number
+          format: float
+        status:
+          type: string
+        type:
+          type: string
+    TransactionCreateRequest:
+      type: object
+      required: [amount, type]
+      properties:
+        amount:
+          type: number
+          format: float
+        type:
+          type: string
+          description: transfer or withdrawal
+        totp_code:
+          type: string
+    TransactionUpdateRequest:
+      type: object
+      properties:
+        status:
+          type: string
+        note:
+          type: string
+    WithdrawalRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: number
+          format: float
+        destination:
+          type: string
+    TransactionOtpVerifyRequest:
+      type: object
+      required: [transaction_id, otp]
+      properties:
+        transaction_id:
+          type: integer
+        otp:
+          type: string
+    AssignRoleRequest:
+      type: object
+      required: [user_id, role_id]
+      properties:
+        user_id:
+          type: integer
+        role_id:
+          type: integer
+        access_level:
+          type: string
+    RegisterSimRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        iccid:
+          type: string
+        mobile_number:
+          type: string
+    SimCard:
+      type: object
+      properties:
+        iccid:
+          type: string
+        mobile_number:
+          type: string
+        status:
+          type: string
+    SimActionRequest:
+      type: object
+      properties:
+        iccid:
+          type: string
+    AgentTransactionRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          format: float
+        user_id:
+          type: integer
+    SimSwapRequest:
+      type: object
+      properties:
+        iccid:
+          type: string
+        otp:
+          type: string

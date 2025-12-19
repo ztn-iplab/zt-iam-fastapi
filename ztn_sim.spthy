@@ -1,0 +1,101 @@
+theory ZTN_SIM
+begin
+
+/* Core functions */
+functions:
+  tenant/1,
+  user/1,
+  sim/1,
+  device/1,
+  api_key/1,
+  otp/2,
+  mfa_proof/2,
+  jwt/2,
+  federation_token/3
+
+/* Facts */
+/* Tenant(TenantId, ApiKey) */
+/* User(UserId, TenantId, SIM, Device) */
+/* TrustedDevice(UserId, Device) */
+/* PendingSwap(UserId, SIM) */
+/* ApprovedSwap(UserId, SIM) */
+/* OTPIssued(UserId, SIM, OTP) */
+/* OTPVerified(UserId, SIM) */
+/* MFAOk(UserId, TenantId) */
+/* Federation(UserId, FromTenant, ToTenant, Token) */
+
+rule CreateTenant:
+  [ Fr(~t), Fr(~k) ]
+  --[ TenantCreated(tenant(~t)) ]->
+  [ Tenant(tenant(~t), api_key(~k)) ]
+
+rule EnrollUser:
+  [ Tenant(T, K), Fr(~u), Fr(~s), Fr(~d) ]
+  --[ UserEnrolled(user(~u), T) ]->
+  [ User(user(~u), T, sim(~s), device(~d)),
+    TrustedDevice(user(~u), device(~d)) ]
+
+rule LoginRequest:
+  [ User(U, T, S, D) ]
+  --[ LoginAttempt(U, T, D) ]->
+  [ Out(<"login", U, T, D>),
+    LoginPending(U, T, D) ]
+
+rule IssueOTPForLogin:
+  [ LoginPending(U, T, D), User(U, T, S, D), Fr(~o) ]
+  --[ OTPGenerated(U, S, otp(U, ~o)) ]->
+  [ OTPIssued(U, S, otp(U, ~o)),
+    Out(<"otp", U, S, otp(U, ~o)>) ]
+
+rule VerifyOTP:
+  [ OTPIssued(U, S, O) ]
+  --[ OTPVerifiedEvt(U, S) ]->
+  [ OTPVerified(U, S) ]
+
+rule VerifyMFA:
+  [ OTPVerified(U, S), User(U, T, S, D) ]
+  --[ MFAOkEvt(U, T) ]->
+  [ MFAOk(U, T) ]
+
+rule IssueJWT:
+  [ MFAOk(U, T) ]
+  --[ TokenIssued(U, T, jwt(U, T)) ]->
+  [ Out(<"jwt", U, T, jwt(U, T)>) ]
+
+rule SimSwapRequest:
+  [ User(U, T, S, D), TrustedDevice(U, D) ]
+  --[ SwapRequested(U, S, D) ]->
+  [ PendingSwap(U, S),
+    Out(<"swap_request", U, S>) ]
+
+rule SimSwapOTP:
+  [ PendingSwap(U, S), Fr(~o) ]
+  --[ SwapOTPGenerated(U, S, otp(U, ~o)) ]->
+  [ OTPIssued(U, S, otp(U, ~o)),
+    Out(<"swap_otp", U, S, otp(U, ~o)>) ]
+
+rule ApproveSimSwap:
+  [ PendingSwap(U, S), OTPVerified(U, S), MFAOk(U, T), User(U, T, S, D) ]
+  --[ SwapApproved(U, S) ]->
+  [ ApprovedSwap(U, S) ]
+
+rule FederationToExternalTenant:
+  [ ApprovedSwap(U, S), Tenant(From, _), Tenant(To, _), User(U, From, S, D), Fr(~tok) ]
+  --[ FederationIssued(U, From, To) ]->
+  [ Federation(U, From, To, federation_token(U, To, ~tok)),
+    Out(<"federation", U, From, To, federation_token(U, To, ~tok)>) ]
+
+rule RevealApiKey:
+  [ Tenant(T, K) ]
+  --[ ApiKeyCompromised(T) ]->
+  [ Out(<"api_key", T, K>) ]
+
+lemma sim_swap_requires_mfa_and_otp:
+  "All U S #i. SwapApproved(U, S) @i
+   ==> (Ex #j #k. OTPVerifiedEvt(U, S) @j & MFAOkEvt(U, _) @k)"
+
+lemma federation_implies_swap_approved:
+  "All U From To #i. FederationIssued(U, From, To) @i
+   ==> (Ex #j. SwapApproved(U, _) @j)"
+
+end

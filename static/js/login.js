@@ -31,23 +31,18 @@ document.addEventListener("DOMContentLoaded", () => {
         credentials: "include", // Send cookie
       });
 
-      let data;
+      let data = {};
+      const rawText = await res.text();
       try {
-        data = await res.json();
+        data = rawText ? JSON.parse(rawText) : {};
       } catch (jsonErr) {
-        if (!res.ok) {
-          const rawText = await res.text(); 
-          console.error("❌ Server returned non-JSON response:", rawText);
-          throw new Error(rawText || "Internal server error. Please try again later.");
-        } else {
-          console.error("❌ JSON parse error on valid response:", jsonErr);
-          throw new Error("Unexpected response format.");
-        }
+        console.error("❌ JSON parse error:", jsonErr);
+        data = { error: rawText || "Unexpected response format." };
       }
       
       if (!res.ok) {
         throw new Error(
-          data.error || "Login failed. Please check your credentials."
+          data.detail || data.error || "Login failed. Please check your credentials."
         );
       }
 

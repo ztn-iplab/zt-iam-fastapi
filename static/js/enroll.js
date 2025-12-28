@@ -75,7 +75,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const result = await completeRes.json();
 
       if (!completeRes.ok) {
-        throw new Error(result.error || "Registration failed.");
+        throw new Error(result.detail || result.error || "Registration failed.");
       }
 
       //  Display feedback based on transport type

@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
         if (!res.ok) {
           Toastify({
-            text: `❌ ${data.error || 'TOTP reset request failed.'}`,
+            text: `❌ ${data.detail || data.error || 'TOTP reset request failed.'}`,
             duration: 3000,
             gravity: "top",
             position: "right",

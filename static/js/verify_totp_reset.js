@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // ❌ Error
       if (!res.ok) {
         Toastify({
-          text: `❌ ${data.error || 'Verification failed.'}`,
+          text: `❌ ${data.detail || data.error || 'Verification failed.'}`,
           duration: 3000,
           gravity: "top",
           position: "right",
@@ -77,7 +77,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       const beginData = await challengeRes.json();
-      if (!challengeRes.ok) throw new Error(beginData.error || "Failed to begin WebAuthn reset.");
+      if (!challengeRes.ok) {
+        throw new Error(beginData.detail || beginData.error || "Failed to begin WebAuthn reset.");
+      }
 
       const publicKey = {
         ...beginData.public_key,
@@ -108,7 +110,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       const result = await verifyRes.json();
-      if (!verifyRes.ok) throw new Error(result.error || "WebAuthn reset verification failed.");
+      if (!verifyRes.ok) {
+        throw new Error(result.detail || result.error || "WebAuthn reset verification failed.");
+      }
 
       //  Now retry the actual reset
       const retry = await fetch('/api/auth/verify-totp-reset', {

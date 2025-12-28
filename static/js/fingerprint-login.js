@@ -33,9 +33,20 @@ document.addEventListener("DOMContentLoaded", async () => {
       credentials: "include"
     });
 
-    const result = await res.json();
+    const rawResult = await res.text();
+    let result = {};
+    try {
+      result = rawResult ? JSON.parse(rawResult) : {};
+    } catch (err) {
+      result = { error: rawResult || "Invalid WebAuthn response from server." };
+    }
     if (!res.ok || !result.public_key || !result.public_key.challenge) {
-      throw new Error(result.error || "Invalid WebAuthn response from server.");
+      const detail = result.detail || result.error || "Invalid WebAuthn response from server.";
+      if (detail.toLowerCase().includes("no registered webauthn credentials")) {
+        window.location.href = "/api/auth/enroll-biometric";
+        return;
+      }
+      throw new Error(detail);
     }
 
     const publicKey = result.public_key;
@@ -68,10 +79,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       credentials: "include"
     });
 
-    const finalResult = await finalRes.json();
+    const rawFinal = await finalRes.text();
+    let finalResult = {};
+    try {
+      finalResult = rawFinal ? JSON.parse(rawFinal) : {};
+    } catch (err) {
+      finalResult = { error: rawFinal || "Passkey verification failed." };
+    }
 
     if (!finalRes.ok) {
-      throw new Error(finalResult.error || "Passkey verification failed.");
+      const detail = finalResult.detail || finalResult.error || "Passkey verification failed.";
+      throw new Error(detail);
     }
 
     //  Step 5: Show success
@@ -80,7 +98,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     window.location.href = finalResult.dashboard_url || "/";
 
   } catch (err) {
-    let readableReason = "Unknown client-side WebAuthn error.";
+    let readableReason = err && err.message ? err.message : "Unknown client-side WebAuthn error.";
     switch (err.name) {
       case "NotAllowedError":
         readableReason = "User cancelled or did not interact with WebAuthn prompt in time.";

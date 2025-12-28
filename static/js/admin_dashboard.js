@@ -632,7 +632,7 @@ function bindFundAgentForm() {
         .then((data) => {
           document.getElementById("fund-result").innerHTML = data.message
             ? `<p class='text-success'>${data.message}</p>`
-            : `<p class='text-danger'>${data.error || "Funding failed."}</p>`;
+            : `<p class='text-danger'>${data.detail || data.error || "Funding failed."}</p>`;
 
           fetchHqBalance();       
           fetchFloatHistory();
@@ -737,7 +737,7 @@ function bindRegisterTenantForm() {
       })
         .then(async (res) => {
           const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "Request failed");
+          if (!res.ok) throw new Error(data.detail || data.error || "Request failed");
 
           const toastText = data.email_sent
             ? `✅ Tenant registered — API Key sent to ${contactEmail}`
@@ -1040,7 +1040,7 @@ function rotateApiKey(tenantId, tenantName, contactEmail) {
   })
     .then(async (res) => {
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Rotation failed");
+      if (!res.ok) throw new Error(data.detail || data.error || "Rotation failed");
 
       Toastify({
         text: `✅ API Key rotated for ${tenantName}.`,
@@ -1218,7 +1218,7 @@ function reverseTransfer(transactionId) {
         loadAllTransactions();
         loadRealTimeLogs?.();
       } else {
-        alert(data.error || "Failed to reverse transfer.");
+        alert(data.detail || data.error || "Failed to reverse transfer.");
       }
     })
     .catch((err) => {
@@ -1440,8 +1440,8 @@ function viewUser(userId) {
   })
     .then((response) => response.json())
     .then((data) => {
-      if (data.error) {
-        alert(`❌ Error: ${data.error}`);
+      if (data.error || data.detail) {
+        alert(`❌ Error: ${data.detail || data.error}`);
         return;
       }
 
@@ -1524,8 +1524,8 @@ function assignUserRole(userId) {
   })
     .then((response) => response.json())
     .then((data) => {
-      if (data.error) {
-        alert("❌ Error: " + data.error);
+      if (data.error || data.detail) {
+        alert("❌ Error: " + (data.detail || data.error));
       } else {
         alert(`✅ Role updated to ${newRole} successfully!`);
         fetchUsersForAdmin(); // Refresh the list
@@ -1563,8 +1563,8 @@ function suspendUser(userId) {
   })
     .then((response) => response.json())
     .then((data) => {
-      if (data.error) {
-        alert("Error: " + data.error);
+      if (data.error || data.detail) {
+        alert("Error: " + (data.detail || data.error));
       } else {
         alert(data.message); // Correctly display the returned message
         fetchUsersForAdmin(); // Refresh the user list
@@ -1587,8 +1587,8 @@ function verifyUser(userId) {
   })
     .then((response) => response.json())
     .then((data) => {
-      if (data.error) {
-        alert("Error: " + data.error);
+      if (data.error || data.detail) {
+        alert("Error: " + (data.detail || data.error));
       } else {
         alert("User has been verified and activated.");
         fetchUsersForAdmin(); // Refresh the user list
@@ -1617,12 +1617,12 @@ function deleteUser(userId) {
   })
     .then((response) => response.json())
     .then((data) => {
-      if (data.error) {
-        alert("Error: " + data.error);
-      } else {
-        alert("User permanently deleted.");
-        fetchUsersForAdmin(); // Refresh the user list
+      if (data.error || data.detail) {
+        alert("Error: " + (data.detail || data.error));
+        return;
       }
+      alert("User permanently deleted.");
+      fetchUsersForAdmin(); // Refresh the user list
     })
     .catch((error) => console.error("Error deleting user:", error));
 }
@@ -1632,43 +1632,92 @@ function deleteUser(userId) {
 //--------------------------
 
 function editUser(userId) {
-  let firstName = prompt(
-    "Enter new first name (leave blank to keep unchanged):"
-  );
-  let lastName = prompt("Enter new last name (leave blank to keep unchanged):");
-  let email = prompt("Enter new email (leave blank to keep unchanged):");
-  let mobileNumber = prompt(
-    "Enter new mobile number (leave blank to keep unchanged):"
-  );
-
-  const payload = {};
-  if (firstName) payload.first_name = firstName;
-  if (lastName) payload.last_name = lastName;
-  if (email) payload.email = email;
-  if (mobileNumber) payload.mobile_number = mobileNumber;
-
-  if (Object.keys(payload).length === 0) {
-    alert("No changes provided.");
-    return;
-  }
-
   fetch(`/admin/edit_user/${userId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include", // Ensure cookies are included
-    body: JSON.stringify(payload),
+    method: "GET",
+    credentials: "include",
   })
     .then((response) => response.json())
     .then((data) => {
-      if (data.error) {
-        alert("Error updating user: " + data.error);
-      } else {
-        alert(data.message || "User updated successfully!");
-        fetchUsersForAdmin(); // Refresh the list
+      if (data.error || data.detail) {
+        alert("Error loading user: " + (data.detail || data.error));
+        return;
       }
+      openEditUserModal(data);
     })
-    .catch((error) => console.error("Error editing user:", error));
+    .catch((error) => console.error("Error loading user:", error));
 }
+
+function openEditUserModal(user) {
+  const modal = document.getElementById("edit-user-modal");
+  const backdrop = document.getElementById("edit-user-backdrop");
+  if (!modal || !backdrop) return;
+
+  document.getElementById("edit-user-id").value = user.id;
+  document.getElementById("edit-first-name").value = user.first_name || "";
+  document.getElementById("edit-last-name").value = user.last_name || "";
+  document.getElementById("edit-email").value = user.email || "";
+  document.getElementById("edit-mobile-number").value = user.mobile_number || "";
+
+  backdrop.style.display = "block";
+  modal.style.display = "block";
+}
+
+function closeEditUserModal() {
+  const modal = document.getElementById("edit-user-modal");
+  const backdrop = document.getElementById("edit-user-backdrop");
+  if (!modal || !backdrop) return;
+  modal.style.display = "none";
+  backdrop.style.display = "none";
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const closeBtn = document.getElementById("close-edit-user-btn");
+  const form = document.getElementById("edit-user-form");
+  const backdrop = document.getElementById("edit-user-backdrop");
+
+  closeBtn?.addEventListener("click", closeEditUserModal);
+  backdrop?.addEventListener("click", closeEditUserModal);
+
+  form?.addEventListener("submit", (e) => {
+    e.preventDefault();
+
+    const userId = document.getElementById("edit-user-id").value;
+    const firstName = document.getElementById("edit-first-name").value.trim();
+    const lastName = document.getElementById("edit-last-name").value.trim();
+    const email = document.getElementById("edit-email").value.trim();
+    const mobileNumber = document.getElementById("edit-mobile-number").value.trim();
+
+    if (!firstName || !email || !mobileNumber) {
+      alert("First name, email, and mobile number are required.");
+      return;
+    }
+
+    const payload = {
+      first_name: firstName,
+      last_name: lastName,
+      email: email,
+      mobile_number: mobileNumber,
+    };
+
+    fetch(`/admin/edit_user/${userId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.error || data.detail) {
+          alert("Error updating user: " + (data.detail || data.error));
+          return;
+        }
+        alert(data.message || "User updated successfully!");
+        closeEditUserModal();
+        fetchUsersForAdmin();
+      })
+      .catch((error) => console.error("Error editing user:", error));
+  });
+});
 
 // ------------------------------
 // Unlock user account
@@ -1883,8 +1932,8 @@ document.addEventListener("DOMContentLoaded", function () {
     fetch("/admin/generate_sim", { method: "GET", credentials: "include" })
       .then((response) => response.json())
       .then((data) => {
-        if (data.error) {
-          alert("❌ Error fetching SIM details: " + data.error);
+        if (data.error || data.detail) {
+          alert("❌ Error fetching SIM details: " + (data.detail || data.error));
         } else {
           //  Update the input fields with generated values
           document.getElementById("generated-mobile").value =

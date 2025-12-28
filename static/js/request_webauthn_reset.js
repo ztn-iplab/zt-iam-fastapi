@@ -34,7 +34,7 @@ document
         this.reset();
       } else {
         Toastify({
-          text: data.error || "Something went wrong.",
+          text: data.detail || data.error || "Something went wrong.",
           backgroundColor: "red",
           duration: 4000,
         }).showToast();

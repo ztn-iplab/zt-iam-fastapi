@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (!res.ok) {
         Toastify({
-          text: `❌ ${data.error || 'Reset failed.'}`,
+          text: `❌ ${data.detail || data.error || 'Reset failed.'}`,
           duration: 3000,
           gravity: "top",
           position: "right",

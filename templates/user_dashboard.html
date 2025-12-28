@@ -131,7 +131,7 @@
         <!--Settings Access Button -->
         <div class="mt-4">
           <a
-            href="{{ url_for('settings.settings_home') }}#profile-tab"
+            href="{{ url_for('settings_home') }}#profile-tab"
             class="btn btn-secondary"
             >⚙️ Go to Settings</a
           >
@@ -142,5 +142,5 @@
 </div>
 
 {% endblock %} {% block scripts %}
-<script src="{{ url_for('static', filename='js/user_dashboard.js') }}"></script>
+<script src="{{ url_for('static', path='js/user_dashboard.js') }}"></script>
 {% endblock %}

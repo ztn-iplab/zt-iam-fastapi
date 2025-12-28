@@ -1,14 +1,13 @@
-import secrets
-import hashlib
-import pyotp
-from datetime import datetime
-from flask import request
-from utils.location import get_ip_location
-import os
 import base64
-import re
 import hashlib
-from flask import request, has_request_context
+import os
+import re
+import secrets
+from datetime import datetime
+
+import pyotp
+
+from utils.location import get_ip_location
 
 
 def is_strong_password(password):
@@ -47,7 +46,7 @@ def verify_totp(user, otp_input):
 
 
 # Placeholder for fallback verification (SMS/WebAuthn/Device Fingerprint)
-def verify_secondary_method(user):
+def verify_secondary_method(user, request_obj=None):
     """
     For ZTN-based secondary verification fallback. You can enhance this:
     - WebAuthn verification (recommended)
@@ -56,35 +55,54 @@ def verify_secondary_method(user):
     - Admin approval
     """
     try:
-        user_ip = request.remote_addr
-        user_agent = request.user_agent.string
-        location = get_ip_location(user_ip)
+        req = request_obj or _resolve_request()
+        if not req:
+            return False
+        headers = getattr(req, "headers", {}) or {}
+        user_ip = (
+            headers.get("X-Real-IP")
+            or headers.get("X-Forwarded-For")
+            or getattr(req, "remote_addr", None)
+            or (req.client.host if getattr(req, "client", None) else None)
+        )
+        user_agent = headers.get("User-Agent", "")
+        _ = get_ip_location(user_ip or "")
 
-        # TODO: Replace with real secondary auth like WebAuthn or SMS
         if user.trusted_ip == user_ip and user.trusted_device in user_agent:
             return True
-    except:
-        pass
+    except Exception:
+        return False
     return False
 
 def generate_challenge():
     return base64.b64encode(os.urandom(32)).decode("utf-8")
 
-def get_request_fingerprint(tenant_id=None):
+def _resolve_request():
+    try:
+        from flask import has_request_context, request as flask_request
+    except Exception:
+        return None
+
     if not has_request_context():
+        return None
+    return flask_request
+
+
+def get_request_fingerprint(tenant_id=None, request_obj=None):
+    req = request_obj or _resolve_request()
+    if not req:
         return "no-request-context"
 
-    #  Trust headers set by nginx/reverse proxy
+    headers = getattr(req, "headers", {}) or {}
     ip = (
-        request.headers.get("X-Real-IP")
-        or request.headers.get("X-Forwarded-For")
-        or request.remote_addr
+        headers.get("X-Real-IP")
+        or headers.get("X-Forwarded-For")
+        or getattr(req, "remote_addr", None)
+        or (req.client.host if getattr(req, "client", None) else None)
         or "unknown"
     )
 
-    ua = request.headers.get("User-Agent", "unknown").lower().strip()
-
-    #  Include tenant-specific salt
+    ua = headers.get("User-Agent", "unknown").lower().strip()
     tenant_str = str(tenant_id) if tenant_id else "unknown-tenant"
 
     raw_fp = f"{tenant_str}|{ip}|{ua}"

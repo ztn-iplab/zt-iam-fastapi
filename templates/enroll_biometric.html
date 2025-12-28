@@ -19,7 +19,7 @@
   </a>
 </div>
 
-<script src="{{ url_for('static', filename='js/enroll.js') }}"></script>
+<script src="{{ url_for('static', path='js/enroll.js') }}"></script>
 <script>
   PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then((available) => {
     if (!available) {

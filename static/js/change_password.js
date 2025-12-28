@@ -48,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
         if (!res.ok) {
           Toastify({
-            text: `❌ ${data.error || 'Password change failed.'}`,
+            text: `❌ ${data.detail || data.error || 'Password change failed.'}`,
             duration: 3000,
             gravity: "top",
             position: "right",

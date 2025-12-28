@@ -72,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
           alert(result.message);
           passwordForm.reset();
         } else {
-          alert(result.error || 'Failed to change password.');
+          alert(result.detail || result.error || 'Failed to change password.');
         }
       } catch (err) {
         alert('Error changing password.');
@@ -101,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
           alert(result.message);
           window.location.href = result.redirect;
         } else {
-          alert(result.error || 'TOTP reset failed.');
+          alert(result.detail || result.error || 'TOTP reset failed.');
         }
       } catch (err) {
         alert('Network error resetting TOTP.');
@@ -130,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
           alert(result.message);
           window.location.href = result.redirect;
         } else {
-          alert(result.error || 'WebAuthn reset failed.');
+          alert(result.detail || result.error || 'WebAuthn reset failed.');
         }
       } catch (err) {
         alert('Network error resetting WebAuthn.');
@@ -155,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (res.ok) {
           alert(data.message || 'Account deletion requested.');
         } else {
-          alert(data.error || 'Failed to process deletion request.');
+          alert(data.detail || data.error || 'Failed to process deletion request.');
         }
       } catch (err) {
         alert('Error processing deletion.');

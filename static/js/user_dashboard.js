@@ -435,7 +435,7 @@ document.addEventListener("DOMContentLoaded", function () {
         .then(async (response) => {
           const result = await response.json();
           if (!response.ok)
-            throw new Error(result.error || "Transaction failed");
+            throw new Error(result.detail || result.error || "Transaction failed");
 
           Toastify({
             text: result.message || "✅ Transaction successful.",

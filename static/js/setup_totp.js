@@ -34,7 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (!res.ok) {
-        throw new Error(data.error || "TOTP setup failed.");
+        throw new Error(data.detail || data.error || "TOTP setup failed.");
       }
 
       if (data.qr_code) {
@@ -98,7 +98,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 1500);
   
       } else {
-        throw new Error(data.error || "TOTP confirmation failed.");
+        throw new Error(data.detail || data.error || "TOTP confirmation failed.");
       }
   
     } catch (err) {

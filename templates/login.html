@@ -9,7 +9,7 @@ body_class %}auth-page{% endblock %} {% block body %}
   <h1>Login</h1>
 
   <!-- Display a success message if registration was successful -->
-  {% if request.args.get('registered') == '1' %}
+  {% if request.query_params.get('registered') == '1' %}
   <p class="auth-note" style="color: #4caf50">
     Registration successful! Your wallet has been created. Please log in.
   </p>
@@ -22,7 +22,7 @@ body_class %}auth-page{% endblock %} {% block body %}
     id="login-form"
     class="auth-form"
     method="POST"
-    action="{{ url_for('auth.login_route') }}"
+    action="{{ url_for('login_route') }}"
   >
     <input
       type="text"
@@ -45,19 +45,19 @@ body_class %}auth-page{% endblock %} {% block body %}
 
   <!-- Add "Forgot password?" link here -->
   <div class="auth-note" style="margin-top: -10px; margin-bottom: 15px">
-    <a href="{{ url_for('auth.forgot_password_form') }}" class="auth-link"
+    <a href="{{ url_for('forgot_password_form') }}" class="auth-link"
       >Forgot password?</a
     >
   </div>
 
   <div class="auth-note">
     Don’t have an account?
-    <a href="{{ url_for('auth.register_form') }}" class="auth-link"
+    <a href="{{ url_for('register_form') }}" class="auth-link"
       >Register here</a
     >
   </div>
 </div>
 
 <!-- Use the AJAX-based login.js -->
-<script src="{{ url_for('static', filename='js/login.js') }}"></script>
+<script src="{{ url_for('static', path='js/login.js') }}"></script>
 {% endblock %}

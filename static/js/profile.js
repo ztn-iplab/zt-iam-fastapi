@@ -1,7 +1,7 @@
 console.log("Profile JS loaded");
 
 // Fetch profile data from the API
-fetch("/api/user/profile", {
+fetch("/user/profile", {
   method: "GET",
   headers: {
     "Content-Type": "application/json",

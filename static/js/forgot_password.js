@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    const identifier = form.identifier.value;
+    const identifier = form.identifier.value.trim();
 
     try {
       const res = await fetch('/api/auth/forgot-password', {
@@ -13,7 +13,13 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ identifier })
       });
 
-      const data = await res.json();
+      const raw = await res.text();
+      let data = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch (err) {
+        data = { error: raw || "Something went wrong." };
+      }
 
       if (res.ok) {
         Toastify({
@@ -28,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
         form.reset();
       } else {
         Toastify({
-          text: data.error || "Something went wrong.",
+          text: data.detail || data.error || "Something went wrong.",
           duration: 5000,
           gravity: "top",
           position: "center",

@@ -148,7 +148,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (!res.ok) {
           // ❌ Server returned a 400/403/404
-          alert(data.error || "❌ Something went wrong.");
+          alert(data.detail || data.error || "❌ Something went wrong.");
           return;
         }
 
@@ -176,7 +176,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const data = await res.json();
 
         if (!res.ok) {
-          alert(data.error || "❌ Something went wrong.");
+          alert(data.detail || data.error || "❌ Something went wrong.");
           return;
         }
 
@@ -316,7 +316,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Transaction failed");
+        throw new Error(data.detail || data.error || "Transaction failed");
       }
 
       Toastify({
@@ -445,7 +445,7 @@ document.addEventListener("DOMContentLoaded", function () {
       .then((response) => response.json())
       .then((data) => {
         if (!data.success) {
-          alert(`❌ Error: ${data.error}`);
+          alert(`❌ Error: ${data.detail || data.error}`);
         } else {
           document.getElementById("generated-mobile").value =
             data.mobile_number;
@@ -500,7 +500,7 @@ document.addEventListener("DOMContentLoaded", function () {
       .then((response) => response.json())
       .then((data) => {
         if (!data.success) {
-          alert(`❌ Error: ${data.error}`);
+          alert(`❌ Error: ${data.detail || data.error}`);
         } else {
           alert(`✅ Success: ${data.message}`);
 
@@ -642,7 +642,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
         fetchSimRegistrationHistory(); //  Refresh list
       } else {
         Toastify({
-          text: data.error || "❌ Something went wrong.",
+          text: data.detail || data.error || "❌ Something went wrong.",
           duration: 3000,
           gravity: "top",
           position: "right",
@@ -853,8 +853,8 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
     })
       .then((response) => response.json())
       .then((data) => {
-        if (data.error) {
-          alert(`❌ Error: ${data.error}`);
+        if (data.error || data.detail) {
+          alert(`❌ Error: ${data.detail || data.error}`);
           return;
         }
 
@@ -912,8 +912,8 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
     })
       .then((response) => response.json())
       .then((data) => {
-        if (data.error) {
-          alert(`❌ Error: ${data.error}`);
+        if (data.error || data.detail) {
+          alert(`❌ Error: ${data.detail || data.error}`);
         } else {
           alert(`✅ Success: ${data.message}`);
           fetchSimRegistrationHistory(); //  Refresh the SIM list
@@ -938,7 +938,7 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
           alert(data.message);
           fetchSimRegistrationHistory(); // reload list
         } else {
-          alert(data.error || "An error occurred");
+          alert(data.detail || data.error || "An error occurred");
         }
       })
       .catch(err => {
@@ -959,8 +959,8 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
     })
       .then((response) => response.json())
       .then((data) => {
-        if (data.error) {
-          alert(`❌ Error: ${data.error}`);
+        if (data.error || data.detail) {
+          alert(`❌ Error: ${data.detail || data.error}`);
         } else {
           alert(`⚠️ Success: ${data.message}`);
           fetchSimRegistrationHistory(); //  Refresh the SIM list
@@ -986,8 +986,8 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
     })
       .then((response) => response.json())
       .then((data) => {
-        if (data.error) {
-          alert(`❌ Error: ${data.error}`);
+        if (data.error || data.detail) {
+          alert(`❌ Error: ${data.detail || data.error}`);
         } else {
           alert(`🔄 Success: ${data.message}`);
           fetchSimRegistrationHistory(); //  Refresh the SIM list
@@ -1013,8 +1013,8 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
     })
       .then((response) => response.json())
       .then((data) => {
-        if (data.error) {
-          alert(`❌ Error: ${data.error}`);
+        if (data.error || data.detail) {
+          alert(`❌ Error: ${data.detail || data.error}`);
         } else {
           alert(`🗑️ Success: ${data.message}`);
           fetchSimRegistrationHistory(); //  Refresh the SIM list
@@ -1033,8 +1033,8 @@ document.getElementById("swap-sim-form").addEventListener("submit", function (e)
       .then((response) => response.json())
       .then((data) => {
 
-        if (data.error) {
-          alert(`❌ Error: ${data.error}`);
+        if (data.error || data.detail) {
+          alert(`❌ Error: ${data.detail || data.error}`);
           return;
         }
 

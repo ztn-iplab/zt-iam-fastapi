@@ -1,10 +1,10 @@
 # utils/logging_helpers.py
 
-from models.models import db, RealTimeLog, UserAuthLog
+from app.models import RealTimeLog, UserAuthLog
 
-def log_realtime_event(user, action, ip_address, device_info, location, risk_alert=False):
+def log_realtime_event(db, user, action, ip_address, device_info, location, risk_alert=False):
     """Log an action into RealTimeLog with automatic tenant_id."""
-    db.session.add(RealTimeLog(
+    db.add(RealTimeLog(
         user_id=user.id if user else None,
         tenant_id=user.tenant_id if user else 1,  # fallback to 1 if user is missing (like admin ops)
         action=action,
@@ -14,9 +14,9 @@ def log_realtime_event(user, action, ip_address, device_info, location, risk_ale
         risk_alert=risk_alert
     ))
 
-def log_auth_event(user, method, status, ip_address, device_info, location, failed_attempts=0):
+def log_auth_event(db, user, method, status, ip_address, device_info, location, failed_attempts=0):
     """Log an auth attempt into UserAuthLog with automatic tenant_id."""
-    db.session.add(UserAuthLog(
+    db.add(UserAuthLog(
         user_id=user.id,
         tenant_id=user.tenant_id,
         auth_method=method,

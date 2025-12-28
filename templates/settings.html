@@ -25,13 +25,13 @@ block dashboard_content %}
       <h3 class="modal-section-title">🔐 Security</h3>
       <ul class="modal-links">
         <li>
-          <a href="{{ url_for('settings.change_password') }}"
+          <a href="{{ url_for('change_password') }}"
             >Change Password</a
           >
         </li>
-        <li><a href="{{ url_for('settings.reset_totp') }}">Reset TOTP</a></li>
+        <li><a href="{{ url_for('reset_totp') }}">Reset TOTP</a></li>
         <li>
-          <a href="{{ url_for('settings.reset_webauthn') }}">Reset WebAuthn</a>
+          <a href="{{ url_for('reset_webauthn') }}">Reset WebAuthn</a>
         </li>
       </ul>
     </section>
@@ -50,7 +50,7 @@ block dashboard_content %}
 </div>
 
 {% endblock %} {% block scripts %}
-<script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+<script src="{{ url_for('static', path='js/settings.js') }}"></script>
 <script>
   // Close modal
   document.addEventListener("DOMContentLoaded", () => {

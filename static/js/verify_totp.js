@@ -28,10 +28,16 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({ totp: code }),
       });
 
-      const data = await res.json();
+      const raw = await res.text();
+      let data = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch (err) {
+        data = { error: raw || "TOTP verification failed." };
+      }
 
       if (!res.ok) {
-        throw new Error(data.error || "TOTP verification failed.");
+        throw new Error(data.detail || data.error || "TOTP verification failed.");
       }
       
       if (data.require_webauthn && data.user_id) {

@@ -39,9 +39,15 @@ document
       credentials: "include",
     })
       .then(async (res) => {
-        const data = await res.json();
+        const raw = await res.text();
+        let data = {};
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch (err) {
+          data = { error: raw || "Registration failed" };
+        }
         if (!res.ok) {
-          throw new Error(data.error || "Registration failed");
+          throw new Error(data.detail || data.error || "Registration failed");
         }
         return data;
       })

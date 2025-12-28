@@ -24,9 +24,8 @@ COPY . .
 # Optional: If you want to use gunicorn for prod
 RUN pip install gunicorn
 
-# Expose Flask port
-EXPOSE 5000
+# Expose API port
+EXPOSE 8000
 
 # Default command: can be overridden in docker-compose
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "main:app"]
-
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8000", "fastapi_app:app"]

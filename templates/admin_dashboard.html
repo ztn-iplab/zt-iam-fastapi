@@ -674,6 +674,49 @@
     </section>
   </div>
 </section>
+
+<!-- Edit User Modal -->
+<div id="edit-user-backdrop" class="modal-backdrop" style="display: none"></div>
+<div id="edit-user-modal" class="modal-panel" style="display: none">
+  <div class="modal-header">
+    <h2 class="modal-title">✏️ Edit User</h2>
+    <button class="modal-close" id="close-edit-user-btn">&times;</button>
+  </div>
+
+  <div class="modal-body">
+    <form id="edit-user-form" class="auth-form">
+      <input type="hidden" id="edit-user-id" />
+      <input
+        type="text"
+        id="edit-first-name"
+        placeholder="First Name"
+        class="input-field"
+        required
+      />
+      <input
+        type="text"
+        id="edit-last-name"
+        placeholder="Last Name (optional)"
+        class="input-field"
+      />
+      <input
+        type="email"
+        id="edit-email"
+        placeholder="Email"
+        class="input-field"
+        required
+      />
+      <input
+        type="text"
+        id="edit-mobile-number"
+        placeholder="Mobile Number"
+        class="input-field"
+        required
+      />
+      <button type="submit" class="btn btn-primary">Save Changes</button>
+    </form>
+  </div>
+</div>
 {% endblock %} {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
@@ -692,6 +735,6 @@
     }
   });
 </script>
-<script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
+<script src="{{ url_for('static', path='js/admin_dashboard.js') }}"></script>
 <!--  -->
 {% endblock %}

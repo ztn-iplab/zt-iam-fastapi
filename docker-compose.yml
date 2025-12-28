@@ -45,6 +45,16 @@ services:
     networks:
       - ztn_net
 
+  mailpit:
+    image: docker.io/axllent/mailpit:latest
+    container_name: ztn_mailpit
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    restart: unless-stopped
+    networks:
+      - ztn_net
+
 volumes:
   pgdata:
 

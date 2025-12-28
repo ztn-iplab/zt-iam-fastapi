@@ -3,7 +3,7 @@
 <!-- Dashboard-specific CSS -->
 <link
   rel="stylesheet"
-  href="{{ url_for('static', filename='css/dashboard.css') }}"
+  href="{{ url_for('static', path='css/dashboard.css') }}"
 />
 {% endblock %} {% block body %}
 <div class="dashboard-layout">
@@ -20,7 +20,7 @@
         <li><a href="#" id="show-profile-link">Profile</a></li>
         <li>
           <a
-            href="{{ url_for('settings.settings_home') }}"
+            href="{{ url_for('settings_home') }}"
             id="show-settings-link"
             >Settings</a
           >

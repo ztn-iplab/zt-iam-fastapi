@@ -40,7 +40,7 @@ document
         }, 1500);
       } else {
         Toastify({
-          text: result.error || "Verification failed.",
+          text: result.detail || result.error || "Verification failed.",
           backgroundColor: "#e53935",
           duration: 4000,
         }).showToast();

@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 import json
-from models.models import UserAuthLog, TenantTrustPolicyFile
+from app.models import UserAuthLog, TenantTrustPolicyFile
 
 # -------------------------------
 # BaseTrustEngine – Default Rules

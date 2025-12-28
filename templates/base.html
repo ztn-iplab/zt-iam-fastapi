@@ -5,7 +5,7 @@
     <title>{% block title %}ZTN Simulation{% endblock %}</title>
 
     <!--  Fav Icon -->
-    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" />
+    <link rel="icon" href="{{ url_for('static', path='favicon.ico') }}" />
 
     <!--  Bootstrap 5 CSS -->
     <link
@@ -34,7 +34,7 @@
     <!--  Your custom styles (always last to override others) -->
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/styles.css') }}"
+      href="{{ url_for('static', path='css/styles.css') }}"
     />
   </head>
 
@@ -56,10 +56,10 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
     <!-- Refresh Token -->
-    <!-- <script src="{{ url_for('static', filename='js/token_refresh.js') }}"></script> -->
+    <!-- <script src="{{ url_for('static', path='js/token_refresh.js') }}"></script> -->
 
     <!--  Inactivity Timeout Logic (optional) -->
-    <!-- <script src="{{ url_for('static', filename='js/inactivity_logout.js') }}"></script> -->
+    <!-- <script src="{{ url_for('static', path='js/inactivity_logout.js') }}"></script> -->
 
     <!--  Child templates will inject here -->
     {% block extra_scripts %}{% endblock %}

@@ -30,7 +30,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }),
       });
 
-      const data = await res.json();
+      const raw = await res.text();
+      let data = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch (err) {
+        data = { error: raw || "Password reset failed." };
+      }
 
       if (res.status === 202 && data.require_webauthn) {
         showToast("🔐 WebAuthn verification required before reset.", "info");
@@ -43,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (!res.ok) {
-        showToast(`❌ ${data.error || 'Password reset failed.'}`, "error");
+        showToast(`❌ ${data.detail || data.error || 'Password reset failed.'}`, "error");
         return;
       }
 
@@ -68,8 +74,14 @@ document.addEventListener('DOMContentLoaded', () => {
         credentials: 'include'
       });
 
-      const beginData = await beginRes.json();
-      if (!beginRes.ok) throw new Error(beginData.error);
+      const beginRaw = await beginRes.text();
+      let beginData = {};
+      try {
+        beginData = beginRaw ? JSON.parse(beginRaw) : {};
+      } catch (err) {
+        beginData = { error: beginRaw || "WebAuthn begin failed." };
+      }
+      if (!beginRes.ok) throw new Error(beginData.detail || beginData.error);
 
       const publicKey = {
         ...beginData.public_key,
@@ -99,8 +111,14 @@ document.addEventListener('DOMContentLoaded', () => {
         credentials: 'include'
       });
 
-      const completeData = await completeRes.json();
-      if (!completeRes.ok) throw new Error(completeData.error);
+      const completeRaw = await completeRes.text();
+      let completeData = {};
+      try {
+        completeData = completeRaw ? JSON.parse(completeRaw) : {};
+      } catch (err) {
+        completeData = { error: completeRaw || "WebAuthn verification failed." };
+      }
+      if (!completeRes.ok) throw new Error(completeData.detail || completeData.error);
 
       return await retryPasswordReset(token, newPassword, confirmPassword);
 
@@ -122,8 +140,14 @@ document.addEventListener('DOMContentLoaded', () => {
         credentials: 'include'
       });
 
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "TOTP verification failed.");
+      const rawResult = await res.text();
+      let result = {};
+      try {
+        result = rawResult ? JSON.parse(rawResult) : {};
+      } catch (err) {
+        result = { error: rawResult || "TOTP verification failed." };
+      }
+      if (!res.ok) throw new Error(result.detail || result.error || "TOTP verification failed.");
 
       return await retryPasswordReset(token, newPassword, confirmPassword);
 
@@ -144,8 +168,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }),
     });
 
-    const retryData = await retryRes.json();
-    if (!retryRes.ok) throw new Error(retryData.error || "Final password reset failed.");
+    const retryRaw = await retryRes.text();
+    let retryData = {};
+    try {
+      retryData = retryRaw ? JSON.parse(retryRaw) : {};
+    } catch (err) {
+      retryData = { error: retryRaw || "Final password reset failed." };
+    }
+    if (!retryRes.ok) throw new Error(retryData.detail || retryData.error || "Final password reset failed.");
 
     showToast(retryData.message || "✅ Password reset complete.", "success");
 
@@ -184,17 +214,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showToast(message, type = "info") {
+    const bg =
+      type === "success" ? "#43a047" : type === "error" ? "#e53935" : "#2962ff";
     Toastify({
       text: message,
       duration: 3000,
       gravity: "top",
       position: "right",
-      backgroundColor:
-        type === "success"
-          ? "#43a047"
-          : type === "error"
-          ? "#e53935"
-          : "#2962ff"
+      style: { background: bg },
     }).showToast();
   }
 });

@@ -1,14 +1,14 @@
 # ZTN_SIM
 # ZTN_SIM: Zero-Trust Identity & Access Management as a Service (IAMaaS)
 
-ZTN_SIM is a Flask-based microservice for managing SIM card registration, user identities, and mobile-money operations with a Zero Trust approach. 
+ZTN_SIM is a FastAPI-based microservice (wrapping the existing Flask app) for managing SIM card registration, user identities, and mobile-money operations with a Zero Trust approach. 
 The service integrates JWT authentication, role-based access control, and logging, making it suitable for secure environments.
-ZTN_SIM is a Flask-based, multi-tenant IAMaaS platform that originated as a telecom simulation lab to harden the SIM swap process before using a mobile number as a primary digital identity. The environment emulates carrier-grade flows (SIM lifecycle, KYC, wallet, and OTP) to enforce Zero Trust controls around who can perform SIM swaps and when. After securing the telecom layer, the same trusted identity can be federated into adjacent domains—government agencies, hospitals, banks, and other enterprises—without weakening the original safeguards.
+ZTN_SIM originated as a Flask-based, multi-tenant IAMaaS platform that hardened the SIM swap process before using a mobile number as a primary digital identity. The environment emulates carrier-grade flows (SIM lifecycle, KYC, wallet, and OTP) to enforce Zero Trust controls around who can perform SIM swaps and when. After securing the telecom layer, the same trusted identity can be federated into adjacent domains—government agencies, hospitals, banks, and other enterprises—without weakening the original safeguards.
 
 ## Features
 The stack delivers tenant-isolated IAM with JWT-protected APIs, role-aware dashboards, WebAuthn/TOTP MFA, and per-tenant API key limits. Tenants authenticate via API keys, while users authenticate with tenant-scoped credentials, roles, and MFA backed by a device/IP-aware trust engine.
 
-- **Flask application with modular blueprints** for authentication, wallets, transactions, roles, admin tasks, and WebAuthn endpoints.
+- **FastAPI entrypoint that mounts the Flask blueprints** for authentication, wallets, transactions, roles, admin tasks, and WebAuthn endpoints.
 - **JWT-based security with access** and refresh tokens stored in cookies for session continuity.
 - **Role-based access control (RBAC)** allowing per-tenant user roles and access levels.
 - **SIM card management** including registration and swap operations.
@@ -20,7 +20,7 @@ The stack delivers tenant-isolated IAM with JWT-protected APIs, role-aware dashb
 - **Identity & SIM lifecycle**: User records link to SIM cards, wallets, transactions, OTP codes, and password history for full auditability.
 - **Zero Trust controls**: Device/IP-aware trust engine, MFA enforcement per tenant, WebAuthn credentials, and detailed real-time logs.
 - **Abuse protection**: API key rate limiting and automatic suspension backed by per-tenant score decay and request/error counters.
-- **Deployment options**: Local Flask server or Docker Compose stack with Postgres and NGINX TLS termination.
+- **Deployment options**: Local FastAPI server or Docker Compose stack with Postgres and NGINX TLS termination.
 
 ## Project Structure
 ## Telecom Simulation & SIM Swap Defense
@@ -32,22 +32,24 @@ The stack delivers tenant-isolated IAM with JWT-protected APIs, role-aware dashb
 ## Repository Layout
 ```
 ZTN_SIM/
-├── main.py               # Application entry point
+├── fastapi_app.py        # FastAPI ASGI entrypoint (mounts Flask app)
+├── main.py               # Flask app setup (mounted by FastAPI)
 ├── config.py             # Configuration and environment variables
 ├── routes/               # Blueprint route handlers
 ├── models/               # SQLAlchemy models
 ├── utils/                # Helper utilities (logging, security, etc.)
 ├── requirements.txt      # Python dependencies
 ├── docker-compose.yml    # Compose file for app, DB, and NGINX
-└── Dockerfile            # Image definition for the Flask app
-├── main.py                 # Flask application factory and entrypoint
+└── Dockerfile            # Image definition for the FastAPI app
+├── fastapi_app.py          # FastAPI ASGI entrypoint
+├── main.py                 # Flask app setup (mounted by FastAPI)
 ├── config.py               # Runtime configuration and environment bindings
 ├── routes/                 # Blueprints (auth, IAM API, roles, wallets, etc.)
 ├── models/                 # SQLAlchemy models, including tenant/RBAC entities
 ├── utils/                  # Security helpers (API keys, MFA, trust engine)
 ├── migrations/             # Alembic migrations for database schema
 ├── docker-compose.yml      # Postgres, app, and NGINX services
-├── Dockerfile              # Production image for the Flask app
+├── Dockerfile              # Production image for the FastAPI app
 ├── templates/ static/      # Dashboard views and assets
 └── scripts: up.sh | stop.sh | pod.sh | gunicorn.sh
 ```
@@ -112,9 +114,9 @@ Additional optional variables can be injected through `.env` and are read by `co
 6. Run the development server:
 5. **Start the server** (development):
    ```bash
-   python main.py
+   uvicorn fastapi_app:app --host 0.0.0.0 --port 8000
    ```
-   The app serves HTTP on port 5000 by default.
+   The app serves HTTP on port 8000 by default.
 
 ### Running with Docker
 

@@ -75,4 +75,4 @@ uvicorn fastapi_app:app --host 0.0.0.0 --port 8000
 - Set `JWT_COOKIE_SECURE=True` in production.
 
 ## License
-See `LICENSE`.
+See [`LICENSE`](LICENSE).

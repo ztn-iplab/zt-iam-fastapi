@@ -48,7 +48,7 @@ class ForwardedProtoMiddleware:
 
 
 app = FastAPI(
-    title="ZTN_SIM",
+    title="ZT-IAM",
     description="FastAPI entrypoint for the IAMaaS service.",
     docs_url="/docs",
     redoc_url="/redoc",

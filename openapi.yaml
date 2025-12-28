@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: ZTN_SIM IAMaaS API
+  title: ZT-IAM API
   version: "1.0.0"
   description: |
     Versioned REST contract for IAMaaS tenants and core platform operations. The schema documents

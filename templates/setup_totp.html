@@ -12,16 +12,17 @@ body %}
     ></p>
 
     <p class="totp-instructions">
-      Scan this QR Code using <strong>Google Authenticator</strong> or
-      <strong>Microsoft Authenticator</strong>.
+      Scan this QR Code using the <strong>ZT-Authenticator</strong> app to
+      enroll your device and set up TOTP.
     </p>
 
     <div id="totp-setup-container" class="qr-container">
       <div class="qr-placeholder">Loading QR Code...</div>
     </div>
 
-    <p class="manual-label">If you can't scan the QR, use this manual key:</p>
+    <p class="manual-label">If you can't scan the QR, use this enrollment link:</p>
     <code id="manual-key" class="manual-key">Loading...</code>
+    <button id="copy-manual-key" class="btn-copy" type="button">Copy code</button>
 
     <button
       id="continue-btn"
@@ -116,14 +117,28 @@ body %}
   }
 
   .manual-key {
-    display: inline-block;
+    display: block;
     font-size: 1rem;
     background: #f3f3f3;
-    padding: 5px 10px;
+    padding: 8px 10px;
     border-radius: 6px;
     margin-top: 0.5rem;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     color: #2c3e50;
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .btn-copy {
+    margin-top: 0.6rem;
+    background: transparent;
+    border: 1px solid #556;
+    color: #cfd8dc;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    cursor: pointer;
   }
 
   .btn-primary {

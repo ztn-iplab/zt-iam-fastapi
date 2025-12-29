@@ -113,9 +113,19 @@
       method: "GET",
       credentials: "include",
     })
-      .then((res) => res.json())
-      .then((data) => {
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.detail || data.error || "Failed to load MFA preference.");
+        }
         if (data.preferred_mfa) select.value = data.preferred_mfa;
+      })
+      .catch((err) => {
+        Toastify({
+          text: `❌ ${err.message || "Could not load preference."}`,
+          duration: 3000,
+          backgroundColor: "#dc3545",
+        }).showToast();
       });
 
     saveBtn?.addEventListener("click", () => {
@@ -126,8 +136,12 @@
         credentials: "include",
         body: JSON.stringify({ preferred_mfa: selected }),
       })
-        .then((res) => res.json())
-        .then(() => {
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.detail || data.error || "Could not save preference.");
+          }
+          if (data.preferred_mfa) select.value = data.preferred_mfa;
           Toastify({
             text: "✅ MFA preference saved.",
             duration: 3000,
@@ -135,9 +149,9 @@
           }).showToast();
           dropdown.classList.add("d-none");
         })
-        .catch(() => {
+        .catch((err) => {
           Toastify({
-            text: "❌ Could not save preference.",
+            text: `❌ ${err.message || "Could not save preference."}`,
             duration: 3000,
             backgroundColor: "#dc3545",
           }).showToast();

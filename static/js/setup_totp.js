@@ -1,6 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   const container = document.getElementById("totp-setup-container");
   const manualKey = document.getElementById("manual-key");
+  const copyBtn = document.getElementById("copy-manual-key");
   const continueBtn = document.getElementById("continue-btn");
   const messageContainer = document.getElementById("totp-reason-message");
 
@@ -43,12 +44,14 @@ document.addEventListener("DOMContentLoaded", () => {
         img.alt = "TOTP QR Code";
         container.innerHTML = "";
         container.appendChild(img);
-        manualKey.innerText = data.manual_key;
+        manualKey.dataset.raw = data.manual_key || "";
+        manualKey.innerText = data.manual_key || "-";
         continueBtn.style.display = "inline-block";
       } else {
         container.innerHTML = `<p>${
           data.message || "TOTP already configured."
         }</p>`;
+        manualKey.dataset.raw = "";
         manualKey.innerText = "-";
         continueBtn.style.display = "inline-block";
       }
@@ -58,12 +61,30 @@ document.addEventListener("DOMContentLoaded", () => {
       container.innerHTML = `<p style="color: red;">${
         err.message || "Something went wrong"
       }</p>`;
+      manualKey.dataset.raw = "";
       manualKey.innerText = "-";
     });
 
+  copyBtn?.addEventListener("click", async () => {
+    const raw = manualKey?.dataset?.raw || "";
+    if (!raw) return;
+    try {
+      await navigator.clipboard.writeText(raw);
+      copyBtn.textContent = "Copied";
+      setTimeout(() => {
+        copyBtn.textContent = "Copy code";
+      }, 1500);
+    } catch (_) {
+      copyBtn.textContent = "Copy failed";
+      setTimeout(() => {
+        copyBtn.textContent = "Copy code";
+      }, 1500);
+    }
+  });
+
   // Redirect to verification
   continueBtn.addEventListener("click", async () => {
-    const userConfirmed = confirm("🛡️ Are you sure you have scanned the QR code or registered the manual key?");
+    const userConfirmed = confirm("🛡️ Are you sure you have scanned the QR code or registered the enrollment code?");
   
     if (!userConfirmed) {
       return;

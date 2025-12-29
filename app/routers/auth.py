@@ -1,9 +1,8 @@
-import base64
-import io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
+import os
 import pyotp
-import qrcode
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -23,8 +22,12 @@ from app.jwt import (
     unset_auth_cookies,
 )
 from app.models import (
+    Device,
+    DeviceKey,
+    LoginChallenge,
     OTPCode,
     PasswordHistory,
+    PendingTOTP,
     RealTimeLog,
     SIMCard,
     User,
@@ -46,6 +49,20 @@ from utils.location import get_ip_location
 from utils.logging_helpers import log_auth_event, log_realtime_event
 from utils.security import generate_token, hash_token, is_strong_password
 from utils.totp import verify_totp_code
+from app.zt_authenticator import (
+    build_device_proof_message,
+    build_enrollment_payload,
+    decode_enroll_token,
+    generate_enrollment_qr,
+    generate_nonce,
+    hash_otp,
+    issue_enroll_token,
+    issue_enrollment_code,
+    resolve_api_base_url,
+    resolve_enrollment_code,
+    resolve_rp_id,
+    verify_p256_signature,
+)
 from utils.user_trust_engine import evaluate_trust
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
@@ -58,6 +75,12 @@ class LoginPayload(dict):
 
 class RegisterPayload(dict):
     pass
+
+
+def _webauthn_allowed(request: Request) -> bool:
+    if os.getenv("ZT_DISABLE_WEBAUTHN", "").lower() in {"1", "true", "yes"}:
+        return False
+    return request.url.scheme == "https"
 
 
 @router.get("/register_form", response_class=HTMLResponse)
@@ -233,12 +256,42 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
 
     if not skip_all_mfa:
         if preferred_mfa == "totp":
-            require_totp = bool(user.otp_secret)
+            require_totp = True
         elif preferred_mfa == "webauthn":
             require_webauthn = True
         elif preferred_mfa == "both":
-            require_totp = bool(user.otp_secret)
+            require_totp = True
             require_webauthn = True
+        if require_webauthn and not _webauthn_allowed(request):
+            require_webauthn = False
+            if not require_totp:
+                require_totp = True
+
+    rp_id = resolve_rp_id(request, "zt-iam")
+    device_key = None
+    device_enrolled = False
+    if require_totp:
+        device_key = (
+            db.query(DeviceKey)
+            .join(Device, Device.id == DeviceKey.device_id)
+            .filter(
+                Device.user_id == user.id,
+                Device.tenant_id == user.tenant_id,
+                DeviceKey.rp_id == rp_id,
+            )
+            .order_by(DeviceKey.created_at.desc())
+            .first()
+        )
+        device_enrolled = device_key is not None
+
+    require_totp_setup = False
+    require_totp_reset = False
+    if require_totp:
+        require_totp_setup = user.otp_secret is None or not device_enrolled
+        require_totp_reset = bool(
+            (user.otp_secret and user.otp_email_label != user.email)
+            or (user.otp_secret and not device_enrolled)
+        )
 
     log_auth_event(
         db,
@@ -261,6 +314,8 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
     )
     db.commit()
 
+    has_webauthn_credentials = bool(user.webauthn_credentials)
+
     response = JSONResponse(
         {
             "message": "Login successful",
@@ -268,10 +323,11 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
             "trust_score": trust_score,
             "risk_level": risk_level,
             "require_totp": require_totp,
-            "require_totp_setup": user.otp_secret is None,
-            "require_totp_reset": bool(user.otp_secret and user.otp_email_label != user.email),
+            "require_totp_setup": require_totp_setup,
+            "require_totp_reset": require_totp_reset,
             "require_webauthn": require_webauthn,
             "skip_all_mfa": skip_all_mfa,
+            "has_webauthn_credentials": has_webauthn_credentials,
         }
     )
     set_access_cookie(response, access_token)
@@ -398,30 +454,79 @@ def setup_totp(request: Request, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    reset_required = user.otp_secret is None or (
-        user.otp_secret and user.otp_email_label != user.email
-    )
-    if reset_required:
-        secret = pyotp.random_base32()
-        request.session["pending_totp_secret"] = secret
-        request.session["pending_totp_email"] = user.email
-
-        totp_uri = pyotp.TOTP(secret).provisioning_uri(
-            name=user.email, issuer_name="ZTN_MoMo_SIM"
+    rp_id = resolve_rp_id(request, "zt-iam")
+    device_key = (
+        db.query(DeviceKey)
+        .join(Device, Device.id == DeviceKey.device_id)
+        .filter(
+            Device.user_id == user.id,
+            Device.tenant_id == user.tenant_id,
+            DeviceKey.rp_id == rp_id,
         )
-        qr = qrcode.make(totp_uri)
-        buffer = io.BytesIO()
-        qr.save(buffer, format="PNG")
-        buffer.seek(0)
-        img_base64 = base64.b64encode(buffer.read()).decode()
+        .order_by(DeviceKey.created_at.desc())
+        .first()
+    )
+    device_enrolled = device_key is not None
+    reset_required = (
+        user.otp_secret is None
+        or (user.otp_secret and user.otp_email_label != user.email)
+        or not device_enrolled
+    )
+    if not reset_required:
+        return {"message": "TOTP already configured."}
 
-        return {
-            "qr_code": f"data:image/png;base64,{img_base64}",
-            "manual_key": secret,
-            "reset_required": True,
+    secret = pyotp.random_base32()
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    db.query(PendingTOTP).filter_by(user_id=user.id, tenant_id=user.tenant_id).delete()
+    pending = PendingTOTP(
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        secret=secret,
+        email=user.email,
+        expires_at=expires_at,
+    )
+    db.add(pending)
+    db.commit()
+
+    rp_id = resolve_rp_id(request, "zt-iam")
+    enroll_token = issue_enroll_token(
+        {
+            "pending_id": pending.id,
+            "user_id": user.id,
+            "tenant_id": user.tenant_id,
+            "email": user.email,
+            "rp_id": rp_id,
         }
+    )
+    api_base_url = resolve_api_base_url(request, "/api/auth")
 
-    return {"message": "TOTP already configured."}
+    payload = build_enrollment_payload(
+        email=user.email,
+        rp_id=rp_id,
+        rp_display_name="ZT-IAM",
+        issuer="ZT-IAM",
+        account_name=user.email,
+        device_label="ZT-Authenticator Device",
+        enroll_token=enroll_token,
+        api_base_url=api_base_url,
+    )
+
+    api_base_url = resolve_api_base_url(request, "/api/auth")
+    short_code = issue_enrollment_code(payload)
+    manual_url = f"{api_base_url}/enroll-code/{short_code}"
+    return {
+        "qr_code": generate_enrollment_qr(payload),
+        "manual_key": manual_url,
+        "reset_required": True,
+    }
+
+
+@router.get("/enroll-code/{code}")
+def resolve_enroll_code(code: str):
+    payload = resolve_enrollment_code(code)
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Enrollment code expired or invalid.")
+    return payload
 
 
 @router.post("/setup-totp/confirm")
@@ -434,17 +539,21 @@ def confirm_totp_setup(request: Request, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    secret = request.session.get("pending_totp_secret")
-    email = request.session.get("pending_totp_email")
-    if not secret or not email:
+    if user.otp_secret:
+        return {"message": "TOTP already configured."}
+
+    pending = (
+        db.query(PendingTOTP)
+        .filter_by(user_id=user.id, tenant_id=user.tenant_id)
+        .first()
+    )
+    if not pending or pending.expires_at < datetime.utcnow():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending TOTP enrollment")
 
-    user.otp_secret = secret
-    user.otp_email_label = email
+    user.otp_secret = pending.secret
+    user.otp_email_label = pending.email
+    db.delete(pending)
     db.commit()
-
-    request.session.pop("pending_totp_secret", None)
-    request.session.pop("pending_totp_email", None)
 
     return {"message": "TOTP enrollment confirmed."}
 
@@ -537,31 +646,60 @@ def verify_totp_login(payload: dict, request: Request, db: Session = Depends(get
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired TOTP code")
 
+    rp_id = resolve_rp_id(request, "zt-iam")
+    device_key = (
+        db.query(DeviceKey)
+        .join(Device, Device.id == DeviceKey.device_id)
+        .filter(
+            Device.user_id == user.id,
+            Device.tenant_id == user.tenant_id,
+            DeviceKey.rp_id == rp_id,
+        )
+        .order_by(DeviceKey.created_at.desc())
+        .first()
+    )
+    if not device_key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No ZT-Authenticator device enrolled for this account.",
+        )
+
+    challenge = LoginChallenge(
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        device_id=device_key.device_id,
+        rp_id=rp_id,
+        nonce=generate_nonce(),
+        otp_hash=hash_otp(totp_code),
+        status="pending",
+        expires_at=datetime.utcnow() + timedelta(minutes=2),
+    )
+    db.add(challenge)
     db.add(
         UserAuthLog(
             user_id=user.id,
-            auth_method="totp",
-            auth_status="success",
+            auth_method="totp_device",
+            auth_status="pending",
             ip_address=ip_address,
             location=location,
             device_info=device_info,
             failed_attempts=0,
-            tenant_id=1,
+            tenant_id=user.tenant_id,
         )
     )
     db.add(
         RealTimeLog(
             user_id=user.id,
-            action="TOTP verification success",
+            action="TOTP verified; awaiting device approval",
             ip_address=ip_address,
             device_info=device_info,
             location=location,
             risk_alert=False,
-            tenant_id=1,
+            tenant_id=user.tenant_id,
         )
     )
     db.commit()
-    request.session["mfa_totp_verified"] = True
+    request.session["pending_login_id"] = challenge.id
     access = db.query(UserAccessControl).filter_by(user_id=user.id).first()
     role = db.query(UserRole).get(access.role_id).role_name.lower() if access else "user"
     urls = {
@@ -571,16 +709,317 @@ def verify_totp_login(payload: dict, request: Request, db: Session = Depends(get
     }
 
     preferred_mfa = (user.preferred_mfa or "both").lower()
-    require_webauthn = preferred_mfa in ["webauthn", "both"]
+    require_webauthn = preferred_mfa in ["webauthn", "both"] and _webauthn_allowed(request)
     has_webauthn_credentials = bool(user.webauthn_credentials)
 
     return {
-        "message": "TOTP verified",
+        "message": "TOTP verified. Awaiting device approval.",
         "user_id": user.id,
+        "require_device_approval": True,
+        "login_id": challenge.id,
+        "expires_in": 120,
         "require_webauthn": require_webauthn,
         "has_webauthn_credentials": has_webauthn_credentials,
         "dashboard_url": urls.get(role, "/user/dashboard"),
     }
+
+
+@router.get("/device-approval", response_class=HTMLResponse)
+def device_approval_page(request: Request, login_id: Optional[int] = None):
+    return templates.TemplateResponse(
+        "device_approval.html",
+        {"request": request, "login_id": login_id or ""},
+    )
+
+
+@router.get("/login-status")
+def login_status(
+    request: Request,
+    login_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    pending_id = login_id or request.session.get("pending_login_id")
+    if not pending_id:
+        return {"status": "denied", "reason": "missing_login_id"}
+
+    challenge = db.query(LoginChallenge).get(pending_id)
+    if not challenge:
+        return {"status": "denied", "reason": "not_found"}
+
+    if challenge.expires_at < datetime.utcnow() and challenge.status == "pending":
+        challenge.status = "denied"
+        challenge.denied_reason = "expired"
+        db.commit()
+        return {"status": "denied", "reason": "expired"}
+
+    if challenge.status != "ok":
+        return {"status": challenge.status, "reason": challenge.denied_reason}
+
+    user = db.query(User).get(challenge.user_id)
+    if not user:
+        return {"status": "denied", "reason": "user_not_found"}
+
+    request.session["mfa_totp_verified"] = True
+    request.session.pop("pending_login_id", None)
+
+    access = db.query(UserAccessControl).filter_by(user_id=user.id).first()
+    role = db.query(UserRole).get(access.role_id).role_name.lower() if access else "user"
+    urls = {
+        "admin": "/admin/dashboard",
+        "agent": "/agent/dashboard",
+        "user": "/user/dashboard",
+    }
+
+    preferred_mfa = (user.preferred_mfa or "both").lower()
+    require_webauthn = preferred_mfa in ["webauthn", "both"] and _webauthn_allowed(request)
+    has_webauthn_credentials = bool(user.webauthn_credentials)
+
+    return {
+        "status": "ok",
+        "require_webauthn": require_webauthn,
+        "has_webauthn_credentials": has_webauthn_credentials,
+        "dashboard_url": urls.get(role, "/user/dashboard"),
+    }
+
+
+@router.get("/login/pending")
+def login_pending(user_id: int, request: Request, db: Session = Depends(get_db)):
+    challenge = (
+        db.query(LoginChallenge)
+        .filter_by(user_id=user_id, status="pending")
+        .order_by(LoginChallenge.created_at.desc())
+        .first()
+    )
+    if not challenge:
+        return {"status": "none"}
+
+    if challenge.expires_at < datetime.utcnow():
+        challenge.status = "denied"
+        challenge.denied_reason = "expired"
+        db.commit()
+        return {"status": "none"}
+
+    expires_in = int((challenge.expires_at - challenge.created_at).total_seconds())
+    return {
+        "status": "pending",
+        "login_id": str(challenge.id),
+        "nonce": challenge.nonce,
+        "rp_id": challenge.rp_id,
+        "device_id": str(challenge.device_id),
+        "expires_in": expires_in,
+    }
+
+
+@router.post("/login/approve")
+def login_approve(payload: dict, request: Request, db: Session = Depends(get_db)):
+    login_id = payload.get("login_id")
+    device_id = payload.get("device_id")
+    rp_id = payload.get("rp_id")
+    otp = payload.get("otp")
+    nonce = payload.get("nonce")
+    signature = payload.get("signature")
+
+    if not all([login_id, device_id, rp_id, otp, nonce, signature]):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing required fields")
+
+    challenge = db.query(LoginChallenge).get(login_id)
+    if not challenge or challenge.status != "pending":
+        return {"status": "denied", "reason": "not_pending"}
+
+    if challenge.expires_at < datetime.utcnow():
+        challenge.status = "denied"
+        challenge.denied_reason = "expired"
+        db.commit()
+        return {"status": "denied", "reason": "expired"}
+
+    if challenge.device_id != int(device_id) or challenge.rp_id != rp_id:
+        challenge.status = "denied"
+        challenge.denied_reason = "mismatch"
+        db.commit()
+        return {"status": "denied", "reason": "mismatch"}
+
+    user = db.query(User).get(challenge.user_id)
+    if not user or not user.otp_secret:
+        challenge.status = "denied"
+        challenge.denied_reason = "totp_not_configured"
+        db.commit()
+        return {"status": "denied", "reason": "totp_not_configured"}
+
+    if not verify_totp_code(user.otp_secret, otp, valid_window=1):
+        challenge.status = "denied"
+        challenge.denied_reason = "invalid_otp"
+        db.commit()
+        return {"status": "denied", "reason": "invalid_otp"}
+
+    if challenge.otp_hash:
+        if challenge.otp_hash != hash_otp(otp):
+            challenge.status = "denied"
+            challenge.denied_reason = "otp_mismatch"
+            db.commit()
+            return {"status": "denied", "reason": "otp_mismatch"}
+
+    device_key = (
+        db.query(DeviceKey)
+        .filter_by(device_id=challenge.device_id, rp_id=rp_id, tenant_id=challenge.tenant_id)
+        .first()
+    )
+    if not device_key:
+        challenge.status = "denied"
+        challenge.denied_reason = "device_not_enrolled"
+        db.commit()
+        return {"status": "denied", "reason": "device_not_enrolled"}
+
+    message = build_device_proof_message(nonce, str(device_id), rp_id, otp)
+    if not verify_p256_signature(device_key.public_key, message, signature):
+        challenge.status = "denied"
+        challenge.denied_reason = "invalid_device_proof"
+        db.commit()
+        return {"status": "denied", "reason": "invalid_device_proof"}
+
+    challenge.status = "ok"
+    challenge.approved_at = datetime.utcnow()
+    db.add(
+        UserAuthLog(
+            user_id=user.id,
+            auth_method="totp_device",
+            auth_status="success",
+            ip_address=request.client.host if request.client else None,
+            location=get_ip_location(request.client.host) if request.client else None,
+            device_info="ZT-Authenticator device approval",
+            failed_attempts=0,
+            tenant_id=challenge.tenant_id,
+        )
+    )
+    db.add(
+        RealTimeLog(
+            user_id=user.id,
+            action="ZT-Authenticator device approval success",
+            ip_address=request.client.host if request.client else None,
+            device_info="ZT-Authenticator device approval",
+            location=get_ip_location(request.client.host) if request.client else None,
+            risk_alert=False,
+            tenant_id=challenge.tenant_id,
+        )
+    )
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.post("/login/deny")
+def login_deny(payload: dict, request: Request, db: Session = Depends(get_db)):
+    login_id = payload.get("login_id")
+    reason = payload.get("reason", "user_denied")
+    if not login_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="login_id is required")
+
+    challenge = db.query(LoginChallenge).get(login_id)
+    if not challenge:
+        return {"status": "denied", "reason": "not_found"}
+    if challenge.status != "pending":
+        return {"status": challenge.status, "reason": challenge.denied_reason}
+
+    challenge.status = "denied"
+    challenge.denied_reason = reason
+    db.commit()
+    return {"status": "denied", "reason": reason}
+
+
+@router.post("/enroll")
+def enroll_device(payload: dict, request: Request, db: Session = Depends(get_db)):
+    enroll_token = (payload.get("enroll_token") or "").strip()
+    if not enroll_token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enrollment token is required")
+
+    try:
+        token_data = decode_enroll_token(enroll_token)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid enrollment token")
+
+    email = (payload.get("email") or "").strip().lower()
+    rp_id = (payload.get("rp_id") or "").strip()
+    if not email or not rp_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email and rp_id are required")
+
+    if token_data.get("email", "").lower() != email or token_data.get("rp_id") != rp_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enrollment token mismatch")
+
+    pending = db.query(PendingTOTP).get(token_data.get("pending_id"))
+    if not pending or pending.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enrollment token expired")
+
+    user = db.query(User).get(token_data.get("user_id"))
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    device = Device(
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        device_label=payload.get("device_label") or "ZT-Authenticator Device",
+        platform=payload.get("platform") or "unknown",
+    )
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+
+    device_key = DeviceKey(
+        device_id=device.id,
+        tenant_id=user.tenant_id,
+        rp_id=rp_id,
+        key_type=payload.get("key_type") or "p256",
+        public_key=payload.get("public_key") or "",
+    )
+    if not device_key.public_key:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="public_key is required")
+    db.add(device_key)
+    db.commit()
+
+    return {"user": {"id": str(user.id)}, "device": {"id": str(device.id)}}
+
+
+@router.post("/totp/register")
+def register_totp(payload: dict, request: Request, db: Session = Depends(get_db)):
+    user_id = payload.get("user_id")
+    rp_id = (payload.get("rp_id") or "").strip()
+    issuer = (payload.get("issuer") or "ZT-IAM").strip()
+    account_name = (payload.get("account_name") or "").strip()
+    if not user_id or not rp_id or not account_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing required fields")
+
+    user = db.query(User).get(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    device_key = (
+        db.query(DeviceKey)
+        .join(Device, Device.id == DeviceKey.device_id)
+        .filter(
+            Device.user_id == user.id,
+            Device.tenant_id == user.tenant_id,
+            DeviceKey.rp_id == rp_id,
+        )
+        .first()
+    )
+    if not device_key:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device not enrolled")
+
+    pending = (
+        db.query(PendingTOTP)
+        .filter_by(user_id=user.id, tenant_id=user.tenant_id)
+        .first()
+    )
+    if not pending or pending.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending TOTP enrollment")
+
+    user.otp_secret = pending.secret
+    user.otp_email_label = pending.email
+    db.delete(pending)
+    db.commit()
+
+    otpauth_uri = pyotp.TOTP(user.otp_secret).provisioning_uri(
+        name=account_name,
+        issuer_name=issuer,
+    )
+    return {"otpauth_uri": otpauth_uri, "recovery_codes": []}
 
 
 @router.get("/whoami")
@@ -799,7 +1238,7 @@ def verify_totp_reset(payload: dict, request: Request, db: Session = Depends(get
         request.session["reset_token_checked"] = token
 
     has_webauthn = db.query(WebAuthnCredential).filter_by(user_id=user.id).count() > 0
-    if has_webauthn and not request.session.get("reset_webauthn_verified"):
+    if has_webauthn and _webauthn_allowed(request) and not request.session.get("reset_webauthn_verified"):
         return JSONResponse(
             {
                 "require_webauthn": True,
@@ -994,12 +1433,32 @@ def forgot_password(payload: dict, request: Request, db: Session = Depends(get_d
         )
 
     user = db.query(User).filter(func.lower(User.email) == identifier.lower()).first()
+    sim = None
     if not user:
-        sim = db.query(SIMCard).filter_by(mobile_number=identifier, status="active").first()
-        user = sim.user if sim else None
+        sim = db.query(SIMCard).filter_by(mobile_number=identifier).first()
+        if sim and sim.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This phone number is inactive. Please contact support.",
+            )
+        user = sim.user if sim and sim.status == "active" else None
 
     if not user:
-        return {"message": "Please check your email for a WebAuthn reset link"}
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found for that email or phone number.",
+        )
+
+    if not user.is_active or user.deletion_requested:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is inactive. Please contact support.",
+        )
+    if user.locked_until and user.locked_until > datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail="This account is temporarily locked. Please try again later.",
+        )
 
     token = generate_token()
     expiry = datetime.utcnow() + timedelta(minutes=15)
@@ -1129,7 +1588,7 @@ def reset_password(payload: dict, request: Request, db: Session = Depends(get_db
         request.session["reset_totp_verified"] = False
         request.session["reset_token_checked"] = token
 
-    if has_webauthn and not request.session.get("reset_webauthn_verified"):
+    if has_webauthn and _webauthn_allowed(request) and not request.session.get("reset_webauthn_verified"):
         return JSONResponse(
             {
                 "require_webauthn": True,
@@ -1138,7 +1597,7 @@ def reset_password(payload: dict, request: Request, db: Session = Depends(get_db
             status_code=status.HTTP_202_ACCEPTED,
         )
 
-    if has_totp and not has_webauthn and not request.session.get("reset_totp_verified"):
+    if has_totp and not request.session.get("reset_totp_verified"):
         return JSONResponse(
             {
                 "require_totp": True,

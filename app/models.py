@@ -143,6 +143,60 @@ class PendingTransaction(Base):
     is_used = sa.Column(sa.Boolean, default=False)
 
 
+class Device(Base):
+    __tablename__ = "devices"
+
+    id = sa.Column(sa.Integer, primary_key=True)
+    user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=False)
+    tenant_id = sa.Column(sa.Integer, sa.ForeignKey("tenants.id"), nullable=False)
+    device_label = sa.Column(sa.String(120), nullable=False)
+    platform = sa.Column(sa.String(32), nullable=False)
+    created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
+
+    user = relationship("User", backref="devices")
+    tenant = relationship("Tenant", backref="devices")
+
+
+class DeviceKey(Base):
+    __tablename__ = "device_keys"
+
+    id = sa.Column(sa.Integer, primary_key=True)
+    device_id = sa.Column(sa.Integer, sa.ForeignKey("devices.id"), nullable=False)
+    tenant_id = sa.Column(sa.Integer, sa.ForeignKey("tenants.id"), nullable=False)
+    rp_id = sa.Column(sa.String(255), nullable=False)
+    key_type = sa.Column(sa.String(32), nullable=False)
+    public_key = sa.Column(sa.Text, nullable=False)
+    created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
+
+    device = relationship("Device", backref="device_keys")
+    tenant = relationship("Tenant", backref="device_keys")
+
+    __table_args__ = (
+        sa.UniqueConstraint("device_id", "rp_id", "tenant_id", name="uq_device_rp_tenant"),
+    )
+
+
+class LoginChallenge(Base):
+    __tablename__ = "login_challenges"
+
+    id = sa.Column(sa.Integer, primary_key=True)
+    user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=False)
+    tenant_id = sa.Column(sa.Integer, sa.ForeignKey("tenants.id"), nullable=False)
+    device_id = sa.Column(sa.Integer, sa.ForeignKey("devices.id"), nullable=False)
+    rp_id = sa.Column(sa.String(255), nullable=False)
+    nonce = sa.Column(sa.String(255), nullable=False)
+    otp_hash = sa.Column(sa.String(128), nullable=True)
+    status = sa.Column(sa.String(20), default="pending")
+    denied_reason = sa.Column(sa.String(100), nullable=True)
+    created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
+    expires_at = sa.Column(sa.DateTime, nullable=False)
+    approved_at = sa.Column(sa.DateTime, nullable=True)
+
+    user = relationship("User", backref="login_challenges")
+    device = relationship("Device", backref="login_challenges")
+    tenant = relationship("Tenant", backref="login_challenges")
+
+
 class UserRole(Base):
     __tablename__ = "user_roles"
 

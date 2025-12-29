@@ -10,6 +10,20 @@ ZT-IAM is a FastAPI-based Zero Trust IAM platform with tenant-aware RBAC, MFA (T
 - **Admin, agent, and user dashboards** with role-enforced actions.
 - **JWT auth** using secure cookies and refresh tokens.
 
+## ZT-Authenticator Enrollment
+ZT-IAM issues a **ZT-Authenticator enrollment QR** instead of standard otpauth URIs.
+
+1) Log in and open **Set Up TOTP**.
+2) Scan the QR with the ZT-Authenticator app (device-bound enrollment).
+3) Approve logins in ZT-Authenticator when prompted.
+
+If QR scan is not possible, the setup page shows an **enrollment link** you can paste into the app.
+
+ZT-Authenticator API base URL (for QR/link payloads):
+```
+https://<your-domain>/api/auth
+```
+
 ## Repository Layout
 ```
 ZT-IAM/
@@ -40,6 +54,13 @@ MAIL_USE_TLS=False
 MAIL_DEFAULT_SENDER=dev@example.com
 ADMIN_ALERT_EMAIL=dev@example.com
 PUBLIC_BASE_URL=https://localhost.localdomain.com
+
+# ZT-Authenticator (enrollment payload routing)
+ZT_AUTH_API_BASE_URL=http://192.168.60.2/api/auth
+ZT_AUTH_IAM_API_BASE_URL=http://192.168.60.2/api/v1/auth
+
+# Optional: disable WebAuthn in non-HTTPS dev flows
+ZT_DISABLE_WEBAUTHN=true
 ```
 
 ## Running with Docker/Podman
@@ -67,6 +88,30 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 uvicorn fastapi_app:app --host 0.0.0.0 --port 8000
+```
+
+## ZT-IAM Research Scripts
+Use these when running experiments against the `/api/auth` flow.
+
+```bash
+python scripts/collect_iam_metrics.py \
+  --base-url https://localhost.localdomain.com \
+  --identifier admin@example.com \
+  --password 'ChangeMe123!' \
+  --insecure
+```
+
+```bash
+python scripts/collect_iam_frr_sweep.py \
+  --base-url https://localhost.localdomain.com \
+  --identifier admin@example.com \
+  --password 'ChangeMe123!' \
+  --insecure
+```
+
+Analysis:
+```bash
+python scripts/analyze_iam_metrics.py
 ```
 
 ## Security Notes

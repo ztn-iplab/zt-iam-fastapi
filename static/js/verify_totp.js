@@ -40,7 +40,10 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(data.detail || data.error || "TOTP verification failed.");
       }
       
-      if (data.require_webauthn && data.user_id) {
+      if (data.require_device_approval) {
+        const loginId = data.login_id ? `?login_id=${data.login_id}` : "";
+        window.location.href = `/api/auth/device-approval${loginId}`;
+      } else if (data.require_webauthn && data.user_id) {
         if (data.has_webauthn_credentials) {
           window.location.href = "/api/auth/verify-biometric";
         } else {

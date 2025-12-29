@@ -13,6 +13,7 @@ s_venv/
 # Logs
 
 logs/
+experiments/*.csv
 
 # System files
 .DS_Store

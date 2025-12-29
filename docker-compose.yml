@@ -34,6 +34,7 @@ services:
     image: docker.io/library/nginx:alpine
     container_name: ztn_nginx
     ports:
+      - "80:80"
       - "443:443"
     depends_on:
       - ztn_app

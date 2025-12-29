@@ -1,0 +1,27 @@
+{% extends "base.html" %} {% block title %}Device Approval{% endblock %} {% block
+body_class %}auth-page{% endblock %} {% block body %}
+
+<div class="home-link-container">
+  <a href="{{ url_for('index') }}" class="home-link">&larr; Back to Home</a>
+</div>
+
+<div class="auth-container">
+  <h1>Approve in ZT-Authenticator</h1>
+
+  <p class="auth-note">
+    Open your ZT-Authenticator app and approve the login request to continue.
+  </p>
+
+  <div id="approval-status" class="auth-note" style="margin-top: 1rem">
+    Waiting for approval...
+  </div>
+
+  <div id="approval-error" class="error-message" style="display: none"></div>
+</div>
+
+<script>
+  window.__LOGIN_ID__ = "{{ login_id }}";
+</script>
+<script src="{{ url_for('static', path='js/device_approval.js') }}"></script>
+
+{% endblock %}

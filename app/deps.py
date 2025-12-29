@@ -1,9 +1,15 @@
+import os
+
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import User, UserAccessControl, UserRole
 from app.security import get_jwt_identity
+
+
+def _webauthn_allowed() -> bool:
+    return os.getenv("ZT_DISABLE_WEBAUTHN", "").lower() not in {"1", "true", "yes"}
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
@@ -30,7 +36,7 @@ def require_full_mfa(request: Request) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="TOTP verification required",
         )
-    if not request.session.get("mfa_webauthn_verified"):
+    if _webauthn_allowed() and not request.session.get("mfa_webauthn_verified"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Passkey or biometric authentication required",

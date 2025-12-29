@@ -54,6 +54,12 @@ document.addEventListener("DOMContentLoaded", () => {
           window.location.href = `/setup-totp?reason=${reason}`;
         } else if (data.require_totp && data.user_id) {
           window.location.href = `/api/auth/verify-totp`;
+        } else if (data.require_webauthn && data.user_id) {
+          if (data.has_webauthn_credentials) {
+            window.location.href = "/api/auth/verify-biometric";
+          } else {
+            window.location.href = "/api/auth/enroll-biometric";
+          }
         } else {
           window.location.href = data.dashboard_url || "/";
         }

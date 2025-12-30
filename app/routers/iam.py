@@ -649,18 +649,22 @@ def confirm_totp_setup(
     tenant: Tenant = Depends(require_api_key),
 ):
     user_id = get_jwt_identity(request)
-    pending = db.query(PendingTOTP).filter_by(user_id=user_id, tenant_id=tenant.id).first()
-    if not pending or pending.expires_at < datetime.utcnow():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No valid pending TOTP enrollment.")
     tenant_user = db.query(TenantUser).filter_by(user_id=user_id, tenant_id=tenant.id).first()
     if not tenant_user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized")
 
-    tenant_user.otp_secret = pending.secret
-    tenant_user.otp_email_label = pending.email
-    db.delete(pending)
+    pending = db.query(PendingTOTP).filter_by(user_id=user_id, tenant_id=tenant.id).first()
+    if pending and pending.expires_at >= datetime.utcnow():
+        tenant_user.otp_secret = pending.secret
+        tenant_user.otp_email_label = pending.email
+        db.delete(pending)
+    elif not tenant_user.otp_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No valid pending TOTP enrollment.")
+
+    recovery_codes = _replace_recovery_codes(db, user_id, tenant.id)
     db.commit()
-    return {"message": "TOTP enrollment confirmed."}
+    message = "TOTP enrollment confirmed." if pending else "TOTP already configured."
+    return {"message": message, "recovery_codes": recovery_codes}
 
 
 @router.post("/verify-totp-login")

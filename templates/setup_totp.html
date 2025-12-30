@@ -28,7 +28,6 @@ body %}
       id="continue-btn"
       class="btn-primary"
       style="margin-top: 2rem; display: block"
-      onclick="showSpinner()"
     >
       ✅ I've set up my TOTP — Continue
     </button>
@@ -38,6 +37,20 @@ body %}
         <span class="visually-hidden">Loading...</span>
       </div>
       <p>Processing...</p>
+    </div>
+
+    <div id="recovery-codes-section" class="recovery-section" style="display: none">
+      <h3>Recovery codes</h3>
+      <p class="recovery-note">
+        Save these codes somewhere safe. Each code can only be used once.
+      </p>
+      <div class="recovery-list" id="recovery-codes-list"></div>
+      <button id="copy-recovery-codes" class="btn-copy" type="button">
+        Copy recovery codes
+      </button>
+      <button id="continue-to-verify" class="btn-primary" type="button">
+        Continue to verification
+      </button>
     </div>
 
     <p class="totp-footer-note">
@@ -157,6 +170,49 @@ body %}
     background-color: var(--brand-blue-dark);
   }
 
+  .recovery-section {
+    margin-top: 1.5rem;
+    text-align: left;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 1rem;
+  }
+
+  .recovery-section h3 {
+    color: #fff;
+    font-size: 1.05rem;
+    margin: 0 0 0.6rem 0;
+  }
+
+  .recovery-note {
+    color: #cfd8dc;
+    font-size: 0.85rem;
+    margin-bottom: 0.8rem;
+  }
+
+  .recovery-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem 0.8rem;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.85rem;
+    color: #e8f0fe;
+    margin-bottom: 0.8rem;
+  }
+
+  .recovery-item {
+    background: rgba(0, 0, 0, 0.35);
+    padding: 6px 8px;
+    border-radius: 6px;
+    letter-spacing: 0.08em;
+  }
+
+  #continue-to-verify {
+    margin-top: 0.8rem;
+    width: 100%;
+  }
+
   .totp-footer-note {
     font-size: 0.8rem;
     color: #888;
@@ -181,24 +237,4 @@ body %}
   }
 </style>
 
-<script>
-  function showSpinner() {
-    // Hide the button and show the spinner
-    document.getElementById("continue-btn").style.display = "none";
-    document.getElementById("spinner").style.display = "block";
-    setTimeout(function () {
-      document.getElementById("spinner").style.display = "none";
-
-      Toastify({
-        text: "✅ TOTP Setup Successful!",
-        duration: 4000,
-        close: true,
-        gravity: "top",
-        position: "center",
-        backgroundColor: "linear-gradient(to right, #2e7d32, #1b5e20)",
-        stopOnFocus: true,
-      }).showToast();
-    }, 3000);
-  }
-</script>
 {% endblock %}

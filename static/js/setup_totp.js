@@ -4,6 +4,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const copyBtn = document.getElementById("copy-manual-key");
   const continueBtn = document.getElementById("continue-btn");
   const messageContainer = document.getElementById("totp-reason-message");
+  const recoverySection = document.getElementById("recovery-codes-section");
+  const recoveryList = document.getElementById("recovery-codes-list");
+  const copyRecoveryBtn = document.getElementById("copy-recovery-codes");
+  const continueToVerifyBtn = document.getElementById("continue-to-verify");
+  let enrollmentConfirmed = false;
 
   //  Handle reason message
   const urlParams = new URLSearchParams(window.location.search);
@@ -84,6 +89,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Redirect to verification
   continueBtn.addEventListener("click", async () => {
+    if (enrollmentConfirmed) {
+      window.location.href = `/api/auth/verify-totp`;
+      return;
+    }
+
     const userConfirmed = confirm("🛡️ Are you sure you have scanned the QR code or registered the enrollment code?");
   
     if (!userConfirmed) {
@@ -113,7 +123,22 @@ document.addEventListener("DOMContentLoaded", () => {
           position: "center",
           backgroundColor: "#43a047"
         }).showToast();
-  
+
+        if (Array.isArray(data.recovery_codes) && data.recovery_codes.length) {
+          recoveryList.innerHTML = "";
+          data.recovery_codes.forEach((code) => {
+            const item = document.createElement("div");
+            item.className = "recovery-item";
+            item.textContent = code;
+            recoveryList.appendChild(item);
+          });
+          recoverySection.style.display = "block";
+          enrollmentConfirmed = true;
+          continueBtn.style.display = "none";
+          if (spinner) spinner.style.display = "none";
+          return;
+        }
+
         setTimeout(() => {
           window.location.href = `/api/auth/verify-totp`;
         }, 1500);
@@ -138,6 +163,47 @@ document.addEventListener("DOMContentLoaded", () => {
       continueBtn.textContent = "Continue";
       if (spinner) spinner.style.display = "none";
     }
+  });
+
+  copyRecoveryBtn?.addEventListener("click", async () => {
+    const codes = Array.from(recoveryList?.children || []).map((node) => node.textContent || "");
+    if (!codes.length) return;
+    const payload = codes.join("\n");
+    const setStatus = (label) => {
+      copyRecoveryBtn.textContent = label;
+      setTimeout(() => {
+        copyRecoveryBtn.textContent = "Copy recovery codes";
+      }, 1500);
+    };
+
+    try {
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(payload);
+        setStatus("Copied");
+        return;
+      }
+    } catch (_) {
+      // Fallback below
+    }
+
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = payload;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      setStatus(ok ? "Copied" : "Copy failed");
+    } catch (_) {
+      setStatus("Copy failed");
+    }
+  });
+
+  continueToVerifyBtn?.addEventListener("click", () => {
+    window.location.href = `/api/auth/verify-totp`;
   });
   
 });

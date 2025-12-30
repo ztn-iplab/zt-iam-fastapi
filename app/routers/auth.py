@@ -588,23 +588,23 @@ def confirm_totp_setup(request: Request, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    if user.otp_secret:
-        return {"message": "TOTP already configured."}
-
     pending = (
         db.query(PendingTOTP)
         .filter_by(user_id=user.id, tenant_id=user.tenant_id)
         .first()
     )
-    if not pending or pending.expires_at < datetime.utcnow():
+    if pending and pending.expires_at >= datetime.utcnow():
+        user.otp_secret = pending.secret
+        user.otp_email_label = pending.email
+        db.delete(pending)
+    elif not user.otp_secret:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending TOTP enrollment")
 
-    user.otp_secret = pending.secret
-    user.otp_email_label = pending.email
-    db.delete(pending)
+    recovery_codes = _replace_recovery_codes(db, user.id, user.tenant_id)
     db.commit()
 
-    return {"message": "TOTP enrollment confirmed."}
+    message = "TOTP enrollment confirmed." if pending else "TOTP already configured."
+    return {"message": message, "recovery_codes": recovery_codes}
 
 
 @router.post("/verify-totp-login")

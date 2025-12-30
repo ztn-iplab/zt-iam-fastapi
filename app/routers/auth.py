@@ -792,11 +792,60 @@ def login_recover(payload: dict, request: Request, db: Session = Depends(get_db)
     if not user:
         return {"status": "denied", "reason": "user_not_found"}
 
+    if user.locked_until and user.locked_until > datetime.utcnow():
+        return {"status": "denied", "reason": "locked"}
+
     if not _consume_recovery_code(db, user.id, user.tenant_id, recovery_code):
         return {"status": "denied", "reason": "invalid_recovery_code"}
 
+    fp = get_request_fingerprint(request)
+    access_token = create_access_token(identity=str(user.id), additional_claims={"fp": fp})
+    refresh_token = create_refresh_token(identity=str(user.id))
+
+    access = db.query(UserAccessControl).filter_by(user_id=user.id).first()
+    role = db.query(UserRole).get(access.role_id).role_name.lower() if access else "user"
+    urls = {
+        "admin": "/admin/dashboard",
+        "agent": "/agent/dashboard",
+        "user": "/user/dashboard",
+    }
+
+    ip_address = request.client.host if request.client else None
+    device_info = request.headers.get("User-Agent", "")
+    location = get_ip_location(ip_address)
+    log_auth_event(
+        db,
+        user=user,
+        method="recovery",
+        status="success",
+        ip_address=ip_address,
+        device_info=device_info,
+        location=location,
+        failed_attempts=0,
+    )
+    log_realtime_event(
+        db,
+        user=user,
+        action="Successful recovery code login",
+        ip_address=ip_address,
+        device_info=device_info,
+        location=location,
+        risk_alert=False,
+    )
     db.commit()
-    return {"status": "ok", "reason": None}
+    request.session["mfa_totp_verified"] = True
+    request.session["mfa_webauthn_verified"] = True
+
+    response = JSONResponse(
+        {
+            "status": "ok",
+            "reason": None,
+            "dashboard_url": urls.get(role, "/user/dashboard"),
+        }
+    )
+    set_access_cookie(response, access_token)
+    set_refresh_cookie(response, refresh_token)
+    return response
 
 
 @router.get("/login-status")

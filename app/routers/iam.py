@@ -996,11 +996,23 @@ def login_recover(
     if not tenant_user:
         return {"status": "denied", "reason": "unauthorized"}
 
+    if user.locked_until and user.locked_until > datetime.utcnow():
+        return {"status": "denied", "reason": "locked"}
+
     if not _consume_recovery_code(db, user.id, tenant.id, recovery_code):
         return {"status": "denied", "reason": "invalid_recovery_code"}
 
+    fp = get_request_fingerprint(request, tenant.id)
+    access_token = create_access_token(identity=str(user.id), additional_claims={"fp": fp})
+    refresh_token = create_refresh_token(identity=str(user.id))
+
     db.commit()
-    return {"status": "ok", "reason": None}
+    request.session["mfa_totp_verified"] = True
+    request.session["mfa_webauthn_verified"] = True
+    response = JSONResponse({"status": "ok", "reason": None})
+    set_access_cookie(response, access_token)
+    set_refresh_cookie(response, refresh_token)
+    return response
 
 
 @router.get("/login-status")

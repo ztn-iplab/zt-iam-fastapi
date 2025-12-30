@@ -56,6 +56,16 @@ def hash_otp(otp: str) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def generate_recovery_codes(count: int = 8) -> list[str]:
+    return [secrets.token_hex(4) for _ in range(count)]
+
+
+def hash_recovery_code(code: str) -> str:
+    pepper = _get_pepper()
+    data = (code + pepper).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
+
+
 def issue_enroll_token(payload: dict, ttl_minutes: int = 10) -> str:
     if not JWT_SECRET:
         raise RuntimeError("JWT_SECRET_KEY is required for enrollment tokens")

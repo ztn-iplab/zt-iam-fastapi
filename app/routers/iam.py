@@ -30,6 +30,7 @@ from app.models import (
     Device,
     DeviceKey,
     LoginChallenge,
+    RecoveryCode,
     RealTimeLog,
     SIMCard,
     Tenant,
@@ -50,7 +51,9 @@ from app.zt_authenticator import (
     decode_enroll_token,
     generate_enrollment_qr,
     generate_nonce,
+    generate_recovery_codes,
     hash_otp,
+    hash_recovery_code,
     issue_enroll_token,
     issue_enrollment_code,
     resolve_api_base_url,
@@ -86,6 +89,49 @@ def jsonify_webauthn(data):
         return value
 
     return convert(data)
+
+
+def _replace_recovery_codes(db: Session, user_id: int, tenant_id: int, count: int | None = None) -> list[str]:
+    if count is None:
+        count = int(os.getenv("ZT_RECOVERY_CODE_COUNT", "8"))
+    count = max(1, count)
+    codes = generate_recovery_codes(count)
+    (
+        db.query(RecoveryCode)
+        .filter(
+            RecoveryCode.user_id == user_id,
+            RecoveryCode.tenant_id == tenant_id,
+            RecoveryCode.used_at.is_(None),
+        )
+        .delete(synchronize_session=False)
+    )
+    for code in codes:
+        db.add(
+            RecoveryCode(
+                user_id=user_id,
+                tenant_id=tenant_id,
+                code_hash=hash_recovery_code(code),
+            )
+        )
+    return codes
+
+
+def _consume_recovery_code(db: Session, user_id: int, tenant_id: int, code: str) -> bool:
+    code_hash = hash_recovery_code(code)
+    entry = (
+        db.query(RecoveryCode)
+        .filter(
+            RecoveryCode.user_id == user_id,
+            RecoveryCode.tenant_id == tenant_id,
+            RecoveryCode.code_hash == code_hash,
+            RecoveryCode.used_at.is_(None),
+        )
+        .first()
+    )
+    if not entry:
+        return False
+    entry.used_at = datetime.utcnow()
+    return True
 
 
 @router.post("/register")
@@ -873,13 +919,14 @@ def register_totp(payload: dict, request: Request, db: Session = Depends(get_db)
     tenant_user.otp_secret = pending.secret
     tenant_user.otp_email_label = pending.email
     db.delete(pending)
+    recovery_codes = _replace_recovery_codes(db, user.id, device_key.tenant_id)
     db.commit()
 
     otpauth_uri = pyotp.TOTP(tenant_user.otp_secret).provisioning_uri(
         name=account_name,
         issuer_name=issuer,
     )
-    return {"otpauth_uri": otpauth_uri, "recovery_codes": []}
+    return {"otpauth_uri": otpauth_uri, "recovery_codes": recovery_codes}
 
 
 @router.get("/login/pending")
@@ -908,6 +955,48 @@ def login_pending(user_id: int, request: Request, db: Session = Depends(get_db))
         "device_id": str(challenge.device_id),
         "expires_in": max(expires_in, 0),
     }
+
+
+@router.post("/login/recover")
+def login_recover(
+    payload: dict,
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(require_api_key),
+):
+    identifier = (payload.get("identifier") or payload.get("email") or "").strip()
+    recovery_code = (payload.get("recovery_code") or "").strip()
+    if not identifier or not recovery_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Identifier and recovery_code are required",
+        )
+
+    user = None
+    sim_card = (
+        db.query(SIMCard)
+        .filter_by(mobile_number=identifier, status="active")
+        .first()
+    )
+    if sim_card and sim_card.user:
+        user = sim_card.user
+
+    if not user:
+        user = db.query(User).filter_by(email=identifier).first()
+    if not user:
+        return {"status": "denied", "reason": "user_not_found"}
+
+    tenant_user = (
+        db.query(TenantUser).filter_by(tenant_id=tenant.id, user_id=user.id).first()
+    )
+    if not tenant_user:
+        return {"status": "denied", "reason": "unauthorized"}
+
+    if not _consume_recovery_code(db, user.id, tenant.id, recovery_code):
+        return {"status": "denied", "reason": "invalid_recovery_code"}
+
+    db.commit()
+    return {"status": "ok", "reason": None}
 
 
 @router.get("/login-status")

@@ -26,6 +26,7 @@ from app.models import (
     DeviceKey,
     LoginChallenge,
     OTPCode,
+    RecoveryCode,
     PasswordHistory,
     PendingTOTP,
     RealTimeLog,
@@ -55,7 +56,9 @@ from app.zt_authenticator import (
     decode_enroll_token,
     generate_enrollment_qr,
     generate_nonce,
+    generate_recovery_codes,
     hash_otp,
+    hash_recovery_code,
     issue_enroll_token,
     issue_enrollment_code,
     resolve_api_base_url,
@@ -81,6 +84,49 @@ def _webauthn_allowed(request: Request) -> bool:
     if os.getenv("ZT_DISABLE_WEBAUTHN", "").lower() in {"1", "true", "yes"}:
         return False
     return request.url.scheme == "https"
+
+
+def _replace_recovery_codes(db: Session, user_id: int, tenant_id: int, count: int | None = None) -> list[str]:
+    if count is None:
+        count = int(os.getenv("ZT_RECOVERY_CODE_COUNT", "8"))
+    count = max(1, count)
+    codes = generate_recovery_codes(count)
+    (
+        db.query(RecoveryCode)
+        .filter(
+            RecoveryCode.user_id == user_id,
+            RecoveryCode.tenant_id == tenant_id,
+            RecoveryCode.used_at.is_(None),
+        )
+        .delete(synchronize_session=False)
+    )
+    for code in codes:
+        db.add(
+            RecoveryCode(
+                user_id=user_id,
+                tenant_id=tenant_id,
+                code_hash=hash_recovery_code(code),
+            )
+        )
+    return codes
+
+
+def _consume_recovery_code(db: Session, user_id: int, tenant_id: int, code: str) -> bool:
+    code_hash = hash_recovery_code(code)
+    entry = (
+        db.query(RecoveryCode)
+        .filter(
+            RecoveryCode.user_id == user_id,
+            RecoveryCode.tenant_id == tenant_id,
+            RecoveryCode.code_hash == code_hash,
+            RecoveryCode.used_at.is_(None),
+        )
+        .first()
+    )
+    if not entry:
+        return False
+    entry.used_at = datetime.utcnow()
+    return True
 
 
 @router.get("/register_form", response_class=HTMLResponse)
@@ -514,11 +560,14 @@ def setup_totp(request: Request, db: Session = Depends(get_db)):
     api_base_url = resolve_api_base_url(request, "/api/auth")
     short_code = issue_enrollment_code(payload)
     manual_url = f"{api_base_url}/enroll-code/{short_code}"
-    return {
+    response = {
         "qr_code": generate_enrollment_qr(payload),
         "manual_key": manual_url,
         "reset_required": True,
     }
+    if request.query_params.get("include_payload") == "1":
+        response["payload"] = payload
+    return response
 
 
 @router.get("/enroll-code/{code}")
@@ -590,7 +639,7 @@ def verify_totp_login(payload: dict, request: Request, db: Session = Depends(get
         .count()
     )
 
-    if not verify_totp_code(user.otp_secret, totp_code):
+    if not verify_totp_code(user.otp_secret, totp_code, valid_window=1):
         fail_count = recent_otp_fails + 1
         db.add(
             UserAuthLog(
@@ -730,6 +779,24 @@ def device_approval_page(request: Request, login_id: Optional[int] = None):
         "device_approval.html",
         {"request": request, "login_id": login_id or ""},
     )
+
+
+@router.post("/login/recover")
+def login_recover(payload: dict, request: Request, db: Session = Depends(get_db)):
+    email = (payload.get("email") or "").strip().lower()
+    recovery_code = (payload.get("recovery_code") or "").strip()
+    if not email or not recovery_code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email and recovery_code are required")
+
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+    if not user:
+        return {"status": "denied", "reason": "user_not_found"}
+
+    if not _consume_recovery_code(db, user.id, user.tenant_id, recovery_code):
+        return {"status": "denied", "reason": "invalid_recovery_code"}
+
+    db.commit()
+    return {"status": "ok", "reason": None}
 
 
 @router.get("/login-status")
@@ -1013,13 +1080,14 @@ def register_totp(payload: dict, request: Request, db: Session = Depends(get_db)
     user.otp_secret = pending.secret
     user.otp_email_label = pending.email
     db.delete(pending)
+    recovery_codes = _replace_recovery_codes(db, user.id, user.tenant_id)
     db.commit()
 
     otpauth_uri = pyotp.TOTP(user.otp_secret).provisioning_uri(
         name=account_name,
         issuer_name=issuer,
     )
-    return {"otpauth_uri": otpauth_uri, "recovery_codes": []}
+    return {"otpauth_uri": otpauth_uri, "recovery_codes": recovery_codes}
 
 
 @router.get("/whoami")
@@ -1068,6 +1136,40 @@ def verify_fallback_totp(payload: dict, request: Request, db: Session = Depends(
         request.session["reset_token_checked"] = token
         return {"message": "TOTP code verified successfully. You can now reset your password."}
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
+
+
+@router.post("/zt/rotate-key")
+def rotate_device_key(payload: dict, request: Request, db: Session = Depends(get_db)):
+    user_id = get_jwt_identity(request)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing token")
+
+    device_id = payload.get("device_id")
+    rp_id = (payload.get("rp_id") or "").strip()
+    public_key = payload.get("public_key") or ""
+    key_type = payload.get("key_type") or "p256"
+
+    if not device_id or not rp_id or not public_key:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing required fields")
+
+    device = db.query(Device).filter_by(id=device_id, user_id=user_id).first()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    device_key = (
+        db.query(DeviceKey)
+        .filter_by(device_id=device.id, rp_id=rp_id, tenant_id=device.tenant_id)
+        .first()
+    )
+    if not device_key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device key not found")
+
+    device_key.public_key = public_key
+    device_key.key_type = key_type
+    device_key.created_at = datetime.utcnow()
+    db.commit()
+
+    return {"status": "ok"}
 
 
 @router.post("/log-webauthn-failure")

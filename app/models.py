@@ -259,6 +259,24 @@ class OTPCode(Base):
     tenant_id = sa.Column(sa.Integer, sa.ForeignKey("tenants.id"), nullable=False)
 
 
+class RecoveryCode(Base):
+    __tablename__ = "recovery_codes"
+
+    id = sa.Column(sa.Integer, primary_key=True)
+    user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=False)
+    tenant_id = sa.Column(sa.Integer, sa.ForeignKey("tenants.id"), nullable=False)
+    code_hash = sa.Column(sa.String(128), nullable=False)
+    created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
+    used_at = sa.Column(sa.DateTime, nullable=True)
+
+    user = relationship("User", backref="recovery_codes")
+    tenant = relationship("Tenant", backref="recovery_codes")
+
+    __table_args__ = (
+        sa.Index("idx_recovery_code_lookup", "user_id", "tenant_id", "code_hash"),
+    )
+
+
 class HeadquartersWallet(Base):
     __tablename__ = "headquarters_wallet"
 

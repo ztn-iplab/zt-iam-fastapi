@@ -22,7 +22,9 @@ class Enrollment:
     device_id: str
     rp_id: str
     secret: str
+    recovery_codes: list[str]
     private_key: ec.EllipticCurvePrivateKey
+    identifier: str
 
 
 class IamClient:
@@ -94,21 +96,23 @@ def enroll_device(client: IamClient, identifier: str, password: str) -> Enrollme
     if status != 200:
         raise RuntimeError(f"Login failed: status={status}")
 
-    status, setup = client.get_json("/api/auth/setup-totp")
+    status, setup = client.get_json("/api/auth/setup-totp?include_payload=1")
     if status != 200 or "manual_key" not in setup:
         raise RuntimeError(f"Setup TOTP failed: status={status} body={setup}")
 
-    manual_key = setup.get("manual_key") or ""
-    if not manual_key:
-        raise RuntimeError("No enrollment link returned (manual_key empty).")
+    payload = setup.get("payload")
+    if not payload:
+        manual_key = setup.get("manual_key") or ""
+        if not manual_key:
+            raise RuntimeError("No enrollment link returned (manual_key empty).")
 
-    parsed = parse.urlparse(manual_key)
-    enroll_path = parsed.path
-    if parsed.query:
-        enroll_path += f"?{parsed.query}"
-    status, payload = client.get_json(enroll_path)
-    if status != 200 or payload.get("type") != "zt_totp_enroll":
-        raise RuntimeError(f"Enrollment code invalid: status={status} body={payload}")
+        parsed = parse.urlparse(manual_key)
+        enroll_path = parsed.path
+        if parsed.query:
+            enroll_path += f"?{parsed.query}"
+        status, payload = client.get_json(enroll_path)
+        if status != 200 or payload.get("type") != "zt_totp_enroll":
+            raise RuntimeError(f"Enrollment code invalid: status={status} body={payload}")
 
     private_key, public_b64 = generate_keypair()
     status, enroll_resp = client.post_json(
@@ -143,12 +147,15 @@ def enroll_device(client: IamClient, identifier: str, password: str) -> Enrollme
         raise RuntimeError(f"TOTP register failed: status={status} body={register}")
 
     secret = parse_secret(register["otpauth_uri"])
+    recovery_codes = register.get("recovery_codes") or []
     return Enrollment(
         user_id=user_id,
         device_id=device_id,
         rp_id=payload["rp_id"],
         secret=secret,
+        recovery_codes=recovery_codes,
         private_key=private_key,
+        identifier=identifier,
     )
 
 
@@ -157,6 +164,36 @@ def totp_verify(client: IamClient, otp: str) -> Tuple[bool, str]:
     if status == 200:
         return True, "ok"
     return False, data.get("detail") or data.get("error") or f"status_{status}"
+
+
+def login_recover(client: IamClient, identifier: str, code: str) -> Tuple[bool, str]:
+    payload = {"email": identifier, "recovery_code": code}
+    status, data = client.post_json("/api/auth/login/recover", payload)
+    if status == 200 and data.get("status") == "ok":
+        return True, "ok"
+    return False, data.get("reason") or data.get("detail") or f"status_{status}"
+
+
+def rotate_key(
+    client: IamClient,
+    enrollment: Enrollment,
+    public_key_b64: str,
+    key_type: str = "p256",
+) -> Tuple[bool, str, float]:
+    started = time.perf_counter()
+    status, data = client.post_json(
+        "/api/auth/zt/rotate-key",
+        {
+            "device_id": enrollment.device_id,
+            "rp_id": enrollment.rp_id,
+            "key_type": key_type,
+            "public_key": public_key_b64,
+        },
+    )
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    if status == 200 and data.get("status") == "ok":
+        return True, "ok", elapsed_ms
+    return False, data.get("detail") or data.get("reason") or f"status_{status}", elapsed_ms
 
 
 def zt_verify(
@@ -203,6 +240,8 @@ def main() -> None:
     parser.add_argument("--insecure", action="store_true", help="Disable TLS verification (dev only).")
     parser.add_argument("--output", default="experiments/iam_metrics.csv")
     parser.add_argument("--trials", type=int, default=10)
+    parser.add_argument("--recovery-trials", type=int, default=8)
+    parser.add_argument("--rebind-trials", type=int, default=8)
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
@@ -212,13 +251,27 @@ def main() -> None:
     enrollment = enroll_device(client, args.identifier, args.password)
     attacker_key, _ = generate_keypair()
 
+    rows: list[tuple[str, str, bool, str, float]] = []
+    for _ in range(args.rebind_trials):
+        new_key, new_pub = generate_keypair()
+        ok, reason, rotate_ms = rotate_key(client, enrollment, new_pub)
+        if ok:
+            otp = pyotp.TOTP(enrollment.secret).now()
+            start = time.perf_counter()
+            ok, reason = zt_verify(client, enrollment, otp, new_key)
+            verify_ms = (time.perf_counter() - start) * 1000
+            total_ms = rotate_ms + verify_ms
+            rows.append(("rebind_time", "zt_totp", ok, reason, total_ms))
+            if ok:
+                enrollment.private_key = new_key
+        else:
+            rows.append(("rebind_time", "zt_totp", False, reason, rotate_ms))
+
     scenarios = [
         ("legitimate_login", enrollment.private_key),
         ("seed_compromise", attacker_key),
         ("relay_phishing", attacker_key),
     ]
-
-    rows: list[tuple[str, str, bool, str, float]] = []
     for scenario, key in scenarios:
         for _ in range(args.trials):
             otp = pyotp.TOTP(enrollment.secret).now()
@@ -231,6 +284,25 @@ def main() -> None:
             ok, reason = zt_verify(client, enrollment, otp, key)
             duration = (time.perf_counter() - start) * 1000
             rows.append((scenario, "zt_totp", ok, reason, duration))
+
+    recovery_trials = min(args.recovery_trials, len(enrollment.recovery_codes))
+    for i in range(recovery_trials):
+        otp = pyotp.TOTP(enrollment.secret).now()
+        start = time.perf_counter()
+        ok, reason = totp_verify(client, otp)
+        duration = (time.perf_counter() - start) * 1000
+        rows.append(("offline_degraded", "standard_totp", ok, reason, duration))
+
+        code = enrollment.recovery_codes[i]
+        start = time.perf_counter()
+        ok, reason = login_recover(client, enrollment.identifier, code)
+        duration = (time.perf_counter() - start) * 1000
+        rows.append(("offline_degraded", "zt_totp", ok, reason, duration))
+
+        start = time.perf_counter()
+        ok, reason = login_recover(client, enrollment.identifier, code)
+        duration = (time.perf_counter() - start) * 1000
+        rows.append(("offline_replay", "zt_totp", ok, reason, duration))
 
     with open(args.output, "w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)

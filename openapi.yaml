@@ -8,9 +8,9 @@ info:
     and supporting wallet/transaction flows. It is intended to be consumed by the auth-gateway,
     policy decision point, external HMS integrations, and telecom or mobile-money pilots.
 servers:
-  - url: https://localhost.localdomain.com
-    description: Local HTTPS (Podman + nginx)
-  - url: http://localhost.localdomain.com
+  - url: https://<your-domain>
+    description: Primary HTTPS base URL
+  - url: http://<your-domain>
     description: Local HTTP (if configured)
 security:
   - BearerAuth: []

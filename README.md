@@ -96,16 +96,16 @@ Use these when running experiments against the `/api/auth` flow.
 ```bash
 python scripts/collect_iam_metrics.py \
   --base-url <PUBLIC_BASE_URL> \
-  --identifier admin@example.com \
-  --password 'ChangeMe123!' \
+  --identifier <admin-email> \
+  --password '<admin-password>' \
   --insecure
 ```
 
 ```bash
 python scripts/collect_iam_frr_sweep.py \
   --base-url <PUBLIC_BASE_URL> \
-  --identifier admin@example.com \
-  --password 'ChangeMe123!' \
+  --identifier <admin-email> \
+  --password '<admin-password>' \
   --insecure
 ```
 

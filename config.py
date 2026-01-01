@@ -53,7 +53,7 @@ class Config:
     MAIL_USERNAME = os.getenv('MAIL_USERNAME')
     MAIL_PASSWORD = os.getenv('MAIL_PASSWORD')  # App password (not your Gmail password)
     MAIL_DEFAULT_SENDER = 'bztniplab@gmail.com'
-    ADMIN_ALERT_EMAIL = 'patrick.mutabazi.pj1@g.ext.naist.jp'
+    ADMIN_ALERT_EMAIL = 'admin@example.com'
 
     # ------------------------
     # 🔐 Flask App Secret

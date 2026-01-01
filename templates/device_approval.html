@@ -15,8 +15,22 @@ body_class %}auth-page{% endblock %} {% block body %}
   <div id="approval-status" class="auth-note" style="margin-top: 1rem">
     Waiting for approval...
   </div>
+  <div id="approval-countdown" class="auth-note" style="margin-top: 0.5rem">
+    Request expires in -- seconds.
+  </div>
+  <div id="totp-countdown" class="auth-note" style="margin-top: 0.5rem">
+    Current TOTP window ends in -- seconds.
+  </div>
+  <div id="approval-hint" class="auth-note" style="margin-top: 0.5rem">
+    Approvals must arrive before the current TOTP code expires.
+  </div>
 
   <div id="approval-error" class="error-message" style="display: none"></div>
+
+  <div class="auth-actions">
+    <button id="approval-resend" class="btn btn-secondary" type="button">Resend request</button>
+    <button id="approval-cancel" class="btn btn-danger" type="button">Cancel</button>
+  </div>
 </div>
 
 <script>

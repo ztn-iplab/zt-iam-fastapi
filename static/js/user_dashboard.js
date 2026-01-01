@@ -118,6 +118,54 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 // ============================
+// Risk Posture
+// ============================
+function renderRiskPosture(data) {
+  const scoreEl = document.getElementById("risk-score-value");
+  const levelEl = document.getElementById("risk-level-value");
+  const summaryEl = document.getElementById("risk-guidance-summary");
+  const factorsEl = document.getElementById("risk-factors-list");
+  const profileScoreEl = document.getElementById("user-trust-score");
+  if (!scoreEl || !levelEl || !summaryEl || !factorsEl) return;
+
+  const score = typeof data.risk_score === "number" ? data.risk_score : 0;
+  scoreEl.textContent = score.toFixed(2);
+  const level = data.risk_level || "low";
+  levelEl.textContent = level;
+  levelEl.className = `risk-level ${level}`;
+  if (profileScoreEl) {
+    profileScoreEl.textContent = score.toFixed(2);
+  }
+
+  const factors = Array.isArray(data.factors) ? data.factors : [];
+  factorsEl.innerHTML = "";
+  factors.slice(0, 3).forEach((factor) => {
+    const li = document.createElement("li");
+    li.textContent = `${factor.title}: ${factor.guidance}`;
+    factorsEl.appendChild(li);
+  });
+  summaryEl.textContent =
+    factors.length > 0
+      ? "Review the guidance below to keep your account secure."
+      : "No unusual activity detected.";
+}
+
+function loadRiskPosture() {
+  const widget = document.querySelector(".risk-widget");
+  if (widget) {
+    const rawScore = parseFloat(widget.dataset.riskScore || "0");
+    const level = rawScore >= 0.8 ? "critical" : rawScore >= 0.6 ? "high" : rawScore >= 0.3 ? "medium" : "low";
+    renderRiskPosture({ risk_score: rawScore, risk_level: level, factors: [] });
+  }
+  fetch("/api/auth/risk-score", { credentials: "include" })
+    .then((res) => res.json())
+    .then(renderRiskPosture)
+    .catch((err) => console.error("Failed to load risk posture", err));
+}
+
+document.addEventListener("DOMContentLoaded", loadRiskPosture);
+
+// ============================
 // Fetch Wallet Information
 // ============================
 function fetchWalletInfo() {

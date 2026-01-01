@@ -1,0 +1,49 @@
+/*
+Notation:
+  u user, d device, rp relying party, seed TOTP seed, dk device key, n nonce, t time step.
+  Db(...) server state, DeviceState(...) device state, ChallengeState(...) pending challenge.
+  Events: Enroll, Challenge, DeviceGenerated, Accept, LeakSeed, LeakDeviceKey.
+*/
+theory ZT_TOTP_Core
+begin
+
+builtins: hashing
+
+rule Enroll:
+  [ Fr(u), Fr(d), Fr(seed), Fr(dk), Fr(rp) ]
+  --[ Enroll(u,d,rp) ]->
+  [ Db(u,d,seed,dk,rp), DeviceState(u,d,seed,dk,rp) ]
+
+rule Challenge:
+  [ Db(u,d,seed,dk,rp), Fr(n) ]
+  --[ Challenge(u,d,rp,n) ]->
+  [ ChallengeState(u,d,seed,dk,rp,n), Out(<u,rp,n>) ]
+
+rule DeviceRespond:
+  [ DeviceState(u,d,seed,dk,rp), In(<u,rp,n>), Fr(t) ]
+  --[ DeviceGenerated(u,d,rp,h(<seed,t>),h(<dk,rp,n,h(<seed,t>)>) ) ]->
+  [ Out(<u,rp,n,t,h(<seed,t>),h(<dk,rp,n,h(<seed,t>)>)>) ]
+
+rule ServerVerify:
+  [ ChallengeState(u,d,seed,dk,rp,n),
+    In(<u,rp,n,t,h(<seed,t>),h(<dk,rp,n,h(<seed,t>)>)>) ]
+  --[ Accept(u,d,rp) ]->
+  [ ]
+
+rule LeakSeed:
+  [ Db(u,d,seed,dk,rp) ]
+  --[ LeakSeed(u) ]->
+  [ Out(seed) ]
+
+rule LeakDeviceKey:
+  [ Db(u,d,seed,dk,rp) ]
+  --[ LeakDeviceKey(u,d) ]->
+  [ Out(dk) ]
+
+lemma authentication:
+  "All u d rp #i. Accept(u,d,rp)@i ==> (Ex #j otp proof. DeviceGenerated(u,d,rp,otp,proof)@j & j < i)"
+
+lemma seed_compromise_resisted:
+  "All u d rp #i. (Accept(u,d,rp)@i & LeakSeed(u)@i) ==> (Ex #j. LeakDeviceKey(u,d)@j)"
+
+end

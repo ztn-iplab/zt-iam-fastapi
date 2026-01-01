@@ -6,6 +6,7 @@
   <li><a href="#" id="show-flagged-transactions">Flagged Transactions</a></li>
   <li><a href="#" id="show-real-time-logs">Real-Time Logs</a></li>
   <li><a href="#" id="show-user-auth-logs">User Auth Logs</a></li>
+  <li><a href="{{ url_for('admin_feedback') }}">Feedback Inbox</a></li>
   <li><a href="#" id="show-fund-agent">Fund Agent</a></li>
   <li><a href="#" id="show-tenant-management">Tenants Management</a></li>
   <li><a href="#" id="logout-link">Logout</a></li>
@@ -15,11 +16,34 @@
   <div id="admin-content">
     <!-- Welcome Section (default visible, hidden when other sections are shown) -->
     <section id="admin-welcome" class="admin-section">
-      <div class="welcome-card text-center p-4">
-        <h2>👋 Welcome to the Admin Dashboard</h2>
-        <p class="text-muted">
-          Select a section from the left menu to begin managing the system.
-        </p>
+      <div class="row g-3 align-items-stretch">
+        <div class="col-lg-7">
+          <div class="welcome-card text-center p-4 h-100">
+            <h2>👋 Welcome to the Admin Dashboard</h2>
+            <p class="text-muted">
+              Select a section from the left menu to begin managing the system.
+            </p>
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div class="card shadow-sm bg-dark text-white risk-widget h-100">
+            <div class="card-header border-0 bg-transparent">
+              <h6 class="mb-0">
+                <i class="bi bi-shield-check me-2"></i>Your Security Risk
+              </h6>
+            </div>
+            <div class="card-body">
+              <div class="risk-score">
+                <span id="risk-score-value">--</span>
+                <span class="risk-level" id="risk-level-value">--</span>
+              </div>
+              <p class="risk-note" id="risk-guidance-summary">
+                Risk posture updates after each login.
+              </p>
+              <ul class="risk-factors" id="risk-factors-list"></ul>
+            </div>
+          </div>
+        </div>
       </div>
       <section id="dashboard-metrics" class="container-fluid mt-4">
         <!--  Metrics Charts -->

@@ -19,7 +19,7 @@ PLAN_RATE_LIMITS = {
 
 
 def require_api_key(request: Request, db: Session = Depends(get_db)) -> Tenant:
-    api_key = request.headers.get("X-API-Key")
+    api_key = (request.headers.get("X-API-Key") or "").strip()
     if not api_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing API key")
 
@@ -44,6 +44,20 @@ def require_api_key(request: Request, db: Session = Depends(get_db)) -> Tenant:
     if not tenant.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This API key has been suspended")
     if tenant.api_key_expires_at and tenant.api_key_expires_at < now:
+        tenant.api_error_count += 1
+        db.add(
+            RealTimeLog(
+                tenant_id=tenant.id,
+                user_id=None,
+                action=f"Expired API key used for tenant: {tenant.name}",
+                ip_address=request.client.host if request.client else None,
+                device_info=request.headers.get("User-Agent", ""),
+                location=get_ip_location(request.client.host if request.client else ""),
+                risk_alert=True,
+            )
+        )
+        db.add(tenant)
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="API key has expired. Please renew or upgrade your plan.",
@@ -53,7 +67,33 @@ def require_api_key(request: Request, db: Session = Depends(get_db)) -> Tenant:
     tenant.api_request_count += 1
 
     if tenant.api_request_count > rate_limit:
+        tenant.api_error_count += 1
         tenant.api_score += 0.1
+        if tenant.api_error_count >= ERROR_LIMIT:
+            tenant.is_active = False
+            db.add(
+                RealTimeLog(
+                    tenant_id=tenant.id,
+                    user_id=None,
+                    action=f"API key suspended after rate limit abuse: {tenant.name}",
+                    ip_address=request.client.host if request.client else None,
+                    device_info=request.headers.get("User-Agent", ""),
+                    location=get_ip_location(request.client.host if request.client else ""),
+                    risk_alert=True,
+                )
+            )
+            db.add(tenant)
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="API key suspended due to repeated abuse",
+            )
+        db.add(tenant)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="API rate limit exceeded",
+        )
 
     if tenant.api_score >= BLOCK_THRESHOLD:
         tenant.is_active = False

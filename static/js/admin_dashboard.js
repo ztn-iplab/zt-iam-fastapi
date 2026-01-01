@@ -1313,8 +1313,10 @@ function fetchUsersForAdmin() {
                       </button>
                       <button class="btn btn-sm verify-btn" onclick="verifyUser('${
                         user.id
-                      }')">
-                          <i class="fas fa-check-circle"></i> Verify
+                      }')" ${user.identity_verified ? "disabled" : ""}>
+                          <i class="fas fa-check-circle"></i> ${
+                            user.identity_verified ? "Verified" : "Verify"
+                          }
                       </button>
                       <button class="btn btn-sm suspend-btn" onclick="suspendUser('${
                         user.id
@@ -2036,3 +2038,37 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 });
+
+function renderRiskPosture(data) {
+  const scoreEl = document.getElementById("risk-score-value");
+  const levelEl = document.getElementById("risk-level-value");
+  const summaryEl = document.getElementById("risk-guidance-summary");
+  const factorsEl = document.getElementById("risk-factors-list");
+  if (!scoreEl || !levelEl || !summaryEl || !factorsEl) return;
+
+  const score = typeof data.risk_score === "number" ? data.risk_score : 0;
+  scoreEl.textContent = score.toFixed(2);
+  levelEl.textContent = data.risk_level || "low";
+  levelEl.className = `risk-level ${data.risk_level || "low"}`;
+
+  const factors = Array.isArray(data.factors) ? data.factors : [];
+  factorsEl.innerHTML = "";
+  factors.slice(0, 3).forEach((factor) => {
+    const li = document.createElement("li");
+    li.textContent = `${factor.title}: ${factor.guidance}`;
+    factorsEl.appendChild(li);
+  });
+  summaryEl.textContent =
+    factors.length > 0
+      ? "Review the guidance below to keep your account secure."
+      : "No unusual activity detected.";
+}
+
+function loadRiskPosture() {
+  fetch("/api/auth/risk-score", { credentials: "include" })
+    .then((res) => res.json())
+    .then(renderRiskPosture)
+    .catch((err) => console.error("Failed to load risk posture", err));
+}
+
+document.addEventListener("DOMContentLoaded", loadRiskPosture);

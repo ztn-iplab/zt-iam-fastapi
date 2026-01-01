@@ -110,7 +110,21 @@ def get_request_fingerprint(tenant_id=None, request_obj=None):
 
 
 def generate_custom_api_key(tenant_name):
-    # Sanitize tenant name (remove special chars), uppercase, and shorten
-    prefix = re.sub(r'\W+', '', tenant_name).upper()[:12]
-    suffix = secrets.token_hex(6)  # 12 hex chars
+    # Short prefix + strong random suffix to keep total length <= 64
+    prefix = re.sub(r"\W+", "", tenant_name).upper()[:8]
+    suffix = secrets.token_hex(24)  # 48 hex chars
     return f"{prefix}-{suffix}"
+
+
+def is_strong_api_key(api_key: str) -> bool:
+    if not api_key:
+        return False
+    if len(api_key) < 32 or len(api_key) > 64:
+        return False
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", api_key):
+        return False
+    if not any(ch.isalpha() for ch in api_key):
+        return False
+    if not any(ch.isdigit() for ch in api_key):
+        return False
+    return True

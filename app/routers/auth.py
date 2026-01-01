@@ -3,7 +3,7 @@ from typing import Optional
 
 import os
 import pyotp
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
@@ -46,6 +46,7 @@ from utils.email_alerts import (
     send_user_alert,
     send_webauthn_reset_email,
 )
+from utils.feedback import store_feedback
 from utils.location import get_ip_location
 from utils.logging_helpers import log_auth_event, log_realtime_event
 from utils.security import generate_token, hash_token, is_strong_password
@@ -66,7 +67,7 @@ from app.zt_authenticator import (
     resolve_rp_id,
     verify_p256_signature,
 )
-from utils.user_trust_engine import evaluate_trust
+from utils.user_trust_engine import evaluate_trust, evaluate_trust_details
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 templates = Jinja2Templates(directory="templates")
@@ -288,16 +289,35 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
     fp = get_request_fingerprint(request)
     access_token = create_access_token(identity=str(user.id), additional_claims={"fp": fp})
 
-    context = {"ip_address": ip_address, "device_info": device_info}
-    trust_score = evaluate_trust(user, context)
-    risk_level = "high" if trust_score >= 0.7 else "medium" if trust_score >= 0.4 else "low"
+    rp_id = resolve_rp_id(request, "zt-iam")
+    device_key = (
+        db.query(DeviceKey)
+        .join(Device, Device.id == DeviceKey.device_id)
+        .filter(
+            Device.user_id == user.id,
+            Device.tenant_id == user.tenant_id,
+            DeviceKey.rp_id == rp_id,
+        )
+        .order_by(DeviceKey.created_at.desc())
+        .first()
+    )
+    device_enrolled = device_key is not None
+    context = {
+        "ip_address": ip_address,
+        "device_info": device_info,
+        "location": location,
+        "device_enrolled": device_enrolled,
+    }
+    risk_details = evaluate_trust_details(user, context)
+    risk_score = risk_details["score"]
+    risk_level = risk_details["level"]
 
     preferred_mfa = (user.preferred_mfa or "both").lower()
     require_totp = False
     require_webauthn = False
     skip_all_mfa = False
 
-    if trust_score >= 0.95:
+    if risk_score <= 0.05:
         skip_all_mfa = True
 
     if not skip_all_mfa:
@@ -313,22 +333,28 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
             if not require_totp:
                 require_totp = True
 
-    rp_id = resolve_rp_id(request, "zt-iam")
-    device_key = None
-    device_enrolled = False
+    if risk_score >= 0.7:
+        require_totp = True
+        if _webauthn_allowed(request) and has_webauthn_credentials:
+            require_webauthn = True
+
     if require_totp:
-        device_key = (
-            db.query(DeviceKey)
-            .join(Device, Device.id == DeviceKey.device_id)
-            .filter(
-                Device.user_id == user.id,
-                Device.tenant_id == user.tenant_id,
-                DeviceKey.rp_id == rp_id,
+        if not device_enrolled:
+            device_key = (
+                db.query(DeviceKey)
+                .join(Device, Device.id == DeviceKey.device_id)
+                .filter(
+                    Device.user_id == user.id,
+                    Device.tenant_id == user.tenant_id,
+                    DeviceKey.rp_id == rp_id,
+                )
+                .order_by(DeviceKey.created_at.desc())
+                .first()
             )
-            .order_by(DeviceKey.created_at.desc())
-            .first()
-        )
-        device_enrolled = device_key is not None
+            device_enrolled = device_key is not None
+        if not device_enrolled:
+            risk_score = min(risk_score + 0.15, 1.0)
+            risk_level = "critical" if risk_score >= 0.8 else risk_level
 
     require_totp_setup = False
     require_totp_reset = False
@@ -356,8 +382,9 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
         ip_address=ip_address,
         device_info=device_info,
         location=location,
-        risk_alert=(risk_level == "high"),
+        risk_alert=(risk_level in {"high", "critical"}),
     )
+    user.trust_score = risk_score
     db.commit()
 
     has_webauthn_credentials = bool(user.webauthn_credentials)
@@ -366,7 +393,7 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
         {
             "message": "Login successful",
             "user_id": user.id,
-            "trust_score": trust_score,
+            "risk_score": risk_score,
             "risk_level": risk_level,
             "require_totp": require_totp,
             "require_totp_setup": require_totp_setup,
@@ -374,6 +401,7 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
             "require_webauthn": require_webauthn,
             "skip_all_mfa": skip_all_mfa,
             "has_webauthn_credentials": has_webauthn_credentials,
+            "risk_factors": risk_details.get("factors", []),
         }
     )
     set_access_cookie(response, access_token)
@@ -868,6 +896,9 @@ def login_status(
         db.commit()
         return {"status": "denied", "reason": "expired"}
 
+    if challenge.status == "pending":
+        remaining = int((challenge.expires_at - datetime.utcnow()).total_seconds())
+        return {"status": "pending", "expires_in": max(0, remaining)}
     if challenge.status != "ok":
         return {"status": challenge.status, "reason": challenge.denied_reason}
 
@@ -898,6 +929,72 @@ def login_status(
     }
 
 
+@router.post("/login/resend")
+def login_resend(
+    payload: dict,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    login_id = payload.get("login_id") or request.session.get("pending_login_id")
+    if not login_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="login_id is required")
+
+    challenge = db.query(LoginChallenge).get(login_id)
+    if not challenge:
+        return {"status": "denied", "reason": "not_found"}
+
+    if challenge.expires_at < datetime.utcnow():
+        challenge.status = "denied"
+        challenge.denied_reason = "expired"
+        db.commit()
+        return {"status": "denied", "reason": "expired"}
+
+    if challenge.status != "pending":
+        return {"status": challenge.status, "reason": challenge.denied_reason}
+
+    new_challenge = LoginChallenge(
+        user_id=challenge.user_id,
+        tenant_id=challenge.tenant_id,
+        device_id=challenge.device_id,
+        rp_id=challenge.rp_id,
+        nonce=generate_nonce(),
+        otp_hash=None,
+        status="pending",
+        expires_at=datetime.utcnow() + timedelta(minutes=2),
+    )
+    challenge.status = "denied"
+    challenge.denied_reason = "resent"
+    db.add(new_challenge)
+    db.commit()
+
+    request.session["pending_login_id"] = new_challenge.id
+    return {"status": "pending", "login_id": new_challenge.id, "expires_in": 120}
+
+
+@router.api_route("/login/deny", methods=["GET", "POST"])
+def login_deny(
+    request: Request,
+    db: Session = Depends(get_db),
+    payload: dict = Body(default_factory=dict),
+):
+    login_id = payload.get("login_id") or request.query_params.get("login_id") or request.session.get("pending_login_id")
+    reason = payload.get("reason", "cancelled")
+    if not login_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="login_id is required")
+
+    challenge = db.query(LoginChallenge).get(login_id)
+    if not challenge:
+        return {"status": "denied", "reason": "not_found"}
+
+    if challenge.status == "pending":
+        challenge.status = "denied"
+        challenge.denied_reason = reason
+        db.commit()
+
+    request.session.pop("pending_login_id", None)
+    return {"status": challenge.status, "reason": challenge.denied_reason}
+
+
 @router.get("/login/pending")
 def login_pending(user_id: int, request: Request, db: Session = Depends(get_db)):
     challenge = (
@@ -924,6 +1021,20 @@ def login_pending(user_id: int, request: Request, db: Session = Depends(get_db))
         "device_id": str(challenge.device_id),
         "expires_in": expires_in,
     }
+
+
+@router.post("/feedback")
+def submit_feedback(
+    payload: dict,
+    request: Request,
+):
+    store_feedback(
+        payload,
+        source="zt-authenticator",
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("User-Agent"),
+    )
+    return {"status": "ok"}
 
 
 @router.post("/login/approve")
@@ -1021,8 +1132,8 @@ def login_approve(payload: dict, request: Request, db: Session = Depends(get_db)
     return {"status": "ok"}
 
 
-@router.post("/login/deny")
-def login_deny(payload: dict, request: Request, db: Session = Depends(get_db)):
+@router.post("/login/deny-legacy")
+def login_deny_legacy(payload: dict, request: Request, db: Session = Depends(get_db)):
     login_id = payload.get("login_id")
     reason = payload.get("reason", "user_denied")
     if not login_id:
@@ -1152,6 +1263,44 @@ def whoami(request: Request, db: Session = Depends(get_db)):
         if role_obj:
             role = role_obj.role_name
     return {"role": role.lower()}
+
+
+@router.get("/risk-score")
+def risk_score(request: Request, db: Session = Depends(get_db)):
+    user_id = get_jwt_identity(request)
+    user = db.query(User).get(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    ip_address = request.client.host if request.client else None
+    device_info = request.headers.get("User-Agent", "")
+    location = get_ip_location(ip_address)
+    rp_id = resolve_rp_id(request, "zt-iam")
+    device_key = (
+        db.query(DeviceKey)
+        .join(Device, Device.id == DeviceKey.device_id)
+        .filter(
+            Device.user_id == user.id,
+            Device.tenant_id == user.tenant_id,
+            DeviceKey.rp_id == rp_id,
+        )
+        .first()
+    )
+    context = {
+        "ip_address": ip_address,
+        "device_info": device_info,
+        "location": location,
+        "device_enrolled": device_key is not None,
+    }
+    details = evaluate_trust_details(user, context)
+    user.trust_score = details["score"]
+    db.commit()
+    return {
+        "user_id": user.id,
+        "risk_score": details["score"],
+        "risk_level": details["level"],
+        "factors": details["factors"],
+    }
 
 
 @router.post("/verify-totp")
@@ -1671,11 +1820,11 @@ def reset_password(payload: dict, request: Request, db: Session = Depends(get_db
     device_info = request.headers.get("User-Agent", "")
     location = get_ip_location(ip_address)
 
-    if user.trust_score < 0.4:
+    if user.trust_score >= 0.6:
         db.add(
             RealTimeLog(
                 user_id=user.id,
-                action="Password reset denied due to low trust score",
+                action="Password reset denied due to elevated risk score",
                 ip_address=ip_address,
                 device_info=device_info,
                 location=location,
@@ -1685,7 +1834,7 @@ def reset_password(payload: dict, request: Request, db: Session = Depends(get_db
         )
         send_admin_alert(
             user=user,
-            event_type="Blocked Password Reset (Low Trust Score)",
+            event_type="Blocked Password Reset (High Risk Score)",
             ip_address=ip_address,
             location=location,
             device_info=device_info,

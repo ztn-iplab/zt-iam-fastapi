@@ -1,0 +1,242 @@
+Notation
+--------
+u user, d device, rp relying party, pw password, seed TOTP seed, dk device key
+wk WebAuthn key, rcode recovery code, n nonce, t time step
+Db(...) server state, DeviceState(...) device state, ChallengeState(...) pending challenge
+DbRecovery(...) recovery store, WebAuthnState(...) WebAuthn device state
+Events include Accept, AcceptPrimary, AcceptRecovery, DeviceGenerated, WebAuthnApproved
+theory Full_Authentication begin
+
+// Function signature and definition of the equational theory E
+
+functions: fst/1, h/1, pair/2, snd/1
+equations: fst(<x.1, x.2>) = x.1, snd(<x.1, x.2>) = x.2
+
+
+
+
+
+
+
+rule (modulo E) Register:
+   [
+   Fr( u ), Fr( d ), Fr( pw ), Fr( seed ), Fr( dk ), Fr( rp ), Fr( wk ),
+   Fr( rcode )
+   ]
+  --[ Register( u, d, rp ), IssueRecovery( u, rcode ) ]->
+   [
+   Db( u, d, pw, seed, dk, rp, wk ), DeviceState( u, d, seed, dk, rp ),
+   WebAuthnState( u, d, wk, rp ), DbRecovery( u, rcode )
+   ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) PasswordLogin:
+   [ Db( u, d, pw, seed, dk, rp, wk ), In( <u, pw> ), Fr( n ) ]
+  --[ PasswordOk( u ) ]->
+   [ ChallengeState( u, d, seed, dk, rp, wk, n ), Out( <u, rp, n> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) DeviceRespond:
+   [ DeviceState( u, d, seed, dk, rp ), In( <u, rp, n> ), Fr( t ) ]
+  --[
+  DeviceGenerated( u, d, rp, h(<seed, t>), h(<dk, rp, n, h(<seed, t>)>) )
+  ]->
+   [ Out( <u, rp, n, t, h(<seed, t>), h(<dk, rp, n, h(<seed, t>)>)> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) WebAuthnRespond:
+   [ WebAuthnState( u, d, wk, rp ), In( <u, rp, n> ) ]
+  --[ WebAuthnApproved( u, d, rp, n ) ]->
+   [ Out( <u, rp, n, h(<wk, rp, n>)> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) PolicyRequiresWebAuthn:
+   [ Fr( rp ) ]
+  --[ PolicyRequiresWebAuthn( rp ) ]->
+   [ PolicyRequiresWebAuthn( rp ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) PolicyNoWebAuthn:
+   [ Fr( rp ) ] --[ PolicyNoWebAuthn( rp ) ]-> [ PolicyNoWebAuthn( rp ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) ServerAcceptNoWebAuthn:
+   [
+   ChallengeState( u, d, seed, dk, rp, wk, n ), PolicyNoWebAuthn( rp ),
+   In( <u, rp, n, t, h(<seed, t>), h(<dk, rp, n, h(<seed, t>)>)> )
+   ]
+  --[ AcceptPrimary( u, d, rp ) ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) ServerAcceptWithWebAuthn:
+   [
+   ChallengeState( u, d, seed, dk, rp, wk, n ),
+   PolicyRequiresWebAuthn( rp ),
+   In( <u, rp, n, t, h(<seed, t>), h(<dk, rp, n, h(<seed, t>)>)> ),
+   In( <u, rp, n, h(<wk, rp, n>)> )
+   ]
+  --[ AcceptPrimary( u, d, rp ) ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) RecoveryLogin:
+   [ DbRecovery( u, rcode ), In( <u, rcode> ) ]
+  --[ AcceptRecovery( u ) ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) LeakSeed:
+   [ Db( u, d, pw, seed, dk, rp, wk ) ]
+  --[ LeakSeed( u ) ]->
+   [ Out( seed ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) LeakDeviceKey:
+   [ Db( u, d, pw, seed, dk, rp, wk ) ]
+  --[ LeakDeviceKey( u, d ) ]->
+   [ Out( dk ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) LeakPassword:
+   [ Db( u, d, pw, seed, dk, rp, wk ) ]
+  --[ LeakPassword( u ) ]->
+   [ Out( pw ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) LeakRecovery:
+   [ DbRecovery( u, rcode ) ] --[ LeakRecovery( u ) ]-> [ Out( rcode ) ]
+
+  /* has exactly the trivial AC variant */
+
+lemma primary_requires_password_and_device:
+  all-traces
+  "∀ u d rp #i.
+    (AcceptPrimary( u, d, rp ) @ #i) ⇒
+    (∃ #j #k otp proof.
+      (((PasswordOk( u ) @ #j) ∧
+        (DeviceGenerated( u, d, rp, otp, proof ) @ #k)) ∧
+       (#j < #i)) ∧
+      (#k < #i))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ u d rp #i.
+  (AcceptPrimary( u, d, rp ) @ #i)
+ ∧
+  ∀ #j #k otp proof.
+   (PasswordOk( u ) @ #j) ∧ (DeviceGenerated( u, d, rp, otp, proof ) @ #k)
+  ⇒
+   ((¬(#j < #i)) ∨ (¬(#k < #i)))"
+*/
+simplify
+solve( AcceptPrimary( u, d, rp ) @ #i )
+  case ServerAcceptNoWebAuthn
+  solve( ChallengeState( u, d, seed, dk, rp, wk, n ) ▶₀ #i )
+    case PasswordLogin
+    by solve( PolicyNoWebAuthn( ~n.4 ) ▶₁ #i )
+  qed
+next
+  case ServerAcceptWithWebAuthn
+  solve( ChallengeState( u, d, seed, dk, rp, wk, n ) ▶₀ #i )
+    case PasswordLogin
+    by solve( PolicyRequiresWebAuthn( ~n.4 ) ▶₁ #i )
+  qed
+qed
+
+lemma webauthn_enforced_when_required:
+  all-traces
+  "∀ u d rp #i.
+    ((AcceptPrimary( u, d, rp ) @ #i) ∧
+     (PolicyRequiresWebAuthn( rp ) @ #i)) ⇒
+    (∃ #j n. (WebAuthnApproved( u, d, rp, n ) @ #j) ∧ (#j < #i))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ u d rp #i.
+  (AcceptPrimary( u, d, rp ) @ #i) ∧ (PolicyRequiresWebAuthn( rp ) @ #i)
+ ∧
+  ∀ #j n. (WebAuthnApproved( u, d, rp, n ) @ #j) ⇒ ¬(#j < #i)"
+*/
+simplify
+by solve( AcceptPrimary( u, d, ~n ) @ #i )
+
+lemma recovery_requires_code_issue:
+  all-traces
+  "∀ u #i.
+    (AcceptRecovery( u ) @ #i) ⇒
+    (∃ #j code. (IssueRecovery( u, code ) @ #j) ∧ (#j < #i))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ u #i.
+  (AcceptRecovery( u ) @ #i)
+ ∧
+  ∀ #j code. (IssueRecovery( u, code ) @ #j) ⇒ ¬(#j < #i)"
+*/
+simplify
+solve( DbRecovery( u, rcode ) ▶₀ #i )
+  case Register
+  by contradiction /* from formulas */
+qed
+
+lemma seed_compromise_resisted:
+  all-traces
+  "∀ u d rp #i.
+    ((AcceptPrimary( u, d, rp ) @ #i) ∧ (LeakSeed( u ) @ #i)) ⇒
+    (∃ #j. LeakDeviceKey( u, d ) @ #j)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ u d rp #i.
+  (AcceptPrimary( u, d, rp ) @ #i) ∧ (LeakSeed( u ) @ #i)
+ ∧
+  ∀ #j. (LeakDeviceKey( u, d ) @ #j) ⇒ ⊥"
+*/
+simplify
+solve( Db( u, d, pw, seed, dk, rp, wk ) ▶₀ #i )
+  case Register
+  by solve( AcceptPrimary( ~n, d, rp ) @ #i )
+qed
+
+
+
+
+
+
+
+
+
+/* All wellformedness checks were successful. */
+
+/*
+Generated from:
+Tamarin version 1.9.0
+Maude version 3.1
+Git revision: UNKNOWN, branch: UNKNOWN
+Compiled at: 2024-03-08 00:22:39.488712808 UTC
+*/
+
+end
+
+==============================================================================
+summary of summaries:
+
+analyzed: tamarin/full_authentication.spthy
+
+  processing time: 1.99s
+  
+  primary_requires_password_and_device (all-traces): verified (6 steps)
+  webauthn_enforced_when_required (all-traces): verified (2 steps)
+  recovery_requires_code_issue (all-traces): verified (3 steps)
+  seed_compromise_resisted (all-traces): verified (3 steps)
+
+==============================================================================

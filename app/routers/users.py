@@ -40,7 +40,16 @@ class UserUpdate(BaseModel):
     ],
 )
 def user_dashboard(request: Request, user: User = Depends(get_current_user)):
-    return templates.TemplateResponse("user_dashboard.html", {"request": request, "user": user})
+    sim = None
+    try:
+        sim = user.sim_cards[0] if user.sim_cards else None
+    except Exception:
+        sim = None
+    user.mobile_number = sim.mobile_number if sim else "N/A"
+    return templates.TemplateResponse(
+        "user_dashboard.html",
+        {"request": request, "user": user, "dashboard_url": "/user/dashboard"},
+    )
 
 
 @router.post("/users", dependencies=[Depends(verify_session_fingerprint)])
@@ -163,6 +172,7 @@ def profile(request: Request, db: Session = Depends(get_db)):
         "first_name": user.first_name,
         "country": user.country,
         "identity_verified": user.identity_verified,
+        "trust_score": user.trust_score,
     }
 
 

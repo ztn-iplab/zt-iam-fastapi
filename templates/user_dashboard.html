@@ -10,6 +10,17 @@
         <p>Balance: <span id="wallet-balance">Loading...</span></p>
         <p>Currency: <span id="wallet-currency">Loading...</span></p>
       </div>
+      <div class="widget risk-widget" data-risk-score="{{ user.trust_score }}">
+        <h2>Security Risk</h2>
+        <div class="risk-score">
+          <span id="risk-score-value">--</span>
+          <span class="risk-level" id="risk-level-value">--</span>
+        </div>
+        <p class="risk-note" id="risk-guidance-summary">
+          Risk posture updates after each login.
+        </p>
+        <ul class="risk-factors" id="risk-factors-list"></ul>
+      </div>
       <div class="widget chart-widget">
         <h2>Transaction Overview</h2>
         <label for="aggregation-type">Aggregate by:</label>
@@ -124,8 +135,8 @@
           <span id="user-country">{{ user.country }}</span>
         </p>
         <p>
-          <strong>Trust Score:</strong>
-          <span id="user-trust-score">{{user.trust_score}}</span>
+          <strong>Risk Score:</strong>
+          <span id="user-trust-score">{{ user.trust_score }}</span>
         </p>
 
         <!--Settings Access Button -->

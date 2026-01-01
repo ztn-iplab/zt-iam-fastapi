@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import RealTimeLog, User
+from app.models import RealTimeLog, User, UserAccessControl, UserRole
 from app.security import get_jwt_identity, verify_session_fingerprint
 from utils.email_alerts import send_admin_alert
 from utils.location import get_ip_location
@@ -24,9 +24,21 @@ def settings_home(request: Request, db: Session = Depends(get_db)):
     user = db.query(User).get(user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    access = db.query(UserAccessControl).filter_by(user_id=user.id).first()
+    role = "user"
+    if access:
+        role_obj = db.query(UserRole).get(access.role_id)
+        if role_obj:
+            role = role_obj.role_name.lower()
+    dashboard_urls = {
+        "admin": "/admin/dashboard",
+        "agent": "/agent/dashboard",
+        "user": "/user/dashboard",
+    }
+    dashboard_url = dashboard_urls.get(role, "/user/dashboard")
     return templates.TemplateResponse(
         "settings.html",
-        {"request": request, "user": user, "role": getattr(user, "role", "user")},
+        {"request": request, "user": user, "role": role, "dashboard_url": dashboard_url},
     )
 
 

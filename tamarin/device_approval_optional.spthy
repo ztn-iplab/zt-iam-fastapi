@@ -1,0 +1,54 @@
+/*
+Notation:
+  u user, d device, rp relying party, seed TOTP seed, dk device key, n nonce, t time step.
+  Db(...) server state, DeviceState(...) device state, ChallengeState(...) pending challenge.
+  Events: Register, Challenge, DeviceGenerated, DeviceApproved, Accept, PolicyRequiresApproval.
+*/
+theory Device_Approval_Optional
+begin
+
+builtins: hashing
+
+rule Register:
+  [ Fr(u), Fr(d), Fr(seed), Fr(dk), Fr(rp) ]
+  --[ Register(u,d,rp) ]->
+  [ Db(u,d,seed,dk,rp), DeviceState(u,d,seed,dk,rp) ]
+
+rule Challenge:
+  [ Db(u,d,seed,dk,rp), Fr(n) ]
+  --[ Challenge(u,d,rp,n) ]->
+  [ ChallengeState(u,d,seed,dk,rp,n), Out(<u,rp,n>) ]
+
+rule DeviceRespond:
+  [ DeviceState(u,d,seed,dk,rp), In(<u,rp,n>), Fr(t) ]
+  --[ DeviceGenerated(u,d,rp,h(<seed,t>),h(<dk,rp,n,h(<seed,t>)>) ) ]->
+  [ Out(<u,rp,n,t,h(<seed,t>),h(<dk,rp,n,h(<seed,t>)>)>) ]
+
+rule DeviceApprove:
+  [ DeviceState(u,d,seed,dk,rp), In(<u,rp,n>)]
+  --[ DeviceApproved(u,d,rp,n) ]->
+  [ Out(<u,rp,n,h(<dk,rp,n>)>) ]
+
+rule RequireApproval:
+  [ Fr(rp) ]
+  --[ PolicyRequiresApproval(rp) ]->
+  [ PolicyRequiresApproval(rp) ]
+
+rule ServerVerifyOptional:
+  [ ChallengeState(u,d,seed,dk,rp,n),
+    In(<u,rp,n,t,h(<seed,t>),h(<dk,rp,n,h(<seed,t>)>)>) ]
+  --[ Accept(u,d,rp) ]->
+  [ ]
+
+rule ServerVerifyWithApproval:
+  [ ChallengeState(u,d,seed,dk,rp,n),
+    PolicyRequiresApproval(rp),
+    In(<u,rp,n,t,h(<seed,t>),h(<dk,rp,n,h(<seed,t>)>)>),
+    In(<u,rp,n,h(<dk,rp,n>)>) ]
+  --[ Accept(u,d,rp) ]->
+  [ ]
+
+lemma approval_required_when_policy:
+  "All u d rp #i. (Accept(u,d,rp)@i & PolicyRequiresApproval(rp)@i) ==> (Ex #j n. DeviceApproved(u,d,rp,n)@j & j < i)"
+
+end

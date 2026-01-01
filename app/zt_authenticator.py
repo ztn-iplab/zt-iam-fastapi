@@ -151,16 +151,19 @@ def _qr_to_png(qr) -> bytes:
 
 def resolve_rp_id(request, fallback_name: str) -> str:
     host = getattr(request.url, "hostname", None)
-    if host:
-        return host
     base_url = os.getenv("PUBLIC_BASE_URL")
     if base_url:
         try:
             parsed = urlparse(base_url)
             if parsed.hostname:
-                return parsed.hostname
+                if host in {"localhost", "127.0.0.1", "localhost.localdomain.com"}:
+                    return parsed.hostname
+                if not host:
+                    return parsed.hostname
         except Exception:
             pass
+    if host:
+        return host
     return fallback_name
 
 
@@ -174,11 +177,5 @@ def resolve_api_base_url(
         return explicit.rstrip("/")
     base_url = os.getenv("PUBLIC_BASE_URL")
     if base_url:
-        try:
-            parsed = urlparse(base_url)
-            if parsed.hostname in {"localhost", "127.0.0.1", "localhost.localdomain.com"}:
-                return str(request.base_url).rstrip("/") + default_path
-        except Exception:
-            pass
         return base_url.rstrip("/") + default_path
     return str(request.base_url).rstrip("/") + default_path

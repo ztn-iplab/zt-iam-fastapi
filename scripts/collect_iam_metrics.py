@@ -234,7 +234,7 @@ def zt_verify(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", default="https://localhost.localdomain.com")
+    parser.add_argument("--base-url", default="https://example.local")
     parser.add_argument("--identifier", required=True)
     parser.add_argument("--password", required=True)
     parser.add_argument("--insecure", action="store_true", help="Disable TLS verification (dev only).")

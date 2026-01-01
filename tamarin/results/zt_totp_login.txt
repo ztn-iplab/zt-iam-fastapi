@@ -1,0 +1,139 @@
+Notation
+--------
+u user, d device, rp relying party, pw password, seed TOTP seed, dk device key
+wk WebAuthn key, rcode recovery code, n nonce, t time step
+Db(...) server state, DeviceState(...) device state, ChallengeState(...) pending challenge
+DbRecovery(...) recovery store, WebAuthnState(...) WebAuthn device state
+Events include Accept, AcceptPrimary, AcceptRecovery, DeviceGenerated, WebAuthnApproved
+theory ZT_TOTP_Login begin
+
+// Function signature and definition of the equational theory E
+
+functions: fst/1, h/1, pair/2, snd/1
+equations: fst(<x.1, x.2>) = x.1, snd(<x.1, x.2>) = x.2
+
+
+
+
+
+
+
+rule (modulo E) Register:
+   [ Fr( u ), Fr( d ), Fr( pw ), Fr( seed ), Fr( dk ), Fr( rp ) ]
+  --[ Register( u, d, rp ) ]->
+   [ Db( u, d, pw, seed, dk, rp ), DeviceState( u, d, seed, dk, rp ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) PasswordLogin:
+   [ Db( u, d, pw, seed, dk, rp ), In( <u, pw> ) ]
+  --[ PasswordOk( u ) ]->
+   [ ChallengeState( u, d, seed, dk, rp ), Out( <u, rp> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) DeviceRespond:
+   [ DeviceState( u, d, seed, dk, rp ), In( <u, rp> ), Fr( t ) ]
+  --[ DeviceGenerated( u, d, rp, h(<seed, t>), h(<dk, rp, h(<seed, t>)>) )
+  ]->
+   [ Out( <u, rp, t, h(<seed, t>), h(<dk, rp, h(<seed, t>)>)> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) ServerVerify:
+   [
+   ChallengeState( u, d, seed, dk, rp ),
+   In( <u, rp, t, h(<seed, t>), h(<dk, rp, h(<seed, t>)>)> )
+   ]
+  --[ Accept( u, d, rp ) ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) LeakPassword:
+   [ Db( u, d, pw, seed, dk, rp ) ] --[ LeakPassword( u ) ]-> [ Out( pw ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) LeakSeed:
+   [ Db( u, d, pw, seed, dk, rp ) ] --[ LeakSeed( u ) ]-> [ Out( seed ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) LeakDeviceKey:
+   [ Db( u, d, pw, seed, dk, rp ) ]
+  --[ LeakDeviceKey( u, d ) ]->
+   [ Out( dk ) ]
+
+  /* has exactly the trivial AC variant */
+
+lemma password_and_device_required:
+  all-traces
+  "∀ u d rp #i.
+    (Accept( u, d, rp ) @ #i) ⇒
+    (∃ #j #k otp proof.
+      (((PasswordOk( u ) @ #j) ∧
+        (DeviceGenerated( u, d, rp, otp, proof ) @ #k)) ∧
+       (#j < #i)) ∧
+      (#k < #i))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ u d rp #i.
+  (Accept( u, d, rp ) @ #i)
+ ∧
+  ∀ #j #k otp proof.
+   (PasswordOk( u ) @ #j) ∧ (DeviceGenerated( u, d, rp, otp, proof ) @ #k)
+  ⇒
+   ((¬(#j < #i)) ∨ (¬(#k < #i)))"
+*/
+simplify
+solve( ChallengeState( u, d, seed, dk, rp ) ▶₀ #i )
+  case PasswordLogin
+  by solve( !KU( ~n ) @ #vk.1 )
+qed
+
+lemma seed_compromise_resisted:
+  all-traces
+  "∀ u d rp #i.
+    ((Accept( u, d, rp ) @ #i) ∧ (LeakSeed( u ) @ #i)) ⇒
+    (∃ #j. LeakDeviceKey( u, d ) @ #j)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ u d rp #i.
+  (Accept( u, d, rp ) @ #i) ∧ (LeakSeed( u ) @ #i)
+ ∧
+  ∀ #j. (LeakDeviceKey( u, d ) @ #j) ⇒ ⊥"
+*/
+by simplify
+
+
+
+
+
+
+
+
+
+/* All wellformedness checks were successful. */
+
+/*
+Generated from:
+Tamarin version 1.9.0
+Maude version 3.1
+Git revision: UNKNOWN, branch: UNKNOWN
+Compiled at: 2024-03-08 00:22:39.488712808 UTC
+*/
+
+end
+
+==============================================================================
+summary of summaries:
+
+analyzed: tamarin/zt_totp_login.spthy
+
+  processing time: 1.15s
+  
+  password_and_device_required (all-traces): verified (3 steps)
+  seed_compromise_resisted (all-traces): verified (1 steps)
+
+==============================================================================

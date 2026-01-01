@@ -1,0 +1,95 @@
+Notation
+--------
+u user, d device, rp relying party, pw password, seed TOTP seed, dk device key
+wk WebAuthn key, rcode recovery code, n nonce, t time step
+Db(...) server state, DeviceState(...) device state, ChallengeState(...) pending challenge
+DbRecovery(...) recovery store, WebAuthnState(...) WebAuthn device state
+Events include Accept, AcceptPrimary, AcceptRecovery, DeviceGenerated, WebAuthnApproved
+theory Recovery_Code begin
+
+// Function signature and definition of the equational theory E
+
+functions: fst/1, pair/2, snd/1
+equations: fst(<x.1, x.2>) = x.1, snd(<x.1, x.2>) = x.2
+
+
+
+
+
+rule (modulo E) RegisterRecovery:
+   [ Fr( u ), Fr( code ) ]
+  --[ IssueRecovery( u, code ) ]->
+   [ DbRecovery( u, code ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) RecoverLogin:
+   [ DbRecovery( u, code ), In( <u, code> ) ] --[ RecoverAccept( u ) ]-> [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) LeakRecoveryCode:
+   [ DbRecovery( u, code ) ] --[ LeakRecovery( u ) ]-> [ Out( code ) ]
+
+  /* has exactly the trivial AC variant */
+
+lemma recovery_requires_code:
+  all-traces
+  "∀ u #i.
+    (RecoverAccept( u ) @ #i) ⇒
+    (∃ #j code. (IssueRecovery( u, code ) @ #j) ∧ (#j < #i))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ u #i.
+  (RecoverAccept( u ) @ #i)
+ ∧
+  ∀ #j code. (IssueRecovery( u, code ) @ #j) ⇒ ¬(#j < #i)"
+*/
+simplify
+solve( DbRecovery( u, code ) ▶₀ #i )
+  case RegisterRecovery
+  by contradiction /* cyclic */
+qed
+
+lemma recovery_resists_no_leak:
+  all-traces
+  "∀ u #i. (RecoverAccept( u ) @ #i) ⇒ (∃ #j. LeakRecovery( u ) @ #j)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ u #i. (RecoverAccept( u ) @ #i) ∧ ∀ #j. (LeakRecovery( u ) @ #j) ⇒ ⊥"
+*/
+simplify
+solve( DbRecovery( u, code ) ▶₀ #i )
+  case RegisterRecovery
+  by contradiction /* cyclic */
+qed
+
+
+
+
+
+
+
+/* All wellformedness checks were successful. */
+
+/*
+Generated from:
+Tamarin version 1.9.0
+Maude version 3.1
+Git revision: UNKNOWN, branch: UNKNOWN
+Compiled at: 2024-03-08 00:22:39.488712808 UTC
+*/
+
+end
+
+==============================================================================
+summary of summaries:
+
+analyzed: tamarin/recovery_code.spthy
+
+  processing time: 0.43s
+  
+  recovery_requires_code (all-traces): verified (3 steps)
+  recovery_resists_no_leak (all-traces): verified (3 steps)
+
+==============================================================================

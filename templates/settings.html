@@ -1,5 +1,11 @@
 {% extends "base_dashboard.html" %} {% block title %}Settings{% endblock %} {%
-block dashboard_content %}
+block sidebar_menu %}
+<ul class="sidebar-menu">
+  <li><a href="{{ dashboard_url }}">Back to Dashboard</a></li>
+  <li><a href="{{ url_for('settings_home') }}">Settings</a></li>
+  <li><a href="#" id="logout-link">Logout</a></li>
+</ul>
+{% endblock %} {% block dashboard_content %}
 
 <!--  Modal Backdrop -->
 <div id="settings-backdrop" class="modal-backdrop"></div>
@@ -80,6 +86,16 @@ block dashboard_content %}
         isDragging = false;
       }
     });
+
+    const logoutLink = document.getElementById("logout-link");
+    if (logoutLink) {
+      logoutLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        fetch("/api/auth/logout", { method: "POST" }).then(() => {
+          window.location.href = "/api/auth/login_form";
+        });
+      });
+    }
   });
 </script>
 

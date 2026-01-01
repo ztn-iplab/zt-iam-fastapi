@@ -1,24 +1,39 @@
 # user_trust_engine.py
 
 from datetime import datetime, timedelta
-import json
-from app.models import UserAuthLog, TenantTrustPolicyFile
 
-# -------------------------------
-# BaseTrustEngine – Default Rules
-# -------------------------------
+from app.models import TenantTrustPolicyFile, UserAuthLog
+
 
 class BaseTrustEngine:
     def __init__(self, user, context):
         self.user = user
         self.context = context
         self.score = 0.0
+        self.factors = []
+
+    def _add_factor(self, key, weight, title, guidance, evidence=None):
+        self.score += weight
+        self.factors.append(
+            {
+                "key": key,
+                "weight": round(weight, 2),
+                "title": title,
+                "guidance": guidance,
+                "evidence": evidence or {},
+            }
+        )
 
     def run(self):
         self.rule_large_transaction()
         self.rule_odd_hours()
         self.rule_new_device_or_ip()
-        self.rule_geo_trust()
+        self.rule_location_change()
+        self.rule_recent_failures()
+        self.rule_account_age()
+        self.rule_login_velocity()
+        self.rule_identity_unverified()
+        self.rule_missing_device_binding()
         return round(min(self.score, 1.0), 2)
 
     def rule_large_transaction(self):
@@ -27,33 +42,131 @@ class BaseTrustEngine:
             return
         avg_amount = 10000
         if amount > avg_amount * 3:
-            self.score += 0.4
+            self._add_factor(
+                "large_transaction",
+                0.4,
+                "Unusual transaction size",
+                "Verify the recipient and consider a smaller test transfer first.",
+                {"amount": amount},
+            )
 
     def rule_odd_hours(self):
         hour = datetime.utcnow().hour
         if hour in [1, 2, 3, 4]:
-            self.score += 0.2
+            self._add_factor(
+                "odd_hours",
+                0.2,
+                "Unusual login time",
+                "If this is you, proceed; otherwise reset your password immediately.",
+                {"hour": hour},
+            )
 
     def rule_new_device_or_ip(self):
         device_info = self.context.get("device_info")
         ip_address = self.context.get("ip_address")
-        recent_logs = UserAuthLog.query.filter_by(user_id=self.user.id).order_by(
-            UserAuthLog.auth_timestamp.desc()
-        ).limit(5).all()
+        recent_logs = (
+            UserAuthLog.query.filter_by(user_id=self.user.id)
+            .order_by(UserAuthLog.auth_timestamp.desc())
+            .limit(5)
+            .all()
+        )
 
         if device_info and not any(log.device_info == device_info for log in recent_logs):
-            self.score += 0.2
+            self._add_factor(
+                "new_device",
+                0.2,
+                "New device detected",
+                "Approve the login only if this is your device.",
+            )
         if ip_address and not any(log.ip_address == ip_address for log in recent_logs):
-            self.score += 0.2
+            self._add_factor(
+                "new_ip",
+                0.2,
+                "New network detected",
+                "If this IP is unfamiliar, change your password.",
+                {"ip_address": ip_address},
+            )
 
-    def rule_geo_trust(self):
-        if self.user.trust_score < 0.3:
-            self.score += 0.2
+    def rule_location_change(self):
+        location = (self.context.get("location") or "").strip()
+        if not location or location == "Unknown":
+            return
+        last = (
+            UserAuthLog.query.filter_by(user_id=self.user.id, auth_status="success")
+            .order_by(UserAuthLog.auth_timestamp.desc())
+            .first()
+        )
+        if last and last.location and last.location != location:
+            self._add_factor(
+                "location_change",
+                0.2,
+                "Location change detected",
+                "If this location is unexpected, secure your account.",
+                {"location": location},
+            )
 
+    def rule_recent_failures(self):
+        window = datetime.utcnow() - timedelta(minutes=15)
+        failures = (
+            UserAuthLog.query.filter_by(user_id=self.user.id, auth_status="failed")
+            .filter(UserAuthLog.auth_timestamp >= window)
+            .count()
+        )
+        if failures >= 3:
+            self._add_factor(
+                "recent_failures",
+                0.35,
+                "Multiple failed login attempts",
+                "If this wasn't you, reset your password and review recent activity.",
+                {"failed_attempts": failures},
+            )
 
-# -------------------------------
-# JSONPolicyTrustEngine – Per Tenant
-# -------------------------------
+    def rule_account_age(self):
+        if not self.user.created_at:
+            return
+        if self.user.created_at >= datetime.utcnow() - timedelta(days=7):
+            self._add_factor(
+                "new_account",
+                0.15,
+                "New account",
+                "Complete profile verification to improve trust.",
+            )
+
+    def rule_login_velocity(self):
+        window = datetime.utcnow() - timedelta(hours=1)
+        logins = (
+            UserAuthLog.query.filter_by(user_id=self.user.id, auth_status="success")
+            .filter(UserAuthLog.auth_timestamp >= window)
+            .count()
+        )
+        if logins >= 5:
+            self._add_factor(
+                "login_velocity",
+                0.2,
+                "High login activity",
+                "If this wasn’t you, sign out of other sessions.",
+                {"login_count": logins},
+            )
+
+    def rule_identity_unverified(self):
+        if not self.user.identity_verified:
+            self._add_factor(
+                "identity_unverified",
+                0.1,
+                "Identity not verified",
+                "Verify your identity to reduce future risk checks.",
+            )
+
+    def rule_missing_device_binding(self):
+        device_enrolled = self.context.get("device_enrolled")
+        if device_enrolled is False:
+            self._add_factor(
+                "device_not_bound",
+                0.25,
+                "No trusted device bound",
+                "Enroll a trusted device for stronger protection.",
+            )
+
 
 class JSONPolicyTrustEngine(BaseTrustEngine):
     def __init__(self, user, context, tenant):
@@ -61,104 +174,134 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
         self.tenant = tenant
 
     def run(self):
-        policy_file = TenantTrustPolicyFile.query.filter_by(
-            tenant_id=self.tenant.id
-        ).first()
+        policy_file = TenantTrustPolicyFile.query.filter_by(tenant_id=self.tenant.id).first()
 
         if not policy_file:
-            print("📂 No tenant policy found. Using BaseTrustEngine.")
             return super().run()
 
-        config = policy_file.config_json  #  Already stored as JSON in DB
-
+        config = policy_file.config_json
         if not isinstance(config, dict):
-            print("⚠️ Invalid config format. Using BaseTrustEngine.")
             return super().run()
 
         rules = config.get("rules", {})
         score = 0.0
         ctx = self.context
 
-        #  Odd Hours
         if rules.get("odd_hours", {}).get("enabled"):
-            hour = (datetime.utcnow().hour + 9) % 24  # Adjust to JST
-            # hour = datetime.utcnow().hour
+            hour = (datetime.utcnow().hour + 9) % 24
             if hour in rules["odd_hours"].get("hours", [1, 2, 3, 4]):
-                print("📌 odd hours triggered")
-                score += rules["odd_hours"].get("weight", 0.2)
+                weight = rules["odd_hours"].get("weight", 0.2)
+                self._add_factor(
+                    "odd_hours",
+                    weight,
+                    "Unusual login time",
+                    "If this is you, proceed; otherwise secure your account.",
+                    {"hour": hour},
+                )
+                score += weight
 
-
-        #  New Device/IP
         if rules.get("new_device_or_ip", {}).get("enabled"):
             device_info = ctx.get("device_info")
             ip_address = ctx.get("ip_address")
-            recent_logs = UserAuthLog.query.filter_by(user_id=self.user.id).order_by(
-                UserAuthLog.auth_timestamp.desc()
-            ).limit(5).all()
+            recent_logs = (
+                UserAuthLog.query.filter_by(user_id=self.user.id)
+                .order_by(UserAuthLog.auth_timestamp.desc())
+                .limit(5)
+                .all()
+            )
 
             if device_info and not any(log.device_info == device_info for log in recent_logs):
-                score += rules["new_device_or_ip"].get("weight", 0.2)
+                weight = rules["new_device_or_ip"].get("weight", 0.2)
+                self._add_factor(
+                    "new_device",
+                    weight,
+                    "New device detected",
+                    "Approve the login only if this is your device.",
+                )
+                score += weight
             if ip_address and not any(log.ip_address == ip_address for log in recent_logs):
-                print("📌 new device rule triggered")
-                score += rules["new_device_or_ip"].get("weight", 0.2)
+                weight = rules["new_device_or_ip"].get("weight", 0.2)
+                self._add_factor(
+                    "new_ip",
+                    weight,
+                    "New network detected",
+                    "If this IP is unfamiliar, change your password.",
+                    {"ip_address": ip_address},
+                )
+                score += weight
 
-        #  Geo Trust
         if rules.get("geo_trust", {}).get("enabled"):
             min_score = rules["geo_trust"].get("min_trust_score", 0.3)
             if self.user.trust_score < min_score:
-                print("📌 geo_trust triggered")
-                score += rules["geo_trust"].get("weight", 0.2)
+                weight = rules["geo_trust"].get("weight", 0.2)
+                self._add_factor(
+                    "geo_trust",
+                    weight,
+                    "Location trust below threshold",
+                    "Confirm your location before proceeding.",
+                )
+                score += weight
 
-        #  Login Frequency Rule
         if rules.get("login_frequency", {}).get("enabled"):
             threshold = rules["login_frequency"].get("threshold", 3)
             weight = rules["login_frequency"].get("weight", 0.2)
 
             since = datetime.utcnow() - timedelta(hours=24)
-            login_count = UserAuthLog.query.filter_by(
-                user_id=self.user.id,
-                auth_method="password",
-                auth_status="success"
-            ).filter(UserAuthLog.auth_timestamp >= since).count()
+            login_count = (
+                UserAuthLog.query.filter_by(
+                    user_id=self.user.id,
+                    auth_method="password",
+                    auth_status="success",
+                )
+                .filter(UserAuthLog.auth_timestamp >= since)
+                .count()
+            )
 
             if login_count >= threshold:
-                print(f"📌 login_frequency triggered with count={login_count}")
+                self._add_factor(
+                    "login_frequency",
+                    weight,
+                    "Unusual login frequency",
+                    "Consider changing your password if this wasn’t you.",
+                    {"login_count": login_count},
+                )
                 score += weight
-
 
         return round(min(score, 1.0), 2)
 
 
-# -------------------------------
-# Trust Evaluation Entry Point
-# -------------------------------
+def _risk_level(score: float) -> str:
+    if score >= 0.8:
+        return "critical"
+    if score >= 0.6:
+        return "high"
+    if score >= 0.3:
+        return "medium"
+    return "low"
 
-def evaluate_trust(user, context, tenant=None):
-    #  Optional custom callable hook
+
+def evaluate_trust_details(user, context, tenant=None):
     if tenant and hasattr(tenant, "custom_trust_logic") and callable(tenant.custom_trust_logic):
         try:
             score = tenant.custom_trust_logic(user, context)
-            print(f"📊 Trust Score (Callable Logic): {score}")
-            return score
-        except Exception as e:
-            print(f"⚠️ Failed to use custom trust logic: {e}")
+            return {"score": round(min(score, 1.0), 2), "level": _risk_level(score), "factors": []}
+        except Exception:
+            pass
 
-    #  Use tenant.id to load policy if present
     if tenant:
         policy_file = TenantTrustPolicyFile.query.filter_by(tenant_id=tenant.id).first()
         if policy_file:
             try:
-                score = JSONPolicyTrustEngine(user, context, tenant).run()
-                print(f"📊 Trust Score (JSON Policy): {score}")
-                return score
-            except Exception as e:
-                print(f"⚠️ JSONPolicyTrustEngine failed: {e}")
-        else:
-            print("📂 No tenant policy found. Using BaseTrustEngine.")
-    else:
-        print("⚠️ No tenant provided. Using BaseTrustEngine.")
+                engine = JSONPolicyTrustEngine(user, context, tenant)
+                score = engine.run()
+                return {"score": score, "level": _risk_level(score), "factors": engine.factors}
+            except Exception:
+                pass
 
-    #  Fallback
-    score = BaseTrustEngine(user, context).run()
-    print(f"📊 Trust Score (Base Engine Fallback): {score}")
-    return score
+    engine = BaseTrustEngine(user, context)
+    score = engine.run()
+    return {"score": score, "level": _risk_level(score), "factors": engine.factors}
+
+
+def evaluate_trust(user, context, tenant=None):
+    return evaluate_trust_details(user, context, tenant)["score"]

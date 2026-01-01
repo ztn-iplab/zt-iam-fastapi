@@ -8,7 +8,7 @@ tenant_id = 2
 #  Mapping of company_email to role name
 role_assignments = {
     "pathos2m@gmail.com": "doctor",
-    "patrickmutabazi104@gmail.com": None,  # No role assigned
+    "user@example.com": None,  # No role assigned
     "dary@minheal.com": "nurse",
     "bztniplab@gmail.com": "admin",
 }
@@ -47,4 +47,3 @@ with app.app_context():
 
     db.session.commit()
     print("✅ All roles assigned successfully.")
-

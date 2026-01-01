@@ -1,0 +1,123 @@
+Notation
+--------
+u user, d device, rp relying party, pw password, seed TOTP seed, dk device key
+wk WebAuthn key, rcode recovery code, n nonce, t time step
+Db(...) server state, DeviceState(...) device state, ChallengeState(...) pending challenge
+DbRecovery(...) recovery store, WebAuthnState(...) WebAuthn device state
+Events include Accept, AcceptPrimary, AcceptRecovery, DeviceGenerated, WebAuthnApproved
+theory Device_Approval_Optional begin
+
+// Function signature and definition of the equational theory E
+
+functions: fst/1, h/1, pair/2, snd/1
+equations: fst(<x.1, x.2>) = x.1, snd(<x.1, x.2>) = x.2
+
+
+
+
+
+
+
+rule (modulo E) Register:
+   [ Fr( u ), Fr( d ), Fr( seed ), Fr( dk ), Fr( rp ) ]
+  --[ Register( u, d, rp ) ]->
+   [ Db( u, d, seed, dk, rp ), DeviceState( u, d, seed, dk, rp ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Challenge:
+   [ Db( u, d, seed, dk, rp ), Fr( n ) ]
+  --[ Challenge( u, d, rp, n ) ]->
+   [ ChallengeState( u, d, seed, dk, rp, n ), Out( <u, rp, n> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) DeviceRespond:
+   [ DeviceState( u, d, seed, dk, rp ), In( <u, rp, n> ), Fr( t ) ]
+  --[
+  DeviceGenerated( u, d, rp, h(<seed, t>), h(<dk, rp, n, h(<seed, t>)>) )
+  ]->
+   [ Out( <u, rp, n, t, h(<seed, t>), h(<dk, rp, n, h(<seed, t>)>)> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) DeviceApprove:
+   [ DeviceState( u, d, seed, dk, rp ), In( <u, rp, n> ) ]
+  --[ DeviceApproved( u, d, rp, n ) ]->
+   [ Out( <u, rp, n, h(<dk, rp, n>)> ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) RequireApproval:
+   [ Fr( rp ) ]
+  --[ PolicyRequiresApproval( rp ) ]->
+   [ PolicyRequiresApproval( rp ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) ServerVerifyOptional:
+   [
+   ChallengeState( u, d, seed, dk, rp, n ),
+   In( <u, rp, n, t, h(<seed, t>), h(<dk, rp, n, h(<seed, t>)>)> )
+   ]
+  --[ Accept( u, d, rp ) ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) ServerVerifyWithApproval:
+   [
+   ChallengeState( u, d, seed, dk, rp, n ), PolicyRequiresApproval( rp ),
+   In( <u, rp, n, t, h(<seed, t>), h(<dk, rp, n, h(<seed, t>)>)> ),
+   In( <u, rp, n, h(<dk, rp, n>)> )
+   ]
+  --[ Accept( u, d, rp ) ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+lemma approval_required_when_policy:
+  all-traces
+  "∀ u d rp #i.
+    ((Accept( u, d, rp ) @ #i) ∧ (PolicyRequiresApproval( rp ) @ #i)) ⇒
+    (∃ #j n. (DeviceApproved( u, d, rp, n ) @ #j) ∧ (#j < #i))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ u d rp #i.
+  (Accept( u, d, rp ) @ #i) ∧ (PolicyRequiresApproval( rp ) @ #i)
+ ∧
+  ∀ #j n. (DeviceApproved( u, d, rp, n ) @ #j) ⇒ ¬(#j < #i)"
+*/
+simplify
+by solve( Accept( u, d, ~n ) @ #i )
+
+
+
+
+
+
+
+
+
+/* All wellformedness checks were successful. */
+
+/*
+Generated from:
+Tamarin version 1.9.0
+Maude version 3.1
+Git revision: UNKNOWN, branch: UNKNOWN
+Compiled at: 2024-03-08 00:22:39.488712808 UTC
+*/
+
+end
+
+==============================================================================
+summary of summaries:
+
+analyzed: tamarin/device_approval_optional.spthy
+
+  processing time: 1.36s
+  
+  approval_required_when_policy (all-traces): verified (2 steps)
+
+==============================================================================

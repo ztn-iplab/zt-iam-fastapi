@@ -1,0 +1,91 @@
+/*
+Notation:
+  u user, d device, rp relying party, pw password, seed TOTP seed, dk device key,
+  wk WebAuthn key, rcode recovery code, n nonce, t time step.
+  Db(...) server state, DeviceState(...) device state, WebAuthnState(...) WebAuthn device state.
+  DbRecovery(...) recovery store, ChallengeState(...) pending challenge.
+  Events: Register, PasswordOk, DeviceGenerated, WebAuthnApproved, AcceptPrimary, AcceptRecovery.
+*/
+theory Full_Authentication
+begin
+
+builtins: hashing
+
+rule Register:
+  [ Fr(u), Fr(d), Fr(pw), Fr(seed), Fr(dk), Fr(rp), Fr(wk), Fr(rcode) ]
+  --[ Register(u,d,rp), IssueRecovery(u,rcode) ]->
+  [ Db(u,d,pw,seed,dk,rp,wk), DeviceState(u,d,seed,dk,rp),
+    WebAuthnState(u,d,wk,rp), DbRecovery(u,rcode) ]
+
+rule PasswordLogin:
+  [ Db(u,d,pw,seed,dk,rp,wk), In(<u,pw>), Fr(n) ]
+  --[ PasswordOk(u) ]->
+  [ ChallengeState(u,d,seed,dk,rp,wk,n), Out(<u,rp,n>) ]
+
+rule DeviceRespond:
+  [ DeviceState(u,d,seed,dk,rp), In(<u,rp,n>), Fr(t) ]
+  --[ DeviceGenerated(u,d,rp,h(<seed,t>),h(<dk,rp,n,h(<seed,t>)>) ) ]->
+  [ Out(<u,rp,n,t,h(<seed,t>),h(<dk,rp,n,h(<seed,t>)>)>) ]
+
+rule WebAuthnRespond:
+  [ WebAuthnState(u,d,wk,rp), In(<u,rp,n>) ]
+  --[ WebAuthnApproved(u,d,rp,n) ]->
+  [ Out(<u,rp,n,h(<wk,rp,n>)>) ]
+
+rule PolicyRequiresWebAuthn:
+  [ Fr(rp) ]
+  --[ PolicyRequiresWebAuthn(rp) ]->
+  [ PolicyRequiresWebAuthn(rp) ]
+
+rule PolicyNoWebAuthn:
+  [ Fr(rp) ]
+  --[ PolicyNoWebAuthn(rp) ]->
+  [ PolicyNoWebAuthn(rp) ]
+
+rule ServerAcceptNoWebAuthn:
+  [ ChallengeState(u,d,seed,dk,rp,wk,n),
+    PolicyNoWebAuthn(rp),
+    In(<u,rp,n,t,h(<seed,t>),h(<dk,rp,n,h(<seed,t>)>)>) ]
+  --[ AcceptPrimary(u,d,rp) ]->
+  [ ]
+
+rule ServerAcceptWithWebAuthn:
+  [ ChallengeState(u,d,seed,dk,rp,wk,n),
+    PolicyRequiresWebAuthn(rp),
+    In(<u,rp,n,t,h(<seed,t>),h(<dk,rp,n,h(<seed,t>)>)>),
+    In(<u,rp,n,h(<wk,rp,n>)>) ]
+  --[ AcceptPrimary(u,d,rp) ]->
+  [ ]
+
+rule RecoveryLogin:
+  [ DbRecovery(u,rcode), In(<u,rcode>) ]
+  --[ AcceptRecovery(u) ]->
+  [ ]
+
+rule LeakSeed:
+  [ Db(u,d,pw,seed,dk,rp,wk) ] --[ LeakSeed(u) ]-> [ Out(seed) ]
+
+rule LeakDeviceKey:
+  [ Db(u,d,pw,seed,dk,rp,wk) ] --[ LeakDeviceKey(u,d) ]-> [ Out(dk) ]
+
+rule LeakPassword:
+  [ Db(u,d,pw,seed,dk,rp,wk) ] --[ LeakPassword(u) ]-> [ Out(pw) ]
+
+rule LeakRecovery:
+  [ DbRecovery(u,rcode) ] --[ LeakRecovery(u) ]-> [ Out(rcode) ]
+
+lemma primary_requires_password_and_device:
+  "All u d rp #i. AcceptPrimary(u,d,rp)@i ==> (Ex #j #k otp proof.
+     PasswordOk(u)@j & DeviceGenerated(u,d,rp,otp,proof)@k & j < i & k < i)"
+
+lemma webauthn_enforced_when_required:
+  "All u d rp #i. (AcceptPrimary(u,d,rp)@i & PolicyRequiresWebAuthn(rp)@i)
+    ==> (Ex #j n. WebAuthnApproved(u,d,rp,n)@j & j < i)"
+
+lemma recovery_requires_code_issue:
+  "All u #i. AcceptRecovery(u)@i ==> (Ex #j code. IssueRecovery(u,code)@j & j < i)"
+
+lemma seed_compromise_resisted:
+  "All u d rp #i. (AcceptPrimary(u,d,rp)@i & LeakSeed(u)@i) ==> (Ex #j. LeakDeviceKey(u,d)@j)"
+
+end

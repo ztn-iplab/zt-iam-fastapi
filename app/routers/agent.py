@@ -189,7 +189,10 @@ def agent_dashboard(request: Request, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    return templates.TemplateResponse("agent_dashboard.html", {"request": request, "user": user})
+    return templates.TemplateResponse(
+        "agent_dashboard.html",
+        {"request": request, "user": user, "dashboard_url": "/agent/dashboard"},
+    )
 
 
 @router.post(

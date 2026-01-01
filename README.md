@@ -44,7 +44,7 @@ Create a `.env` file in the project root (required):
 ```env
 JWT_SECRET_KEY=your-strong-secret
 FLASK_SECRET_KEY=your-strong-secret
-SQLALCHEMY_DATABASE_URI=postgresql://ztn:ztn%40sim@db:5432/ztn_db
+SQLALCHEMY_DATABASE_URI=<DB_URL>
 JWT_COOKIE_SECURE=True
 
 # Mail (dev uses Mailpit)
@@ -53,11 +53,11 @@ MAIL_PORT=1025
 MAIL_USE_TLS=False
 MAIL_DEFAULT_SENDER=dev@example.com
 ADMIN_ALERT_EMAIL=dev@example.com
-PUBLIC_BASE_URL=https://localhost.localdomain.com
+PUBLIC_BASE_URL=<PUBLIC_BASE_URL>
 
 # ZT-Authenticator (enrollment payload routing)
-ZT_AUTH_API_BASE_URL=http://192.168.60.2/api/auth
-ZT_AUTH_IAM_API_BASE_URL=http://192.168.60.2/api/v1/auth
+ZT_AUTH_API_BASE_URL=<BASE_URL>/api/auth
+ZT_AUTH_IAM_API_BASE_URL=<BASE_URL>/api/v1/auth
 
 # Optional: disable WebAuthn in non-HTTPS dev flows
 ZT_DISABLE_WEBAUTHN=true
@@ -73,8 +73,8 @@ To rebuild images:
 ```
 
 App endpoints:
-- Home: `https://localhost.localdomain.com/`
-- API docs: `https://localhost.localdomain.com/docs`
+- Home: `<PUBLIC_BASE_URL>/`
+- API docs: `<PUBLIC_BASE_URL>/docs`
 - Mailpit UI (dev inbox): `http://localhost:8025`
 
 ## Database Seeding (dev)
@@ -95,7 +95,7 @@ Use these when running experiments against the `/api/auth` flow.
 
 ```bash
 python scripts/collect_iam_metrics.py \
-  --base-url https://localhost.localdomain.com \
+  --base-url <PUBLIC_BASE_URL> \
   --identifier admin@example.com \
   --password 'ChangeMe123!' \
   --insecure
@@ -103,7 +103,7 @@ python scripts/collect_iam_metrics.py \
 
 ```bash
 python scripts/collect_iam_frr_sweep.py \
-  --base-url https://localhost.localdomain.com \
+  --base-url <PUBLIC_BASE_URL> \
   --identifier admin@example.com \
   --password 'ChangeMe123!' \
   --insecure

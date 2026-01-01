@@ -22,3 +22,5 @@ Analyzer.pcapng
 certs/
 private/
 secrets/
+client_session_key.aes
+tools/

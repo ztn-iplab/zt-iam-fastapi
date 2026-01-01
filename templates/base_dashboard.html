@@ -10,7 +10,9 @@
   <!-- Sidebar Navigation -->
   <aside class="sidebar">
     <div class="sidebar-header">
-      <h2 class="app-brand">ZT-IAM</h2>
+      <a class="app-brand-link" href="{{ dashboard_url | default('/user/dashboard') }}">
+        <h2 class="app-brand">ZT-IAM</h2>
+      </a>
     </div>
     <nav>
       {% block sidebar_menu %}
@@ -39,13 +41,13 @@
       </div>
 
       <div class="top-bar-right" style="position: relative">
-        <div class="top-bar-icon" title="Notifications">
+        <div class="top-bar-icon" id="nav-notifications" title="Notifications">
           <i class="fas fa-bell"></i>
         </div>
-        <div class="top-bar-icon" title="Language">
+        <div class="top-bar-icon" id="nav-language" title="Language">
           <i class="fas fa-globe"></i>
         </div>
-        <div class="top-bar-icon" title="Help">
+        <div class="top-bar-icon" id="nav-help" title="Help">
           <i class="fas fa-question-circle"></i>
         </div>
 
@@ -107,6 +109,28 @@
     profileLink?.addEventListener("click", (e) => {
       e.preventDefault();
       dropdown?.classList.toggle("d-none");
+    });
+
+    const toast = (text) =>
+      Toastify({
+        text,
+        duration: 3000,
+        close: true,
+        gravity: "top",
+        position: "center",
+        backgroundColor: "#2b6cb0",
+      }).showToast();
+
+    document.getElementById("nav-notifications")?.addEventListener("click", () => {
+      toast("No new security alerts.");
+    });
+
+    document.getElementById("nav-language")?.addEventListener("click", () => {
+      toast("Language settings coming soon.");
+    });
+
+    document.getElementById("nav-help")?.addEventListener("click", () => {
+      window.location.href = "/docs";
     });
 
     fetch("/api/auth/preferred-mfa", {

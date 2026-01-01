@@ -1,0 +1,31 @@
+/*
+Notation:
+  u user, code recovery code.
+  DbRecovery(...) recovery store.
+  Events: IssueRecovery, RecoverAccept, LeakRecovery.
+*/
+theory Recovery_Code
+begin
+
+rule RegisterRecovery:
+  [ Fr(u), Fr(code) ]
+  --[ IssueRecovery(u,code) ]->
+  [ DbRecovery(u,code) ]
+
+rule RecoverLogin:
+  [ DbRecovery(u,code), In(<u,code>) ]
+  --[ RecoverAccept(u) ]->
+  [ ]
+
+rule LeakRecoveryCode:
+  [ DbRecovery(u,code) ]
+  --[ LeakRecovery(u) ]->
+  [ Out(code) ]
+
+lemma recovery_requires_code:
+  "All u #i. RecoverAccept(u)@i ==> (Ex #j code. IssueRecovery(u,code)@j & j < i)"
+
+lemma recovery_resists_no_leak:
+  "All u #i. RecoverAccept(u)@i ==> (Ex #j. LeakRecovery(u)@j)"
+
+end

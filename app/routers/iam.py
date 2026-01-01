@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 import base64
 import json
 import os
+import re
 
 import pyotp
 from fido2 import cbor
@@ -66,8 +67,10 @@ from utils.email_alerts import send_admin_alert, send_user_alert
 from utils.iam_tenant_email import (
     send_tenant_password_reset_email,
     send_tenant_totp_reset_email,
+    send_tenant_webauthn_reset_email,
 )
 from utils.security import generate_token, hash_token, is_strong_password
+from utils.feedback import store_feedback
 from utils.totp import verify_totp_code
 from utils.user_trust_engine import evaluate_trust
 from utils.policy_validator import validate_trust_policy
@@ -76,6 +79,26 @@ router = APIRouter(prefix="/api/v1/auth", tags=["IAM"])
 
 rp = PublicKeyCredentialRpEntity(id="localhost.localdomain.com", name="ZTN Local")
 webauthn_server = Fido2Server(rp)
+
+
+def _webauthn_allowed(request: Request) -> bool:
+    if os.getenv("ZT_DISABLE_WEBAUTHN", "").lower() in {"1", "true", "yes"}:
+        return False
+    return request.url.scheme == "https"
+
+
+def _tenant_rp_id(request: Request, tenant: Tenant) -> str:
+    header_rp = (request.headers.get("X-RP-ID") or request.headers.get("X-RP-Id") or "").strip()
+    if header_rp:
+        return header_rp
+    base_name = (tenant.name or f"tenant-{tenant.id}").strip().lower()
+    slug = re.sub(r"[^a-z0-9.-]+", "-", base_name).strip("-")
+    if not slug:
+        slug = f"tenant-{tenant.id}"
+    suffix = os.getenv("ZT_TENANT_RP_SUFFIX", ".zt-iam").strip()
+    if suffix and not suffix.startswith("."):
+        suffix = f".{suffix}"
+    return f"{slug}{suffix}"
 
 
 def jsonify_webauthn(data):
@@ -351,10 +374,65 @@ def login_user(
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
+    access = (
+        db.query(UserAccessControl)
+        .join(UserRole, UserRole.id == UserAccessControl.role_id)
+        .filter(
+            UserAccessControl.user_id == user.id,
+            UserAccessControl.tenant_id == tenant.id,
+            UserRole.tenant_id == tenant.id,
+        )
+        .first()
+    )
+    role_name = access.role.role_name if access and access.role else "user"
+
+    has_webauthn_credentials = (
+        db.query(WebAuthnCredential)
+        .filter_by(user_id=user.id, tenant_id=tenant.id)
+        .first()
+        is not None
+    )
+    preferred_mfa = (tenant_user.preferred_mfa or "both").lower()
+    require_totp = False
+    require_webauthn = False
+    require_totp_setup = False
+    skip_all_mfa = False
+
+    if tenant.enforce_strict_mfa:
+        if preferred_mfa == "webauthn" and has_webauthn_credentials and _webauthn_allowed(request):
+            require_webauthn = True
+        else:
+            require_totp = True
+    else:
+        if preferred_mfa == "totp":
+            require_totp = True
+        elif preferred_mfa == "webauthn":
+            require_webauthn = has_webauthn_credentials and _webauthn_allowed(request)
+            if not require_webauthn:
+                require_totp = True
+        else:
+            require_totp = True
+            require_webauthn = has_webauthn_credentials and _webauthn_allowed(request)
+
+    if require_totp and not tenant_user.otp_secret:
+        require_totp_setup = True
+        require_totp = False
+
     fp = get_request_fingerprint(request, tenant.id)
     access_token = create_access_token(identity=str(user.id), additional_claims={"fp": fp})
     refresh_token = create_refresh_token(identity=str(user.id))
-    response = {"message": "Login successful", "user_id": user.id}
+    response = {
+        "message": "Login successful",
+        "user_id": user.id,
+        "access_token": access_token,
+        "role": role_name,
+        "trust_score": round(user.trust_score or 0.0, 2),
+        "require_totp": require_totp,
+        "require_webauthn": require_webauthn,
+        "require_totp_setup": require_totp_setup,
+        "skip_all_mfa": skip_all_mfa,
+        "has_webauthn_credentials": has_webauthn_credentials,
+    }
     response_obj = JSONResponse(response)
     set_access_cookie(response_obj, access_token)
     set_refresh_cookie(response_obj, refresh_token)
@@ -473,12 +551,12 @@ def reset_password(
     device_info = "IAMaaS API Access"
     location = get_ip_location(ip_address)
 
-    if user.trust_score < 0.4:
+    if user.trust_score >= 0.6:
         db.add(
             RealTimeLog(
                 user_id=user.id,
                 tenant_id=tenant.id,
-                action="Password reset denied due to low trust score",
+                action="Password reset denied due to elevated risk score",
                 ip_address=ip_address,
                 device_info=device_info,
                 location=location,
@@ -568,7 +646,7 @@ def enroll_totp(
     tenant_user = db.query(TenantUser).filter_by(user_id=user_id, tenant_id=tenant.id).first()
     if not tenant_user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized")
-    rp_id = resolve_rp_id(request, "zt-iam")
+    rp_id = _tenant_rp_id(request, tenant)
     device_key = (
         db.query(DeviceKey)
         .join(Device, Device.id == DeviceKey.device_id)
@@ -627,11 +705,14 @@ def enroll_totp(
 
     short_code = issue_enrollment_code(payload)
     manual_url = f"{api_base_url}/enroll-code/{short_code}"
-    return {
+    response = {
         "qr_code": generate_enrollment_qr(payload),
         "manual_key": manual_url,
         "reset_required": True,
     }
+    if request.query_params.get("include_payload") == "1":
+        response["payload"] = payload
+    return response
 
 
 @router.get("/enroll-code/{code}")
@@ -746,7 +827,7 @@ def verify_totp_login(
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired TOTP code.")
 
-    rp_id = resolve_rp_id(request, "zt-iam")
+    rp_id = _tenant_rp_id(request, tenant)
     device_key = (
         db.query(DeviceKey)
         .join(Device, Device.id == DeviceKey.device_id)
@@ -841,7 +922,9 @@ def enroll_device(payload: dict, request: Request, db: Session = Depends(get_db)
     if not pending or pending.expires_at < datetime.utcnow():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enrollment token expired")
 
-    if pending.user_id != token_data.get("user_id") or pending.tenant_id != token_data.get("tenant_id"):
+    token_user_id = token_data.get("user_id")
+    token_tenant_id = token_data.get("tenant_id")
+    if str(pending.user_id) != str(token_user_id) or str(pending.tenant_id) != str(token_tenant_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enrollment token mismatch")
 
     user = db.query(User).get(token_data.get("user_id"))
@@ -1016,6 +1099,7 @@ def login_recover(
 
 
 @router.get("/login-status")
+@router.get("/login/status")
 def login_status(
     request: Request,
     login_id: int,
@@ -1032,6 +1116,9 @@ def login_status(
         db.commit()
         return {"status": "denied", "reason": "expired"}
 
+    if challenge.status == "pending":
+        remaining = int((challenge.expires_at - datetime.utcnow()).total_seconds())
+        return {"status": "pending", "expires_in": max(0, remaining)}
     if challenge.status != "ok":
         return {"status": challenge.status, "reason": challenge.denied_reason}
 
@@ -1055,6 +1142,87 @@ def login_status(
         "require_webauthn": require_webauthn,
         "has_webauthn_credentials": has_webauthn_credentials,
         "user_id": user.id,
+    }
+
+
+@router.post("/login/deny")
+def login_deny(
+    payload: dict,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(require_api_key),
+):
+    login_id = payload.get("login_id")
+    if not login_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="login_id is required")
+
+    challenge = db.query(LoginChallenge).get(login_id)
+    if not challenge or challenge.tenant_id != tenant.id:
+        return {"status": "denied", "reason": "not_found"}
+
+    if challenge.status == "pending":
+        challenge.status = "denied"
+        challenge.denied_reason = "cancelled"
+        db.commit()
+
+    return {"status": challenge.status, "reason": challenge.denied_reason}
+
+
+@router.post("/feedback")
+def submit_feedback(
+    payload: dict,
+    request: Request,
+):
+    store_feedback(
+        payload,
+        source="zt-authenticator-v1",
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("User-Agent"),
+    )
+    return {"status": "ok"}
+
+
+@router.post("/login/resend")
+def login_resend(
+    payload: dict,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(require_api_key),
+):
+    login_id = payload.get("login_id")
+    if not login_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="login_id is required")
+
+    challenge = db.query(LoginChallenge).get(login_id)
+    if not challenge or challenge.tenant_id != tenant.id:
+        return {"status": "denied", "reason": "not_found"}
+
+    if challenge.expires_at < datetime.utcnow():
+        challenge.status = "denied"
+        challenge.denied_reason = "expired"
+        db.commit()
+        return {"status": "denied", "reason": "expired"}
+
+    if challenge.status != "pending":
+        return {"status": challenge.status, "reason": challenge.denied_reason}
+
+    new_challenge = LoginChallenge(
+        user_id=challenge.user_id,
+        tenant_id=challenge.tenant_id,
+        device_id=challenge.device_id,
+        rp_id=challenge.rp_id,
+        nonce=generate_nonce(),
+        otp_hash=None,
+        status="pending",
+        expires_at=datetime.utcnow() + timedelta(minutes=2),
+    )
+    challenge.status = "denied"
+    challenge.denied_reason = "resent"
+    db.add(new_challenge)
+    db.commit()
+
+    return {
+        "status": "pending",
+        "login_id": new_challenge.id,
+        "expires_in": 120,
     }
 
 
@@ -1220,6 +1388,127 @@ def request_totp_reset(
     return {"message": "TOTP reset link has been sent to your email."}
 
 
+@router.post("/out-request-webauthn-reset")
+def out_request_webauthn_reset(
+    payload: dict,
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(require_api_key),
+):
+    identifier = (payload.get("identifier") or "").strip()
+    redirect_url = payload.get("redirect_url")
+    if not identifier:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Identifier (mobile or email) required")
+    if not redirect_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing redirect URL for client-side reset.",
+        )
+
+    tenant_user = (
+        db.query(TenantUser)
+        .filter_by(company_email=identifier, tenant_id=tenant.id)
+        .first()
+    )
+    if not tenant_user:
+        sim = db.query(SIMCard).filter_by(mobile_number=identifier, status="active").first()
+        tenant_user = (
+            db.query(TenantUser)
+            .filter_by(user_id=sim.user.id, tenant_id=tenant.id)
+            .first()
+            if sim and sim.user
+            else None
+        )
+
+    if not tenant_user:
+        return {"message": "Please check your email for a WebAuthn reset link"}
+
+    user = tenant_user.user
+    token = generate_token()
+    expiry = datetime.utcnow() + timedelta(minutes=15)
+    user.reset_token = hash_token(token)
+    user.reset_token_expiry = expiry
+
+    ip_address = request.client.host if request.client else None
+    device_info = request.headers.get("User-Agent", "")
+    location = get_ip_location(ip_address)
+
+    reset_link = f"{redirect_url}?token={token}"
+    send_tenant_webauthn_reset_email(
+        user=user,
+        raw_token=token,
+        tenant_name=tenant.name,
+        tenant_email=tenant_user.company_email,
+        reset_link=reset_link,
+    )
+    db.add(
+        RealTimeLog(
+            user_id=user.id,
+            tenant_id=tenant.id,
+            action="WebAuthn reset requested",
+            ip_address=ip_address,
+            device_info=device_info,
+            location=location,
+            risk_alert=False,
+        )
+    )
+    db.commit()
+    return {"message": "Please check your email for a WebAuthn reset link"}
+
+
+@router.post("/out-verify-webauthn-reset/{token}")
+def out_verify_webauthn_reset(
+    token: str,
+    payload: dict,
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(require_api_key),
+):
+    password = payload.get("password")
+    totp = payload.get("totp")
+    if not password or not totp:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Password and TOTP code are required"
+        )
+
+    user = db.query(User).filter_by(reset_token=hash_token(token)).first()
+    if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+
+    tenant_user = db.query(TenantUser).filter_by(user_id=user.id, tenant_id=tenant.id).first()
+    if not tenant_user:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User not registered under this tenant.")
+
+    if not check_password_hash(tenant_user.password_hash, password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
+    if not tenant_user.otp_secret or not verify_totp_code(tenant_user.otp_secret, totp):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
+
+    creds = db.query(WebAuthnCredential).filter_by(user_id=user.id, tenant_id=tenant.id).all()
+    if not creds:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No WebAuthn credentials to reset")
+
+    for cred in creds:
+        db.delete(cred)
+
+    user.reset_token = None
+    user.reset_token_expiry = None
+
+    db.add(
+        RealTimeLog(
+            user_id=user.id,
+            tenant_id=tenant.id,
+            action="WebAuthn reset after verification",
+            ip_address=request.client.host if request.client else None,
+            device_info=request.headers.get("User-Agent", ""),
+            location=get_ip_location(request.client.host if request.client else None),
+            risk_alert=False,
+        )
+    )
+    db.commit()
+    return {"message": "WebAuthn reset complete. Please enroll a new passkey."}
+
+
 @router.post("/verify-totp-reset")
 def verify_totp_reset_post(
     payload: dict,
@@ -1244,12 +1533,12 @@ def verify_totp_reset_post(
     device_info = request.headers.get("User-Agent", "")
     location = get_ip_location(ip_address)
 
-    if user.trust_score < 0.5:
+    if user.trust_score >= 0.6:
         db.add(
             RealTimeLog(
                 user_id=user.id,
                 tenant_id=tenant.id,
-                action="TOTP reset denied due to low trust score",
+                action="TOTP reset denied due to elevated risk score",
                 ip_address=ip_address,
                 device_info=device_info,
                 location=location,

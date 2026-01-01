@@ -31,8 +31,9 @@ from app.models import (
 )
 from app.security import get_jwt_identity, verify_session_fingerprint
 from utils.email_alerts import send_rotated_api_key_email, send_tenant_api_key_email
+from utils.feedback import load_feedback
 from utils.location import get_ip_location
-from utils.security import generate_custom_api_key, is_strong_password
+from utils.security import generate_custom_api_key, is_strong_api_key, is_strong_password
 
 router = APIRouter(tags=["Admin"])
 templates = Jinja2Templates(directory="templates")
@@ -114,7 +115,39 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db)):
 
     full_name = f"{user.first_name} {user.last_name or ''}".strip()
     admin_user = {"first_name": user.first_name, "full_name": full_name, "role": role}
-    return templates.TemplateResponse("admin_dashboard.html", {"request": request, "user": admin_user})
+    return templates.TemplateResponse(
+        "admin_dashboard.html",
+        {"request": request, "user": admin_user, "dashboard_url": "/admin/dashboard"},
+    )
+
+
+@router.get(
+    "/admin/feedback",
+    response_class=HTMLResponse,
+    dependencies=[
+        Depends(verify_session_fingerprint),
+        Depends(role_required(["admin"])),
+        Depends(require_full_mfa),
+    ],
+)
+def admin_feedback(request: Request, db: Session = Depends(get_db)):
+    user_id = int(get_jwt_identity(request))
+    user = db.query(User).get(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    full_name = f"{user.first_name} {user.last_name or ''}".strip()
+    admin_user = {"first_name": user.first_name, "full_name": full_name, "role": "Admin"}
+    feedback_items = load_feedback()
+    return templates.TemplateResponse(
+        "admin_feedback.html",
+        {
+            "request": request,
+            "user": admin_user,
+            "dashboard_url": "/admin/dashboard",
+            "feedback_items": feedback_items,
+        },
+    )
 
 
 @router.get(
@@ -150,6 +183,7 @@ def get_all_users(db: Session = Depends(get_db)):
                 "role": role_name,
                 "is_locked": is_locked,
                 "locked_until": u.locked_until.isoformat() if u.locked_until else None,
+                "identity_verified": u.identity_verified,
             }
         )
     return users_list
@@ -255,6 +289,7 @@ def verify_user(user_id: int, request: Request, db: Session = Depends(get_db)):
 
     user.is_active = True
     user.deletion_requested = False
+    user.identity_verified = True
 
     admin_id = int(get_jwt_identity(request))
     admin_user = db.query(User).get(admin_id)
@@ -987,6 +1022,12 @@ def register_tenant(payload: dict, request: Request, db: Session = Depends(get_d
     if db.query(Tenant).filter_by(name=name).first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="A tenant with this name already exists."
+        )
+
+    if custom_api_key and not is_strong_api_key(custom_api_key):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="API key must be 32-64 chars, include letters and digits, and use only A-Z, 0-9, _ or -.",
         )
 
     tenant_api_key = custom_api_key or generate_custom_api_key(name)

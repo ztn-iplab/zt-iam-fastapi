@@ -83,21 +83,23 @@ def enroll_device(client: IamClient, identifier: str, password: str) -> tuple[st
     if status != 200:
         raise RuntimeError(f"Login failed: status={status}")
 
-    status, setup = client.get_json("/api/auth/setup-totp")
+    status, setup = client.get_json("/api/auth/setup-totp?include_payload=1")
     if status != 200 or "manual_key" not in setup:
         raise RuntimeError(f"Setup TOTP failed: status={status} body={setup}")
 
-    manual_key = setup.get("manual_key") or ""
-    if not manual_key:
-        raise RuntimeError("No enrollment link returned (manual_key empty).")
+    payload = setup.get("payload")
+    if not payload:
+        manual_key = setup.get("manual_key") or ""
+        if not manual_key:
+            raise RuntimeError("No enrollment link returned (manual_key empty).")
 
-    parsed = parse.urlparse(manual_key)
-    enroll_path = parsed.path
-    if parsed.query:
-        enroll_path += f"?{parsed.query}"
-    status, payload = client.get_json(enroll_path)
-    if status != 200 or payload.get("type") != "zt_totp_enroll":
-        raise RuntimeError(f"Enrollment code invalid: status={status} body={payload}")
+        parsed = parse.urlparse(manual_key)
+        enroll_path = parsed.path
+        if parsed.query:
+            enroll_path += f"?{parsed.query}"
+        status, payload = client.get_json(enroll_path)
+        if status != 200 or payload.get("type") != "zt_totp_enroll":
+            raise RuntimeError(f"Enrollment code invalid: status={status} body={payload}")
 
     private_key, public_b64 = generate_keypair()
     status, enroll_resp = client.post_json(

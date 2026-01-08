@@ -667,7 +667,7 @@ def verify_totp_login(payload: dict, request: Request, db: Session = Depends(get
         .count()
     )
 
-    if not verify_totp_code(user.otp_secret, totp_code, valid_window=1):
+    if not verify_totp_code(user.otp_secret, totp_code, valid_window=2):
         fail_count = recent_otp_fails + 1
         db.add(
             UserAuthLog(
@@ -1072,7 +1072,7 @@ def login_approve(payload: dict, request: Request, db: Session = Depends(get_db)
         db.commit()
         return {"status": "denied", "reason": "totp_not_configured"}
 
-    if not verify_totp_code(user.otp_secret, otp, valid_window=1):
+    if not verify_totp_code(user.otp_secret, otp, valid_window=2):
         challenge.status = "denied"
         challenge.denied_reason = "invalid_otp"
         db.commit()

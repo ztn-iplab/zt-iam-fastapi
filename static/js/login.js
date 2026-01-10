@@ -49,9 +49,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Allow cookie storage time
       setTimeout(() => {
-        if (data.require_totp_setup || data.require_totp_reset) {
-          const reason = data.require_totp_reset ? "reset" : "setup";
-          window.location.href = `/setup-totp?reason=${reason}`;
+        if (data.require_totp_reset) {
+          window.location.href = "/api/auth/request-totp-reset?reason=rp_changed";
+        } else if (data.require_totp_setup) {
+          window.location.href = "/setup-totp?reason=setup";
         } else if (data.require_totp && data.user_id) {
           window.location.href = `/api/auth/verify-totp`;
         } else if (data.require_webauthn && data.user_id) {

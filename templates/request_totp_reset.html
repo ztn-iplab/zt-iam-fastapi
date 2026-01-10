@@ -11,6 +11,12 @@ block body_class %}auth-page{% endblock %} {% block body %}
     Please enter your email or registered phone number. We’ll send you a link to
     securely reset your TOTP.
   </p>
+  {% if request.query_params.get("reason") == "rp_changed" %}
+  <p class="auth-note">
+    We detected a different relying party (URL) for your account. For security,
+    you must reset and re-bind your TOTP to this new address.
+  </p>
+  {% endif %}
 
   <form id="request-totp-form" class="auth-form">
     <input

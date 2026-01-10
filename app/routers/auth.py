@@ -315,10 +315,7 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
     preferred_mfa = (user.preferred_mfa or "both").lower()
     require_totp = False
     require_webauthn = False
-    skip_all_mfa = False
-
-    if risk_score <= 0.05:
-        skip_all_mfa = True
+    skip_all_mfa = preferred_mfa == "none"
 
     if not skip_all_mfa:
         if preferred_mfa == "totp":
@@ -359,7 +356,7 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
     require_totp_setup = False
     require_totp_reset = False
     if require_totp:
-        require_totp_setup = user.otp_secret is None or not device_enrolled
+        require_totp_setup = user.otp_secret is None
         require_totp_reset = bool(
             (user.otp_secret and user.otp_email_label != user.email)
             or (user.otp_secret and not device_enrolled)

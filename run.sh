@@ -29,6 +29,51 @@ if [[ -z "${compose_bin}" ]]; then
   exit 1
 fi
 
+detect_host_ip() {
+  local ip=""
+  for iface in en0 en1 en2 en3 en4; do
+    ip=$(ipconfig getifaddr "${iface}" 2>/dev/null || true)
+    if [[ -n "${ip}" ]]; then
+      echo "${ip}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+update_dns_mapping() {
+  local ip="${1}"
+  if [[ -z "${ip}" ]]; then
+    return 0
+  fi
+
+  if ! command -v brew >/dev/null 2>&1; then
+    echo "Homebrew not found. Skipping dnsmasq update."
+    return 0
+  fi
+
+  local conf_dir
+  conf_dir="$(brew --prefix)/etc/dnsmasq.d"
+  mkdir -p "${conf_dir}"
+
+  # Remove stale mappings from previous networks.
+  rm -f "${conf_dir}/localhost.localdomain.com.conf"
+  # Clean any hardcoded mappings from dnsmasq.conf.
+  if [[ -f "$(brew --prefix)/etc/dnsmasq.conf" ]]; then
+    sed -i.bak -E "/localhost\\.localdomain(\\.com)?/d" "$(brew --prefix)/etc/dnsmasq.conf"
+    rm -f "$(brew --prefix)/etc/dnsmasq.conf.bak"
+  fi
+
+  {
+    echo "address=/localhost.localdomain.com/${ip}"
+    echo "address=/localhost.localdomain/${ip}"
+  } | sudo tee "${conf_dir}/zt-iam.conf" >/dev/null
+
+  if command -v sudo >/dev/null 2>&1; then
+    sudo brew services restart dnsmasq >/dev/null 2>&1 || true
+  fi
+}
+
 cleanup_containers() {
   local names=("ztn_db" "ztn_mailpit" "ztn_momo_app" "ztn_nginx")
   for name in "${names[@]}"; do
@@ -49,10 +94,20 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 if [[ "${1:-}" == "--build" ]]; then
+  if [[ "${engine_bin}" == "podman" ]]; then
+    podman machine start >/dev/null 2>&1 || true
+  fi
+  host_ip=$(detect_host_ip || true)
+  update_dns_mapping "${host_ip}"
   cleanup_containers
   ${compose_bin} up --build -d
   bootstrap_db
 elif [[ -z "${1:-}" ]]; then
+  if [[ "${engine_bin}" == "podman" ]]; then
+    podman machine start >/dev/null 2>&1 || true
+  fi
+  host_ip=$(detect_host_ip || true)
+  update_dns_mapping "${host_ip}"
   cleanup_containers
   ${compose_bin} up -d
   bootstrap_db

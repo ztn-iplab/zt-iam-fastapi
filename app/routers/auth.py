@@ -785,6 +785,8 @@ def verify_totp_login(payload: dict, request: Request, db: Session = Depends(get
     preferred_mfa = (user.preferred_mfa or "both").lower()
     require_webauthn = preferred_mfa in ["webauthn", "both"] and _webauthn_allowed(request)
     has_webauthn_credentials = bool(user.webauthn_credentials)
+    request.session["mfa_webauthn_required"] = require_webauthn
+    request.session["mfa_webauthn_has_credentials"] = has_webauthn_credentials
 
     return {
         "message": "TOTP verified. Awaiting device approval.",
@@ -860,6 +862,8 @@ def login_recover(payload: dict, request: Request, db: Session = Depends(get_db)
     db.commit()
     request.session["mfa_totp_verified"] = True
     request.session["mfa_webauthn_verified"] = True
+    request.session["mfa_webauthn_required"] = False
+    request.session["mfa_webauthn_has_credentials"] = False
 
     response = JSONResponse(
         {
@@ -917,6 +921,8 @@ def login_status(
     preferred_mfa = (user.preferred_mfa or "both").lower()
     require_webauthn = preferred_mfa in ["webauthn", "both"] and _webauthn_allowed(request)
     has_webauthn_credentials = bool(user.webauthn_credentials)
+    request.session["mfa_webauthn_required"] = require_webauthn
+    request.session["mfa_webauthn_has_credentials"] = has_webauthn_credentials
 
     return {
         "status": "ok",

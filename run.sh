@@ -70,6 +70,12 @@ update_dns_mapping() {
   } | sudo tee "${conf_dir}/zt-iam.conf" >/dev/null
 
   if command -v sudo >/dev/null 2>&1; then
+    sudo mkdir -p /etc/resolver
+    echo "nameserver 127.0.0.1" | sudo tee /etc/resolver/localhost.localdomain.com >/dev/null
+    echo "nameserver 127.0.0.1" | sudo tee /etc/resolver/localhost.localdomain >/dev/null
+  fi
+
+  if command -v sudo >/dev/null 2>&1; then
     sudo brew services restart dnsmasq >/dev/null 2>&1 || true
   fi
 }

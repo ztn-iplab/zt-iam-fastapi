@@ -1092,6 +1092,8 @@ def login_recover(
     db.commit()
     request.session["mfa_totp_verified"] = True
     request.session["mfa_webauthn_verified"] = True
+    request.session["mfa_webauthn_required"] = False
+    request.session["mfa_webauthn_has_credentials"] = False
     response = JSONResponse({"status": "ok", "reason": None})
     set_access_cookie(response, access_token)
     set_refresh_cookie(response, refresh_token)
@@ -1137,6 +1139,8 @@ def login_status(
         is not None
     )
     require_webauthn = tenant_user.preferred_mfa in ["both", "webauthn"]
+    request.session["mfa_webauthn_required"] = require_webauthn
+    request.session["mfa_webauthn_has_credentials"] = has_webauthn_credentials
     return {
         "status": "ok",
         "require_webauthn": require_webauthn,

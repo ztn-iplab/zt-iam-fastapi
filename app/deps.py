@@ -36,7 +36,14 @@ def require_full_mfa(request: Request) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="TOTP verification required",
         )
-    if _webauthn_allowed() and not request.session.get("mfa_webauthn_verified"):
+    if _webauthn_allowed() and request.session.get("mfa_webauthn_required"):
+        if request.session.get("mfa_webauthn_verified"):
+            return
+        if not request.session.get("mfa_webauthn_has_credentials"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="WebAuthn setup required",
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Passkey or biometric authentication required",

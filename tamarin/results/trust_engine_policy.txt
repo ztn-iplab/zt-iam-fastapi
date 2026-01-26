@@ -1,0 +1,252 @@
+Notation
+--------
+u user, d device, rp relying party, pw password, seed TOTP seed, dk device key
+wk WebAuthn key, rcode recovery code, n nonce, t time step
+t tenant, r request, policy policy flag, score API score
+Db(...) server state, DeviceState(...) device state, ChallengeState(...) pending challenge
+DbRecovery(...) recovery store, WebAuthnState(...) WebAuthn device state
+Events include Accept, AcceptPrimary, AcceptRecovery, DeviceGenerated, WebAuthnApproved
+theory Trust_Engine_Policy begin
+
+// Function signature and definition of the equational theory E
+
+functions: fst/1, h/1, pair/2, snd/1
+equations: fst(<x.1, x.2>) = x.1, snd(<x.1, x.2>) = x.2
+
+
+
+
+
+
+
+rule (modulo E) InitTenantUser:
+   [ Fr( t ), Fr( u ) ]
+  --[ TenantUser( t, u ) ]->
+   [ !Tenant( t ), !User( u, t ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) SetPolicyRuleHigh:
+   [ !Tenant( t ), Fr( rid ) ]
+  --[ PolicyRuleHigh( t, rid ) ]->
+   [ !PolicyRuleHigh( t, rid ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) SetPolicyThreshold:
+   [ !Tenant( t ), Fr( thr ) ]
+  --[ PolicyThreshold( t, thr ) ]->
+   [ !PolicyThreshold( t, thr ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) AccessRequest:
+   [ !User( u, t ), Fr( r ) ]
+  --[ AccessReq( u, t, r ) ]->
+   [ RiskPending( u, t, r ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) EvaluateLowRisk:
+   [ RiskPending( u, t, r ) ]
+  --[ RiskLow( u, t, r ) ]->
+   [ RiskState( u, t, r, low ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) EvaluateHighRisk:
+   [ RiskPending( u, t, r ) ]
+  --[ RiskHigh( u, t, r ) ]->
+   [ RiskState( u, t, r, high ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) SignalObserved:
+   [ RiskPending( u, t, r ), Fr( rid ) ]
+  --[ Signal( u, t, r, rid ) ]->
+   [ SignalSeen( u, t, r, rid ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) EvaluatePolicyHigh:
+   [
+   RiskPending( u, t, r ), !PolicyRuleHigh( t, rid ),
+   SignalSeen( u, t, r, rid )
+   ]
+  --[ RiskHigh( u, t, r ) ]->
+   [ RiskState( u, t, r, high ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) StepUpApprove:
+   [ RiskState( u, t, r, high ), In( <u, r> ) ]
+  --[ StepUpOK( u, t, r ) ]->
+   [ StepUpDone( u, t, r ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) AccessGrantLow:
+   [ RiskState( u, t, r, low ) ] --[ AccessGranted( u, t, r ) ]-> [ ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) AccessGrantHigh:
+   [ RiskState( u, t, r, high ), StepUpDone( u, t, r ) ]
+  --[ AccessGranted( u, t, r ) ]->
+   [ ]
+
+  /* has exactly the trivial AC variant */
+
+lemma high_risk_requires_stepup:
+  all-traces
+  "∀ u t r #i.
+    ((AccessGranted( u, t, r ) @ #i) ∧ (RiskHigh( u, t, r ) @ #i)) ⇒
+    (∃ #j. StepUpOK( u, t, r ) @ #j)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ u t r #i.
+  (AccessGranted( u, t, r ) @ #i) ∧ (RiskHigh( u, t, r ) @ #i)
+ ∧
+  ∀ #j. (StepUpOK( u, t, r ) @ #j) ⇒ ⊥"
+*/
+by sorry
+
+lemma policy_high_requires_stepup:
+  all-traces
+  "∀ u t r #i.
+    (((AccessGranted( u, t, r ) @ #i) ∧ (PolicyRuleHigh( t, rid ) @ #i)) ∧
+     (Signal( u, t, r, rid ) @ #i)) ⇒
+    (∃ #j. StepUpOK( u, t, r ) @ #j)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ u t r #i.
+  (AccessGranted( u, t, r ) @ #i) ∧
+  (PolicyRuleHigh( t, rid ) @ #i) ∧
+  (Signal( u, t, r, rid ) @ #i)
+ ∧
+  ∀ #j. (StepUpOK( u, t, r ) @ #j) ⇒ ⊥"
+*/
+by sorry
+
+lemma tenant_policy_isolated:
+  all-traces
+  "∀ u t1 t2 r #i.
+    ((RiskHigh( u, t2, r ) @ #i) ∧ (PolicyRuleHigh( t1, rid ) @ #i)) ⇒
+    (t1 = t2)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ u t1 t2 r #i.
+  (RiskHigh( u, t2, r ) @ #i) ∧ (PolicyRuleHigh( t1, rid ) @ #i)
+ ∧
+  ¬(t1 = t2)"
+*/
+by sorry
+
+
+
+
+
+
+
+
+
+/*
+WARNING: the following wellformedness checks failed!
+
+Unbound variables
+=================
+
+  rule `EvaluateLowRisk' has unbound variables: 
+    low
+  
+  rule `EvaluateHighRisk' has unbound variables: 
+    high
+  
+  rule `EvaluatePolicyHigh' has unbound variables: 
+    high
+
+Fact usage
+==========
+
+Possible reasons: 
+1. Fact names are case-sensitive, different capitalizations are considered as different facts, i.e., Fact() is different from FAct(). Check the capitalization of your fact names.
+2. Same fact is used with different arities, i.e., Fact('A','B') is different from Fact('A'). Check the arguments of your facts.
+ 
+  
+Fact `policyrulehigh':
+
+  1. Rule `SetPolicyRuleHigh', capitalization  "PolicyRuleHigh", 2, Persistent
+       !PolicyRuleHigh( t, rid )
+  
+  2. Rule `SetPolicyRuleHigh', capitalization  "PolicyRuleHigh", 2, Linear
+       PolicyRuleHigh( t, rid )
+  
+  
+Fact `policythreshold':
+
+  1. Rule `SetPolicyThreshold', capitalization  "PolicyThreshold", 2, Persistent
+       !PolicyThreshold( t, thr )
+  
+  2. Rule `SetPolicyThreshold', capitalization  "PolicyThreshold", 2, Linear
+       PolicyThreshold( t, thr )
+
+Formula terms
+=============
+
+  lemma `policy_high_requires_stepup' uses terms of the wrong form:
+    `Free rid', `Free rid'
+  
+  The only allowed terms are public names and bound node and message
+  variables. If you encounter free message variables, then you might
+  have forgotten a #-prefix. Sort prefixes can only be dropped where
+  this is unambiguous. Moreover, reducible function symbols are
+  disallowed.
+  
+  lemma `tenant_policy_isolated' uses terms of the wrong form:
+    `Free rid'
+  
+  The only allowed terms are public names and bound node and message
+  variables. If you encounter free message variables, then you might
+  have forgotten a #-prefix. Sort prefixes can only be dropped where
+  this is unambiguous. Moreover, reducible function symbols are
+  disallowed.
+
+Message Derivation Checks
+=========================
+
+  The variables of the following rule(s) are not derivable from their premises, you may be performing unintended pattern matching.
+
+Rule EvaluateLowRisk: 
+Failed to derive Variable(s): low
+
+Rule EvaluateHighRisk: 
+Failed to derive Variable(s): high
+
+Rule EvaluatePolicyHigh: 
+Failed to derive Variable(s): high
+*/
+
+/*
+Generated from:
+Tamarin version 1.10.0
+Maude version 2.7.1
+Git revision: UNKNOWN, branch: UNKNOWN
+Compiled at: 2024-10-30 13:42:18.081591 UTC
+*/
+
+end
+
+==============================================================================
+summary of summaries:
+
+analyzed: <PROJECT_ROOT>/tamarin/trust_engine_policy.spthy
+
+  processing time: 0.34s
+  
+  WARNING: 8 wellformedness check failed!
+  
+  high_risk_requires_stepup (all-traces): analysis incomplete (1 steps)
+  policy_high_requires_stepup (all-traces): analysis incomplete (1 steps)
+  tenant_policy_isolated (all-traces): analysis incomplete (1 steps)
+
+==============================================================================

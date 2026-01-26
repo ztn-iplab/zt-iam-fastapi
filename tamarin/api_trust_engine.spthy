@@ -1,0 +1,43 @@
+theory API_Trust_Engine begin
+
+/* API trust engine: rate-limit abuse increases score, triggers suspension,
+   and suspended tenants cannot receive access grants. */
+
+rule InitTenant:
+  [ Fr(t) ]
+  --[ TenantInit(t) ]->
+  [ !Tenant(t), Active(t), ScoreLow(t) ]
+
+rule ApiRequest:
+  [ !Tenant(t), Active(t), ScoreLow(t) ]
+  --[ AccessGranted(t) ]->
+  [ Active(t), ScoreLow(t) ]
+
+rule RateLimitExceeded:
+  [ !Tenant(t), Active(t), ScoreLow(t), In(abuse) ]
+  --[ RateLimitAbuse(t) ]->
+  [ Active(t), ScoreHigh(t) ]
+
+rule AutoSuspend:
+  [ !Tenant(t), Active(t), ScoreHigh(t) ]
+  --[ ApiSuspended(t) ]->
+  [ Suspended(t) ]
+
+rule BlockedRequest:
+  [ Suspended(t), In(req) ]
+  --[ AccessBlocked(t) ]->
+  [ Suspended(t) ]
+
+lemma suspended_blocks_access:
+  all-traces
+  "∀ t #i #j.
+    (ApiSuspended(t) @ #i ∧ AccessGranted(t) @ #j) ⇒
+    (#j < #i)"
+
+lemma access_requires_active:
+  all-traces
+  "∀ t #i.
+    (AccessGranted(t) @ #i) ⇒
+    (∃ #j. Active(t) @ #j)"
+
+end

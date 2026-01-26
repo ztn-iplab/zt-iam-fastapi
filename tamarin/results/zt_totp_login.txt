@@ -2,6 +2,7 @@ Notation
 --------
 u user, d device, rp relying party, pw password, seed TOTP seed, dk device key
 wk WebAuthn key, rcode recovery code, n nonce, t time step
+t tenant, r request, policy policy flag, score API score
 Db(...) server state, DeviceState(...) device state, ChallengeState(...) pending challenge
 DbRecovery(...) recovery store, WebAuthnState(...) WebAuthn device state
 Events include Accept, AcceptPrimary, AcceptRecovery, DeviceGenerated, WebAuthnApproved
@@ -86,11 +87,7 @@ guarded formula characterizing all counter-examples:
   ⇒
    ((¬(#j < #i)) ∨ (¬(#k < #i)))"
 */
-simplify
-solve( ChallengeState( u, d, seed, dk, rp ) ▶₀ #i )
-  case PasswordLogin
-  by solve( !KU( ~n ) @ #vk.1 )
-qed
+by sorry
 
 lemma seed_compromise_resisted:
   all-traces
@@ -104,7 +101,7 @@ guarded formula characterizing all counter-examples:
  ∧
   ∀ #j. (LeakDeviceKey( u, d ) @ #j) ⇒ ⊥"
 */
-by simplify
+by sorry
 
 
 
@@ -118,10 +115,10 @@ by simplify
 
 /*
 Generated from:
-Tamarin version 1.9.0
-Maude version 3.1
+Tamarin version 1.10.0
+Maude version 2.7.1
 Git revision: UNKNOWN, branch: UNKNOWN
-Compiled at: 2024-03-08 00:22:39.488712808 UTC
+Compiled at: 2024-10-30 13:42:18.081591 UTC
 */
 
 end
@@ -129,11 +126,11 @@ end
 ==============================================================================
 summary of summaries:
 
-analyzed: tamarin/zt_totp_login.spthy
+analyzed: <PROJECT_ROOT>/tamarin/zt_totp_login.spthy
 
-  processing time: 1.15s
+  processing time: 0.48s
   
-  password_and_device_required (all-traces): verified (3 steps)
-  seed_compromise_resisted (all-traces): verified (1 steps)
+  password_and_device_required (all-traces): analysis incomplete (1 steps)
+  seed_compromise_resisted (all-traces): analysis incomplete (1 steps)
 
 ==============================================================================

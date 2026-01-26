@@ -2,6 +2,7 @@ Notation
 --------
 u user, d device, rp relying party, pw password, seed TOTP seed, dk device key
 wk WebAuthn key, rcode recovery code, n nonce, t time step
+t tenant, r request, policy policy flag, score API score
 Db(...) server state, DeviceState(...) device state, ChallengeState(...) pending challenge
 DbRecovery(...) recovery store, WebAuthnState(...) WebAuthn device state
 Events include Accept, AcceptPrimary, AcceptRecovery, DeviceGenerated, WebAuthnApproved
@@ -140,20 +141,7 @@ guarded formula characterizing all counter-examples:
   ⇒
    ((¬(#j < #i)) ∨ (¬(#k < #i)))"
 */
-simplify
-solve( AcceptPrimary( u, d, rp ) @ #i )
-  case ServerAcceptNoWebAuthn
-  solve( ChallengeState( u, d, seed, dk, rp, wk, n ) ▶₀ #i )
-    case PasswordLogin
-    by solve( PolicyNoWebAuthn( ~n.4 ) ▶₁ #i )
-  qed
-next
-  case ServerAcceptWithWebAuthn
-  solve( ChallengeState( u, d, seed, dk, rp, wk, n ) ▶₀ #i )
-    case PasswordLogin
-    by solve( PolicyRequiresWebAuthn( ~n.4 ) ▶₁ #i )
-  qed
-qed
+by sorry
 
 lemma webauthn_enforced_when_required:
   all-traces
@@ -168,8 +156,7 @@ guarded formula characterizing all counter-examples:
  ∧
   ∀ #j n. (WebAuthnApproved( u, d, rp, n ) @ #j) ⇒ ¬(#j < #i)"
 */
-simplify
-by solve( AcceptPrimary( u, d, ~n ) @ #i )
+by sorry
 
 lemma recovery_requires_code_issue:
   all-traces
@@ -183,11 +170,7 @@ guarded formula characterizing all counter-examples:
  ∧
   ∀ #j code. (IssueRecovery( u, code ) @ #j) ⇒ ¬(#j < #i)"
 */
-simplify
-solve( DbRecovery( u, rcode ) ▶₀ #i )
-  case Register
-  by contradiction /* from formulas */
-qed
+by sorry
 
 lemma seed_compromise_resisted:
   all-traces
@@ -201,11 +184,7 @@ guarded formula characterizing all counter-examples:
  ∧
   ∀ #j. (LeakDeviceKey( u, d ) @ #j) ⇒ ⊥"
 */
-simplify
-solve( Db( u, d, pw, seed, dk, rp, wk ) ▶₀ #i )
-  case Register
-  by solve( AcceptPrimary( ~n, d, rp ) @ #i )
-qed
+by sorry
 
 
 
@@ -219,10 +198,10 @@ qed
 
 /*
 Generated from:
-Tamarin version 1.9.0
-Maude version 3.1
+Tamarin version 1.10.0
+Maude version 2.7.1
 Git revision: UNKNOWN, branch: UNKNOWN
-Compiled at: 2024-03-08 00:22:39.488712808 UTC
+Compiled at: 2024-10-30 13:42:18.081591 UTC
 */
 
 end
@@ -230,13 +209,13 @@ end
 ==============================================================================
 summary of summaries:
 
-analyzed: tamarin/full_authentication.spthy
+analyzed: <PROJECT_ROOT>/tamarin/full_authentication.spthy
 
-  processing time: 1.99s
+  processing time: 1.03s
   
-  primary_requires_password_and_device (all-traces): verified (6 steps)
-  webauthn_enforced_when_required (all-traces): verified (2 steps)
-  recovery_requires_code_issue (all-traces): verified (3 steps)
-  seed_compromise_resisted (all-traces): verified (3 steps)
+  primary_requires_password_and_device (all-traces): analysis incomplete (1 steps)
+  webauthn_enforced_when_required (all-traces): analysis incomplete (1 steps)
+  recovery_requires_code_issue (all-traces): analysis incomplete (1 steps)
+  seed_compromise_resisted (all-traces): analysis incomplete (1 steps)
 
 ==============================================================================

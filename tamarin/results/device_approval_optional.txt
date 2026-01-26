@@ -2,6 +2,7 @@ Notation
 --------
 u user, d device, rp relying party, pw password, seed TOTP seed, dk device key
 wk WebAuthn key, rcode recovery code, n nonce, t time step
+t tenant, r request, policy policy flag, score API score
 Db(...) server state, DeviceState(...) device state, ChallengeState(...) pending challenge
 DbRecovery(...) recovery store, WebAuthnState(...) WebAuthn device state
 Events include Accept, AcceptPrimary, AcceptRecovery, DeviceGenerated, WebAuthnApproved
@@ -88,8 +89,7 @@ guarded formula characterizing all counter-examples:
  ∧
   ∀ #j n. (DeviceApproved( u, d, rp, n ) @ #j) ⇒ ¬(#j < #i)"
 */
-simplify
-by solve( Accept( u, d, ~n ) @ #i )
+by sorry
 
 
 
@@ -103,10 +103,10 @@ by solve( Accept( u, d, ~n ) @ #i )
 
 /*
 Generated from:
-Tamarin version 1.9.0
-Maude version 3.1
+Tamarin version 1.10.0
+Maude version 2.7.1
 Git revision: UNKNOWN, branch: UNKNOWN
-Compiled at: 2024-03-08 00:22:39.488712808 UTC
+Compiled at: 2024-10-30 13:42:18.081591 UTC
 */
 
 end
@@ -114,10 +114,10 @@ end
 ==============================================================================
 summary of summaries:
 
-analyzed: tamarin/device_approval_optional.spthy
+analyzed: <PROJECT_ROOT>/tamarin/device_approval_optional.spthy
 
-  processing time: 1.36s
+  processing time: 0.61s
   
-  approval_required_when_policy (all-traces): verified (2 steps)
+  approval_required_when_policy (all-traces): analysis incomplete (1 steps)
 
 ==============================================================================

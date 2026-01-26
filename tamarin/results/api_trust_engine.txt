@@ -1,0 +1,118 @@
+Notation
+--------
+u user, d device, rp relying party, pw password, seed TOTP seed, dk device key
+wk WebAuthn key, rcode recovery code, n nonce, t time step
+t tenant, r request, policy policy flag, score API score
+Db(...) server state, DeviceState(...) device state, ChallengeState(...) pending challenge
+DbRecovery(...) recovery store, WebAuthnState(...) WebAuthn device state
+Events include Accept, AcceptPrimary, AcceptRecovery, DeviceGenerated, WebAuthnApproved
+theory API_Trust_Engine begin
+
+// Function signature and definition of the equational theory E
+
+functions: fst/1, pair/2, snd/1
+equations: fst(<x.1, x.2>) = x.1, snd(<x.1, x.2>) = x.2
+
+
+
+
+
+/* looping facts with injective instances: Active/1, ScoreLow/1 */
+
+rule (modulo E) InitTenant:
+   [ Fr( t ) ]
+  --[ TenantInit( t ) ]->
+   [ !Tenant( t ), Active( t ), ScoreLow( t ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) ApiRequest:
+   [ !Tenant( t ), Active( t ), ScoreLow( t ) ]
+  --[ AccessGranted( t ) ]->
+   [ Active( t ), ScoreLow( t ) ]
+
+  // loop breakers: [1,2]
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) RateLimitExceeded:
+   [ !Tenant( t ), Active( t ), ScoreLow( t ), In( abuse ) ]
+  --[ RateLimitAbuse( t ) ]->
+   [ Active( t ), ScoreHigh( t ) ]
+
+  // loop breaker: [1]
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) AutoSuspend:
+   [ !Tenant( t ), Active( t ), ScoreHigh( t ) ]
+  --[ ApiSuspended( t ) ]->
+   [ Suspended( t ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) BlockedRequest:
+   [ Suspended( t ), In( req ) ]
+  --[ AccessBlocked( t ) ]->
+   [ Suspended( t ) ]
+
+  // loop breaker: [0]
+  /* has exactly the trivial AC variant */
+
+lemma suspended_blocks_access:
+  all-traces
+  "∀ t #i #j.
+    ((ApiSuspended( t ) @ #i) ∧ (AccessGranted( t ) @ #j)) ⇒ (#j < #i)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ t #i #j.
+  (ApiSuspended( t ) @ #i) ∧ (AccessGranted( t ) @ #j) ∧ ¬(#j < #i)"
+*/
+by sorry
+
+lemma access_requires_active:
+  all-traces "∀ t #i. (AccessGranted( t ) @ #i) ⇒ (∃ #j. Active( t ) @ #j)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ t #i. (AccessGranted( t ) @ #i) ∧ ∀ #j. (Active( t ) @ #j) ⇒ ⊥"
+*/
+by sorry
+
+
+
+
+
+
+
+/*
+WARNING: the following wellformedness checks failed!
+
+Inexistant lemma actions
+========================
+
+  lemma `access_requires_active' references action 
+    fact "Active" (arity 1, Linear) 
+  but no rule has such an action.
+*/
+
+/*
+Generated from:
+Tamarin version 1.10.0
+Maude version 2.7.1
+Git revision: UNKNOWN, branch: UNKNOWN
+Compiled at: 2024-10-30 13:42:18.081591 UTC
+*/
+
+end
+
+==============================================================================
+summary of summaries:
+
+analyzed: <PROJECT_ROOT>/tamarin/api_trust_engine.spthy
+
+  processing time: 0.12s
+  
+  WARNING: 1 wellformedness check failed!
+  
+  suspended_blocks_access (all-traces): analysis incomplete (1 steps)
+  access_requires_active (all-traces): analysis incomplete (1 steps)
+
+==============================================================================

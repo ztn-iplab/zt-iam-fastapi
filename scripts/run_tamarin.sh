@@ -21,6 +21,7 @@ Notation
 --------
 u user, d device, rp relying party, pw password, seed TOTP seed, dk device key
 wk WebAuthn key, rcode recovery code, n nonce, t time step
+t tenant, r request, policy policy flag, score API score
 Db(...) server state, DeviceState(...) device state, ChallengeState(...) pending challenge
 DbRecovery(...) recovery store, WebAuthnState(...) WebAuthn device state
 Events include Accept, AcceptPrimary, AcceptRecovery, DeviceGenerated, WebAuthnApproved
@@ -33,5 +34,7 @@ run_model zt_totp_login
 run_model recovery_code
 run_model device_approval_optional
 run_model full_authentication
+run_model trust_engine_policy
+run_model api_trust_engine
 
 echo "Tamarin results written to ${RESULTS_DIR}"

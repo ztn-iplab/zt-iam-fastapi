@@ -1,0 +1,87 @@
+theory Trust_Engine_Policy begin
+
+builtins: hashing
+
+/* Trust engine model for multi-tenant policy evaluation.
+   Each tenant provides a policy with weighted rules. Risk is classified
+   per tenant and per request. High risk requires step-up approval. */
+
+functions: h/1
+
+rule InitTenantUser:
+  [ Fr(t), Fr(u) ]
+  --[ TenantUser(t, u) ]->
+  [ !Tenant(t), !User(u, t) ]
+
+rule SetPolicyRuleHigh:
+  [ !Tenant(t), Fr(rid) ]
+  --[ PolicyRuleHigh(t, rid) ]->
+  [ !PolicyRuleHigh(t, rid) ]
+
+rule SetPolicyThreshold:
+  [ !Tenant(t), Fr(thr) ]
+  --[ PolicyThreshold(t, thr) ]->
+  [ !PolicyThreshold(t, thr) ]
+
+rule AccessRequest:
+  [ !User(u, t), Fr(r) ]
+  --[ AccessReq(u, t, r) ]->
+  [ RiskPending(u, t, r) ]
+
+rule EvaluateLowRisk:
+  [ RiskPending(u, t, r) ]
+  --[ RiskLow(u, t, r) ]->
+  [ RiskState(u, t, r, low) ]
+
+rule EvaluateHighRisk:
+  [ RiskPending(u, t, r) ]
+  --[ RiskHigh(u, t, r) ]->
+  [ RiskState(u, t, r, high) ]
+
+rule SignalObserved:
+  [ RiskPending(u, t, r), Fr(rid) ]
+  --[ Signal(u, t, r, rid) ]->
+  [ SignalSeen(u, t, r, rid) ]
+
+rule EvaluatePolicyHigh:
+  [ RiskPending(u, t, r), !PolicyRuleHigh(t, rid), SignalSeen(u, t, r, rid) ]
+  --[ RiskHigh(u, t, r) ]->
+  [ RiskState(u, t, r, high) ]
+
+rule StepUpApprove:
+  [ RiskState(u, t, r, high), In(<u, r>) ]
+  --[ StepUpOK(u, t, r) ]->
+  [ StepUpDone(u, t, r) ]
+
+rule AccessGrantLow:
+  [ RiskState(u, t, r, low) ]
+  --[ AccessGranted(u, t, r) ]->
+  [ ]
+
+rule AccessGrantHigh:
+  [ RiskState(u, t, r, high), StepUpDone(u, t, r) ]
+  --[ AccessGranted(u, t, r) ]->
+  [ ]
+
+lemma high_risk_requires_stepup:
+  all-traces
+  "∀ u t r #i.
+    (AccessGranted(u, t, r) @ #i ∧
+     RiskHigh(u, t, r) @ #i) ⇒
+    (∃ #j. StepUpOK(u, t, r) @ #j)"
+
+lemma policy_high_requires_stepup:
+  all-traces
+  "∀ u t r #i.
+    (AccessGranted(u, t, r) @ #i ∧
+     PolicyRuleHigh(t, rid) @ #i ∧
+     Signal(u, t, r, rid) @ #i) ⇒
+    (∃ #j. StepUpOK(u, t, r) @ #j)"
+
+lemma tenant_policy_isolated:
+  all-traces
+  "∀ u t1 t2 r #i.
+    (RiskHigh(u, t2, r) @ #i ∧ PolicyRuleHigh(t1, rid) @ #i) ⇒
+    (t1 = t2)"
+
+end

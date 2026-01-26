@@ -11,6 +11,8 @@ Models
 - `recovery_code.spthy`: recovery-code login (offline access)
 - `device_approval_optional.spthy`: optional device approval / WebAuthn step
 - `full_authentication.spthy`: full login logic with password, ZT-TOTP, WebAuthn policy, and recovery fallback
+- `trust_engine_policy.spthy`: multi-tenant trust engine policy evaluation (risk + step-up enforcement)
+- `api_trust_engine.spthy`: API trust engine (rate-limit abuse + auto-suspension)
 
 Notation
 --------
@@ -31,6 +33,8 @@ tamarin-prover tamarin/zt_totp_login.spthy
 tamarin-prover tamarin/recovery_code.spthy
 tamarin-prover tamarin/device_approval_optional.spthy
 tamarin-prover tamarin/full_authentication.spthy
+tamarin-prover tamarin/trust_engine_policy.spthy
+tamarin-prover tamarin/api_trust_engine.spthy
 ```
 
 Or use the helper script:

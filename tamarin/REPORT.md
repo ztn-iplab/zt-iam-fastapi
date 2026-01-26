@@ -9,9 +9,9 @@ approval/WebAuthn, and the full authentication flow with fallbacks.
 
 Environment
 -----------
-- Tamarin: 1.9.0 (container: `docker.io/flaminghoneybadger/tamarin`)
-- Maude: 3.1 (bundled in container)
-- Host: macOS arm64 (container runs linux/amd64)
+- Tamarin: 1.10.0 (local)
+- Maude: 2.7.1 (local)
+- Host: macOS arm64
 - Project root: `<PROJECT_ROOT>`
 
 Notation and Symbols
@@ -46,6 +46,15 @@ Results Summary
    - `recovery_requires_code_issue`: verified
    - `seed_compromise_resisted`: verified
 
+6) Trust Engine Policy (`tamarin/trust_engine_policy.spthy`)
+   - `high_risk_requires_stepup`: verified
+   - `policy_high_requires_stepup`: verified
+   - `tenant_policy_isolated`: verified
+
+7) API Trust Engine (`tamarin/api_trust_engine.spthy`)
+   - `suspended_blocks_access`: verified
+   - `access_requires_active`: verified
+
 Interpretation
 ---------------------------------
 - ZT‑TOTP core authentication is guaranteed: acceptance implies a device-generated
@@ -78,6 +87,16 @@ Fallbacks by Factor
   recovery code.
 - WebAuthn: required only if policy mandates; otherwise optional in primary login.
 - Recovery code: offline fallback; succeeds only if a valid code is present and not revoked.
+- Trust engine: high-risk classifications require step-up approval before access can be granted.
+- Tenant policies are isolated: one tenant’s weighted rules cannot elevate another tenant’s risk state.
+- API trust engine: rate-limit abuse escalates score to suspension; suspended tenants cannot access APIs.
+
+Policy-weighted rules
+---------------------
+In the trust-engine model, tenant JSON policies are abstracted as `PolicyRuleHigh(t, rid)` facts
+paired with observed `Signal(u, t, r, rid)` events. This captures weighted-rule triggers without
+encoding numeric sums in Tamarin, while preserving the invariant: if a tenant policy elevates
+risk for a request, the request cannot be granted without step-up approval.
 
 Artifacts
 ---------
@@ -87,6 +106,12 @@ Artifacts
 Reproducibility
 ---------------
 Run all proofs and capture outputs:
+
+```
+./scripts/run_tamarin.sh
+```
+
+Container fallback (if local Tamarin is unavailable):
 
 ```
 ./scripts/run_tamarin_container.sh

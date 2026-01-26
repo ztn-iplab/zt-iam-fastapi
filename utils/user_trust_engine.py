@@ -1,6 +1,7 @@
 # user_trust_engine.py
 
 from datetime import datetime, timedelta
+from math import pow
 
 from app.models import TenantTrustPolicyFile, UserAuthLog
 
@@ -9,10 +10,36 @@ class BaseTrustEngine:
     def __init__(self, user, context):
         self.user = user
         self.context = context
-        self.score = 0.0
         self.factors = []
+        self._factor_keys = set()
+        self.baseline_score = self._compute_baseline_score()
+        self.score = self.baseline_score
+        self.minimum_score = self.baseline_score
+        self.confidence = self._compute_confidence()
+        self.last_evaluation = datetime.utcnow()
+
+    def _compute_baseline_score(self):
+        base_risk = 0.15
+        prior = self.user.trust_score if self.user.trust_score is not None else base_risk
+        last_login = self.user.last_login or self.user.created_at
+        if last_login:
+            age_days = max(0, (datetime.utcnow() - last_login).days)
+            half_life_days = 7
+            decay = pow(0.5, age_days / half_life_days)
+            prior = base_risk + (prior - base_risk) * decay
+        return max(base_risk, min(prior, 1.0))
+
+    def _compute_confidence(self):
+        signal_keys = ("device_info", "ip_address", "location", "amount", "device_enrolled")
+        signals = sum(1 for key in signal_keys if self.context.get(key) is not None)
+        return min(1.0, 0.4 + (signals * 0.12))
 
     def _add_factor(self, key, weight, title, guidance, evidence=None):
+        if key in self._factor_keys:
+            return
+        self._factor_keys.add(key)
+        if weight <= 0:
+            return
         self.score += weight
         self.factors.append(
             {
@@ -24,6 +51,10 @@ class BaseTrustEngine:
             }
         )
 
+    def finalize(self):
+        score = min(max(self.score, self.minimum_score), 1.0)
+        return round(score, 2)
+
     def run(self):
         self.rule_large_transaction()
         self.rule_odd_hours()
@@ -34,7 +65,7 @@ class BaseTrustEngine:
         self.rule_login_velocity()
         self.rule_identity_unverified()
         self.rule_missing_device_binding()
-        return round(min(self.score, 1.0), 2)
+        return self.finalize()
 
     def rule_large_transaction(self):
         amount = self.context.get("amount")
@@ -184,7 +215,6 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
             return super().run()
 
         rules = config.get("rules", {})
-        score = 0.0
         ctx = self.context
 
         if rules.get("odd_hours", {}).get("enabled"):
@@ -198,7 +228,6 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
                     "If this is you, proceed; otherwise secure your account.",
                     {"hour": hour},
                 )
-                score += weight
 
         if rules.get("new_device_or_ip", {}).get("enabled"):
             device_info = ctx.get("device_info")
@@ -218,7 +247,6 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
                     "New device detected",
                     "Approve the login only if this is your device.",
                 )
-                score += weight
             if ip_address and not any(log.ip_address == ip_address for log in recent_logs):
                 weight = rules["new_device_or_ip"].get("weight", 0.2)
                 self._add_factor(
@@ -228,7 +256,6 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
                     "If this IP is unfamiliar, change your password.",
                     {"ip_address": ip_address},
                 )
-                score += weight
 
         if rules.get("geo_trust", {}).get("enabled"):
             min_score = rules["geo_trust"].get("min_trust_score", 0.3)
@@ -240,7 +267,6 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
                     "Location trust below threshold",
                     "Confirm your location before proceeding.",
                 )
-                score += weight
 
         if rules.get("login_frequency", {}).get("enabled"):
             threshold = rules["login_frequency"].get("threshold", 3)
@@ -265,9 +291,8 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
                     "Consider changing your password if this wasn’t you.",
                     {"login_count": login_count},
                 )
-                score += weight
 
-        return round(min(score, 1.0), 2)
+        return self.finalize()
 
 
 def _risk_level(score: float) -> str:
@@ -284,7 +309,8 @@ def evaluate_trust_details(user, context, tenant=None):
     if tenant and hasattr(tenant, "custom_trust_logic") and callable(tenant.custom_trust_logic):
         try:
             score = tenant.custom_trust_logic(user, context)
-            return {"score": round(min(score, 1.0), 2), "level": _risk_level(score), "factors": []}
+            score = max(0.0, min(float(score), 1.0))
+            return {"score": round(score, 2), "level": _risk_level(score), "factors": []}
         except Exception:
             pass
 
@@ -294,13 +320,25 @@ def evaluate_trust_details(user, context, tenant=None):
             try:
                 engine = JSONPolicyTrustEngine(user, context, tenant)
                 score = engine.run()
-                return {"score": score, "level": _risk_level(score), "factors": engine.factors}
+                return {
+                    "score": score,
+                    "level": _risk_level(score),
+                    "factors": engine.factors,
+                    "confidence": engine.confidence,
+                    "baseline": round(engine.baseline_score, 2),
+                }
             except Exception:
                 pass
 
     engine = BaseTrustEngine(user, context)
     score = engine.run()
-    return {"score": score, "level": _risk_level(score), "factors": engine.factors}
+    return {
+        "score": score,
+        "level": _risk_level(score),
+        "factors": engine.factors,
+        "confidence": engine.confidence,
+        "baseline": round(engine.baseline_score, 2),
+    }
 
 
 def evaluate_trust(user, context, tenant=None):

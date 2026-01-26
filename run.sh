@@ -1,124 +1,82 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_PATH="$ROOT_DIR/mobile/ca_mobile_app/lib/config.dart"
+
 usage() {
-  echo "Usage: ./run.sh [--build]"
-  echo "  --build   rebuild images before starting"
+  cat <<'EOF'
+Usage: ./run.sh [--ip <LAN_IP>] [--emulator]
+
+Options:
+  --ip <LAN_IP>   Use the provided LAN IP for the mobile app base URL.
+  --emulator      Use Android emulator host mapping (10.0.2.2).
+
+Examples:
+  ./run.sh --ip 192.168.1.50
+  ./run.sh --emulator
+EOF
 }
 
-compose_bin=""
-engine_bin=""
-
-if command -v podman >/dev/null 2>&1; then
-  if podman compose version >/dev/null 2>&1; then
-    compose_bin="podman compose"
-    engine_bin="podman"
-  fi
-fi
-
-if [[ -z "${compose_bin}" ]] && command -v docker >/dev/null 2>&1; then
-  if docker compose version >/dev/null 2>&1; then
-    compose_bin="docker compose"
-    engine_bin="docker"
-  fi
-fi
-
-if [[ -z "${compose_bin}" ]]; then
-  echo "Error: podman compose or docker compose is required."
-  echo "Install Podman or Docker, then re-run ./run.sh"
-  exit 1
-fi
-
-detect_host_ip() {
+detect_ip() {
   local ip=""
-  for iface in en0 en1 en2 en3 en4; do
-    ip=$(ipconfig getifaddr "${iface}" 2>/dev/null || true)
-    if [[ -n "${ip}" ]]; then
-      echo "${ip}"
-      return 0
-    fi
-  done
-  return 1
+  ip="$(ipconfig getifaddr en0 2>/dev/null || true)"
+  if [[ -z "$ip" ]]; then
+    ip="$(ipconfig getifaddr en1 2>/dev/null || true)"
+  fi
+  echo "$ip"
 }
 
-update_dns_mapping() {
-  local ip="${1}"
-  if [[ -z "${ip}" ]]; then
-    return 0
-  fi
+target_ip=""
+use_emulator="false"
 
-  if ! command -v brew >/dev/null 2>&1; then
-    echo "Homebrew not found. Skipping dnsmasq update."
-    return 0
-  fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --ip)
+      shift
+      target_ip="${1:-}"
+      ;;
+    --emulator)
+      use_emulator="true"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+  shift || true
+done
 
-  local conf_dir
-  conf_dir="$(brew --prefix)/etc/dnsmasq.d"
-  mkdir -p "${conf_dir}"
-
-  # Remove stale mappings from previous networks.
-  rm -f "${conf_dir}/localhost.localdomain.com.conf"
-  # Clean any hardcoded mappings from dnsmasq.conf.
-  if [[ -f "$(brew --prefix)/etc/dnsmasq.conf" ]]; then
-    sed -i.bak -E "/localhost\\.localdomain(\\.com)?/d" "$(brew --prefix)/etc/dnsmasq.conf"
-    rm -f "$(brew --prefix)/etc/dnsmasq.conf.bak"
-  fi
-
-  {
-    echo "address=/localhost.localdomain.com/${ip}"
-    echo "address=/localhost.localdomain/${ip}"
-  } | sudo tee "${conf_dir}/zt-iam.conf" >/dev/null
-
-  if command -v sudo >/dev/null 2>&1; then
-    sudo mkdir -p /etc/resolver
-    echo "nameserver 127.0.0.1" | sudo tee /etc/resolver/localhost.localdomain.com >/dev/null
-    echo "nameserver 127.0.0.1" | sudo tee /etc/resolver/localhost.localdomain >/dev/null
-  fi
-
-  if command -v sudo >/dev/null 2>&1; then
-    sudo brew services restart dnsmasq >/dev/null 2>&1 || true
-  fi
-}
-
-cleanup_containers() {
-  local names=("ztn_db" "ztn_mailpit" "ztn_momo_app" "ztn_nginx")
-  for name in "${names[@]}"; do
-    if ${engine_bin} ps -a --format "{{.Names}}" | grep -Fxq "${name}"; then
-      ${engine_bin} stop "${name}" >/dev/null 2>&1 || true
-      ${engine_bin} rm "${name}" >/dev/null 2>&1 || true
-    fi
-  done
-}
-
-bootstrap_db() {
-  ${engine_bin} exec -w /app -e PYTHONPATH=/app ztn_momo_app python scripts/bootstrap_db.py
-}
-
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
+if [[ "$use_emulator" == "true" ]]; then
+  target_ip="10.0.2.2"
+elif [[ -z "$target_ip" ]]; then
+  target_ip="$(detect_ip)"
 fi
 
-if [[ "${1:-}" == "--build" ]]; then
-  if [[ "${engine_bin}" == "podman" ]]; then
-    podman machine start >/dev/null 2>&1 || true
-  fi
-  host_ip=$(detect_host_ip || true)
-  update_dns_mapping "${host_ip}"
-  cleanup_containers
-  ${compose_bin} up --build -d
-  bootstrap_db
-elif [[ -z "${1:-}" ]]; then
-  if [[ "${engine_bin}" == "podman" ]]; then
-    podman machine start >/dev/null 2>&1 || true
-  fi
-  host_ip=$(detect_host_ip || true)
-  update_dns_mapping "${host_ip}"
-  cleanup_containers
-  ${compose_bin} up -d
-  bootstrap_db
-else
-  echo "Unknown option: ${1}"
-  usage
+if [[ -z "$target_ip" ]]; then
+  echo "Could not determine LAN IP. Use --ip <LAN_IP>." >&2
   exit 1
 fi
+
+if [[ ! -f "$CONFIG_PATH" ]]; then
+  echo "Missing config: $CONFIG_PATH" >&2
+  exit 1
+fi
+
+sed -i '' "s|^const String apiBaseUrl = '.*';|const String apiBaseUrl = 'http://${target_ip}:8001';|" "$CONFIG_PATH"
+
+echo "Updated mobile base URL: http://${target_ip}:8001"
+echo "Starting backend services with Podman..."
+podman compose up -d --build
+
+cat <<EOF
+Done.
+Next:
+- For physical device: flutter run -d <DEVICE_ID> --no-devtools
+- For emulator: ./run.sh --emulator (then run the app)
+EOF

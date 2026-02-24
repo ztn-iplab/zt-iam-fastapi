@@ -1,26 +1,22 @@
-# Python
-*.pyc
-__pycache__/
-
-# Virtual Environment
-s_venv/
-
-# Environment Variables
-.env
-*.env
-.flaskenv
-
-# Logs
-
-logs/
-experiments/*.csv
-
-# System files
 .DS_Store
-Analyzer.pcapng
-*.pem
+*.apk
+certs/*.key
+__pycache__/
+*.pyc
+.env
+client_session_key.aes
+
+# Local-only research artifacts (do not push)
+experiments/aig_scenarios_latest.csv
+experiments/aig_sweep/
+experiments/aig_traces/
+experiments/paper_artifacts/
+experiments/usability/
+experiments/AIg_*.md
+experiments/iam_metrics*.csv
+experiments/iam_summary.csv
+
+# Local runtime/workbench folders
 certs/
 private/
-secrets/
-client_session_key.aes
 tools/

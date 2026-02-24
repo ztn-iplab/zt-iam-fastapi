@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import os
+import secrets
 import pyotp
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -28,9 +29,11 @@ from app.models import (
     OTPCode,
     RecoveryCode,
     PasswordHistory,
+    PendingSIMSwap,
     PendingTOTP,
     RealTimeLog,
     SIMCard,
+    TelecomEvent,
     User,
     UserAccessControl,
     UserAuthLog,
@@ -166,6 +169,23 @@ def verify_biometric_page(request: Request):
 @router.get("/request-totp-reset", response_class=HTMLResponse)
 def request_totp_reset_form(request: Request):
     return templates.TemplateResponse("request_totp_reset.html", {"request": request})
+
+
+@router.get("/verify-sim-swap", response_class=HTMLResponse)
+def verify_sim_swap_form(request: Request, db: Session = Depends(get_db)):
+    token = request.query_params.get("token")
+    if not token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing token")
+
+    pending = db.query(PendingSIMSwap).filter_by(token_hash=hash_token(token)).first()
+    if not pending or not pending.expires_at or pending.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="SIM swap token invalid or expired.")
+
+    user = db.query(User).get(pending.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    return templates.TemplateResponse("verify_sim_swap.html", {"request": request, "token": token, "user": user})
 
 
 @router.get("/out-request-webauthn-reset", response_class=HTMLResponse)
@@ -1687,6 +1707,131 @@ def out_verify_webauthn_reset(token: str, payload: dict, request: Request, db: S
     )
     db.commit()
     return {"message": "WebAuthn reset complete. Please enroll a new passkey."}
+
+
+@router.post("/verify-sim-swap")
+def verify_sim_swap(payload: dict, request: Request, db: Session = Depends(get_db)):
+    token = payload.get("token")
+    if not token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing token")
+
+    pending = db.query(PendingSIMSwap).filter_by(token_hash=hash_token(token)).first()
+    if not pending or not pending.expires_at or pending.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="SIM swap token invalid or expired.")
+
+    user = db.query(User).get(pending.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    password = payload.get("password")
+    totp_code = payload.get("totp_code")
+    if not password or not totp_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password and TOTP code are required",
+        )
+
+    if not user.check_password(password):
+        db.add(
+            RealTimeLog(
+                user_id=user.id,
+                action="SIM swap verification failed (bad password)",
+                ip_address=request.client.host if request.client else None,
+                device_info=request.headers.get("User-Agent", "Unknown"),
+                location=get_ip_location(request.client.host if request.client else None),
+                risk_alert=True,
+                tenant_id=user.tenant_id or 1,
+            )
+        )
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password.")
+
+    if not user.otp_secret or not verify_totp_code(user.otp_secret, totp_code):
+        db.add(
+            RealTimeLog(
+                user_id=user.id,
+                action="SIM swap verification failed (bad TOTP)",
+                ip_address=request.client.host if request.client else None,
+                device_info=request.headers.get("User-Agent", "Unknown"),
+                location=get_ip_location(request.client.host if request.client else None),
+                risk_alert=True,
+                tenant_id=user.tenant_id or 1,
+            )
+        )
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code.")
+
+    if not request.session.get("reset_webauthn_verified"):
+        return JSONResponse({"require_webauthn": True}, status_code=status.HTTP_202_ACCEPTED)
+
+    old_sim = db.query(SIMCard).filter_by(iccid=pending.old_iccid).first()
+    new_sim = db.query(SIMCard).filter_by(iccid=pending.new_iccid).first()
+    if not old_sim or not new_sim:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SIMs not found.")
+
+    preserved_mobile_number = old_sim.mobile_number
+
+    while True:
+        suffix = f"SWP_{int(datetime.utcnow().timestamp())}_{secrets.token_hex(2)}"
+        if len(suffix) > 20:
+            suffix = suffix[:20]
+        if not db.query(SIMCard).filter_by(mobile_number=suffix).first():
+            break
+
+    old_sim.status = "swapped"
+    old_sim.mobile_number = suffix
+
+    new_sim.status = "active"
+    new_sim.user_id = user.id
+    new_sim.mobile_number = preserved_mobile_number
+    new_sim.registration_date = datetime.utcnow()
+    new_sim.registered_by = f"user-{user.id}"
+
+    now = datetime.utcnow()
+    db.add(
+        TelecomEvent(
+            tenant_id=user.tenant_id or 1,
+            user_id=user.id,
+            mobile_number=preserved_mobile_number,
+            iccid=new_sim.iccid,
+            old_iccid=old_sim.iccid,
+            new_iccid=new_sim.iccid,
+            network_provider=new_sim.network_provider,
+            event_type="sim_swap_completed",
+            event_time=now,
+            ingested_at=now,
+            source_type="internal_auth",
+            source_ref="verify-sim-swap",
+            source_independent=False,
+            correlation_id=pending.token_hash,
+            metadata_json={
+                "old_mobile_number_rewritten": True,
+                "old_sim_mobile_alias": suffix,
+                "old_status": "active",
+                "new_status": "active",
+            },
+        )
+    )
+    db.add(
+        RealTimeLog(
+            user_id=user.id,
+            action=f"Verified SIM swap {old_sim.iccid} -> {new_sim.iccid}",
+            ip_address=request.client.host if request.client else None,
+            device_info=request.headers.get("User-Agent", "Unknown"),
+            location=get_ip_location(request.client.host if request.client else None),
+            risk_alert=False,
+            tenant_id=user.tenant_id or 1,
+        )
+    )
+
+    db.delete(pending)
+    request.session.pop("reset_webauthn_verified", None)
+    request.session.pop("reset_user_id", None)
+    request.session.pop("reset_webauthn_assertion_state", None)
+    request.session.pop("reset_context", None)
+    db.commit()
+
+    return {"message": "SIM swap completed successfully."}
 
 
 @router.post("/refresh")

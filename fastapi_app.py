@@ -7,6 +7,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.routers.admin import router as admin_router
+from app.routers.aig import router as aig_router
 from app.routers.agent import router as agent_router
 from app.routers.auth import router as auth_router
 from app.routers.home import router as home_router
@@ -69,6 +70,7 @@ def health_check():
 
 
 app.include_router(wallets_router)
+app.include_router(aig_router)
 app.include_router(roles_router)
 app.include_router(settings_router)
 app.include_router(users_router)

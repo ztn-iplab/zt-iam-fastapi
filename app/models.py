@@ -88,6 +88,141 @@ class PendingSIMSwap(Base):
     is_verified = sa.Column(sa.Boolean, default=False)
 
 
+class TelecomEvent(Base):
+    __tablename__ = "telecom_events"
+
+    id = sa.Column(sa.Integer, primary_key=True)
+    tenant_id = sa.Column(sa.Integer, sa.ForeignKey("tenants.id"), nullable=True)
+    user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=True)
+
+    # Telecom identifiers (current and transition context).
+    mobile_number = sa.Column(sa.String(20), nullable=True)
+    iccid = sa.Column(sa.String(32), nullable=True)
+    old_iccid = sa.Column(sa.String(32), nullable=True)
+    new_iccid = sa.Column(sa.String(32), nullable=True)
+    network_provider = sa.Column(sa.String(50), nullable=True)
+
+    # Example event types: sim_swap_requested, sim_swap_completed, sim_suspended.
+    event_type = sa.Column(sa.String(64), nullable=False)
+    event_time = sa.Column(sa.DateTime, nullable=False, default=datetime.utcnow)
+    ingested_at = sa.Column(sa.DateTime, nullable=False, default=datetime.utcnow)
+
+    # Provenance is required for AIg weighting and reproducibility.
+    source_type = sa.Column(sa.String(64), nullable=False, default="internal")
+    source_ref = sa.Column(sa.String(128), nullable=True)
+    source_independent = sa.Column(sa.Boolean, nullable=False, default=False)
+    source_confidence = sa.Column(sa.Float, nullable=True)
+    source_weight_hint = sa.Column(sa.Float, nullable=True)
+
+    # Correlation fields help replay and align traces across HMS + IAM experiments.
+    correlation_id = sa.Column(sa.String(128), nullable=True)
+    experiment_run_id = sa.Column(sa.String(64), nullable=True)
+    actor_label = sa.Column(sa.String(64), nullable=True)
+
+    metadata_json = sa.Column(sa.JSON, nullable=True)
+
+    user = relationship("User", backref="telecom_events")
+    tenant = relationship("Tenant", backref="telecom_events")
+
+    __table_args__ = (
+        sa.Index("idx_telecom_events_event_time", "event_time"),
+        sa.Index("idx_telecom_events_user_time", "user_id", "event_time"),
+        sa.Index("idx_telecom_events_mobile_time", "mobile_number", "event_time"),
+        sa.Index("idx_telecom_events_corr", "correlation_id"),
+        sa.Index("idx_telecom_events_type_source", "event_type", "source_type"),
+    )
+
+
+class AigObservation(Base):
+    __tablename__ = "aig_observations"
+
+    id = sa.Column(sa.Integer, primary_key=True)
+    tenant_id = sa.Column(sa.Integer, sa.ForeignKey("tenants.id"), nullable=True)
+    user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=True)
+
+    observed_at = sa.Column(sa.DateTime, nullable=False, default=datetime.utcnow)
+    ingested_at = sa.Column(sa.DateTime, nullable=False, default=datetime.utcnow)
+
+    source_family = sa.Column(sa.String(32), nullable=False)  # telecom, device, interaction, network
+    source_name = sa.Column(sa.String(64), nullable=False)
+    signal_key = sa.Column(sa.String(64), nullable=False)
+
+    # Normalized evidence for AIg equations.
+    evidence_value = sa.Column(sa.Float, nullable=False)
+    weight = sa.Column(sa.Float, nullable=True)
+    reliability = sa.Column(sa.Float, nullable=True)
+
+    session_id = sa.Column(sa.String(128), nullable=True)
+    session_label = sa.Column(sa.String(64), nullable=True)
+    correlation_id = sa.Column(sa.String(128), nullable=True)
+    experiment_run_id = sa.Column(sa.String(64), nullable=True)
+    actor_label = sa.Column(sa.String(64), nullable=True)
+
+    action_name = sa.Column(sa.String(128), nullable=True)
+    resource_type = sa.Column(sa.String(64), nullable=True)
+    resource_id = sa.Column(sa.String(128), nullable=True)
+
+    metadata_json = sa.Column(sa.JSON, nullable=True)
+
+    user = relationship("User", backref="aig_observations")
+    tenant = relationship("Tenant", backref="aig_observations")
+
+    __table_args__ = (
+        sa.Index("idx_aig_obs_time", "observed_at"),
+        sa.Index("idx_aig_obs_user_time", "user_id", "observed_at"),
+        sa.Index("idx_aig_obs_corr", "correlation_id"),
+        sa.Index("idx_aig_obs_run", "experiment_run_id"),
+        sa.Index("idx_aig_obs_family_key", "source_family", "signal_key"),
+    )
+
+
+class AigDecisionLog(Base):
+    __tablename__ = "aig_decision_logs"
+
+    id = sa.Column(sa.Integer, primary_key=True)
+    tenant_id = sa.Column(sa.Integer, sa.ForeignKey("tenants.id"), nullable=True)
+    user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=True)
+
+    decision_time = sa.Column(sa.DateTime, nullable=False, default=datetime.utcnow)
+    ingested_at = sa.Column(sa.DateTime, nullable=False, default=datetime.utcnow)
+
+    action_name = sa.Column(sa.String(128), nullable=False)
+    action_class = sa.Column(sa.String(64), nullable=True)
+    resource_type = sa.Column(sa.String(64), nullable=True)
+    resource_id = sa.Column(sa.String(128), nullable=True)
+
+    session_id = sa.Column(sa.String(128), nullable=True)
+    correlation_id = sa.Column(sa.String(128), nullable=True)
+    experiment_run_id = sa.Column(sa.String(64), nullable=True)
+    actor_label = sa.Column(sa.String(64), nullable=True)
+
+    c_obs = sa.Column(sa.Float, nullable=True)
+    c_decay = sa.Column(sa.Float, nullable=True)
+    c_value = sa.Column(sa.Float, nullable=True)
+    threshold = sa.Column(sa.Float, nullable=True)
+    alpha = sa.Column(sa.Float, nullable=True)
+    decay_lambda = sa.Column(sa.Float, nullable=True)
+    delta_t_seconds = sa.Column(sa.Float, nullable=True)
+
+    decision = sa.Column(sa.String(32), nullable=False)  # allow, step_up, deny
+    reason = sa.Column(sa.String(128), nullable=True)
+    step_up_required = sa.Column(sa.Boolean, nullable=False, default=False)
+
+    observation_count = sa.Column(sa.Integer, nullable=True)
+    metadata_json = sa.Column(sa.JSON, nullable=True)
+
+    user = relationship("User", backref="aig_decision_logs")
+    tenant = relationship("Tenant", backref="aig_decision_logs")
+
+    __table_args__ = (
+        sa.Index("idx_aig_decision_time", "decision_time"),
+        sa.Index("idx_aig_decision_user_time", "user_id", "decision_time"),
+        sa.Index("idx_aig_decision_corr", "correlation_id"),
+        sa.Index("idx_aig_decision_run", "experiment_run_id"),
+        sa.Index("idx_aig_decision_action", "action_name", "decision"),
+    )
+
+
 class Wallet(Base):
     __tablename__ = "wallets"
 

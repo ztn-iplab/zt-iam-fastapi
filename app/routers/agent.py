@@ -12,7 +12,17 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import require_full_mfa, role_required
-from app.models import PendingSIMSwap, RealTimeLog, SIMCard, Transaction, User, UserAccessControl, UserRole, Wallet
+from app.models import (
+    PendingSIMSwap,
+    RealTimeLog,
+    SIMCard,
+    TelecomEvent,
+    Transaction,
+    User,
+    UserAccessControl,
+    UserRole,
+    Wallet,
+)
 from app.security import get_jwt_identity, verify_session_fingerprint
 from utils.email_alerts import send_sim_swap_verification_email
 from utils.totp import verify_totp_code
@@ -21,6 +31,38 @@ router = APIRouter(tags=["Agent"])
 templates = Jinja2Templates(directory="templates")
 
 WITHDRAWAL_EXPIRY_MINUTES = 5
+
+
+def _record_telecom_event(
+    db: Session,
+    *,
+    event_type: str,
+    sim: SIMCard | None = None,
+    user_id: int | None = None,
+    old_iccid: str | None = None,
+    new_iccid: str | None = None,
+    source_ref: str | None = None,
+    correlation_id: str | None = None,
+    metadata_json: dict | None = None,
+) -> None:
+    db.add(
+        TelecomEvent(
+            tenant_id=1,
+            user_id=user_id if user_id is not None else (sim.user_id if sim else None),
+            mobile_number=sim.mobile_number if sim else None,
+            iccid=sim.iccid if sim else None,
+            old_iccid=old_iccid,
+            new_iccid=new_iccid,
+            network_provider=sim.network_provider if sim else None,
+            event_type=event_type,
+            event_time=datetime.utcnow(),
+            source_type="internal_agent",
+            source_ref=source_ref,
+            source_independent=False,
+            correlation_id=correlation_id,
+            metadata_json=metadata_json or {},
+        )
+    )
 
 
 def _generate_unique_mobile_number(db: Session, network_provider: str) -> str:
@@ -608,9 +650,16 @@ def activate_sim(payload: dict, request: Request, db: Session = Depends(get_db))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SIM not found")
 
     sim.status = "active"
+    agent_id = int(get_jwt_identity(request))
+    _record_telecom_event(
+        db,
+        event_type="sim_activated",
+        sim=sim,
+        source_ref=f"agent:{agent_id}",
+        metadata_json={"actor_user_id": agent_id},
+    )
     db.commit()
 
-    agent_id = int(get_jwt_identity(request))
     db.add(
         RealTimeLog(
             user_id=agent_id,
@@ -635,9 +684,16 @@ def suspend_sim(payload: dict, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SIM not found")
 
     sim.status = "suspended"
+    agent_id = int(get_jwt_identity(request))
+    _record_telecom_event(
+        db,
+        event_type="sim_suspended",
+        sim=sim,
+        source_ref=f"agent:{agent_id}",
+        metadata_json={"actor_user_id": agent_id},
+    )
     db.commit()
 
-    agent_id = int(get_jwt_identity(request))
     db.add(
         RealTimeLog(
             user_id=agent_id,
@@ -666,9 +722,16 @@ def reactivate_sim(payload: dict, request: Request, db: Session = Depends(get_db
         )
 
     sim.status = "active"
+    agent_id = int(get_jwt_identity(request))
+    _record_telecom_event(
+        db,
+        event_type="sim_reactivated",
+        sim=sim,
+        source_ref=f"agent:{agent_id}",
+        metadata_json={"actor_user_id": agent_id, "prior_status": "suspended"},
+    )
     db.commit()
 
-    agent_id = int(get_jwt_identity(request))
     db.add(
         RealTimeLog(
             user_id=agent_id,
@@ -902,6 +965,21 @@ def request_sim_swap(payload: dict, request: Request, db: Session = Depends(get_
         expires_at=datetime.utcnow() + timedelta(minutes=15),
     )
     db.add(pending)
+    _record_telecom_event(
+        db,
+        event_type="sim_swap_requested",
+        sim=old_sim,
+        user_id=user_id,
+        old_iccid=old_iccid,
+        new_iccid=new_iccid,
+        source_ref=f"agent:{agent_id}",
+        correlation_id=token_hash,
+        metadata_json={
+            "actor_user_id": agent_id,
+            "new_sim_status": new_sim.status,
+            "pending_verification": True,
+        },
+    )
     db.commit()
 
     send_sim_swap_verification_email(user, raw_token)

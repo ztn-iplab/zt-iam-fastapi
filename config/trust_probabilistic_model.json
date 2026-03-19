@@ -1,0 +1,27 @@
+{
+  "version": "2026-03-02",
+  "base_rate": 0.07692307692307693,
+  "prior_weight": 0.35,
+  "smoothing_alpha": 1.0,
+  "training": {
+    "samples": 13,
+    "risky_samples": 1,
+    "safe_samples": 12
+  },
+  "feature_likelihood_ratios": {
+    "large_transaction": 4.6667,
+    "odd_hours": 4.6667,
+    "new_device": 9.3333,
+    "new_ip": 1.1667,
+    "location_change": 4.6667,
+    "recent_failures": 4.6667,
+    "new_account": 1.3929,
+    "login_velocity": 4.6667,
+    "identity_unverified": 2.3571,
+    "device_not_bound": 1.8667,
+    "known_device": 0.6667,
+    "known_network": 0.4286,
+    "identity_verified": 0.3214,
+    "device_enrolled": 0.5185
+  }
+}

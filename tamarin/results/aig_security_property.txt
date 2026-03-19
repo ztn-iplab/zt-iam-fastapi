@@ -1,0 +1,180 @@
+AIg Security Property Proof
+---------------------------
+Model: tamarin/aig_security_property.spthy
+Date (UTC): 2026-03-14T04:35:28Z
+
+theory AIg_Security_Property begin
+
+// Function signature and definition of the equational theory E
+
+functions: fst/1, pair/2, snd/1
+equations: fst(<x.1, x.2>) = x.1, snd(<x.1, x.2>) = x.2
+
+
+
+
+
+/* looping facts with injective instances: CState/3 */
+
+rule (modulo E) InitContext:
+   [ Fr( a ), Fr( r ) ]
+  --[ ContextInit( a, r ), ConfidenceHigh( a, r ) ]->
+   [ CState( a, r, 'high' ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) DecayToLow:
+   [ CState( a, r, 'high' ) ]
+  --[ NoEvidence( a, r ), Decay( a, r ), ConfidenceLow( a, r ) ]->
+   [ CState( a, r, 'low' ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) ReinforceToHigh:
+   [ CState( a, r, 'low' ) ]
+  --[ Observation( a, r ), Reinforce( a, r ), ConfidenceHigh( a, r ) ]->
+   [ CState( a, r, 'high' ) ]
+
+  // loop breaker: [0]
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) GrantWithoutStepUp:
+   [ CState( a, r, 'high' ) ]
+  --[ ProtectedAction( a, r ), AccessGranted( a, r ), GrantNoStepUp( a, r )
+  ]->
+   [ Granted( a, r ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) StepUpApprove:
+   [ CState( a, r, 'low' ), In( <a, r> ) ]
+  --[ StepUpApproved( a, r ) ]->
+   [ StepUpTicket( a, r ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) GrantAfterStepUp:
+   [ StepUpTicket( a, r ) ]
+  --[
+  ProtectedAction( a, r ), AccessGranted( a, r ), GrantWithStepUp( a, r )
+  ]->
+   [ Granted( a, r ) ]
+
+  /* has exactly the trivial AC variant */
+
+lemma direct_grant_requires_high_confidence_history:
+  all-traces
+  "∀ a r #i.
+    (GrantNoStepUp( a, r ) @ #i) ⇒
+    (∃ #j. (ConfidenceHigh( a, r ) @ #j) ∧ ((#j < #i) ∨ (#j = #i)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ a r #i.
+  (GrantNoStepUp( a, r ) @ #i)
+ ∧
+  ∀ #j. (ConfidenceHigh( a, r ) @ #j) ⇒ (¬(#j < #i)) ∧ (¬(#j = #i))"
+*/
+simplify
+solve( CState( a, r, 'high' ) ▶₀ #i )
+  case InitContext
+  by contradiction /* from formulas */
+next
+  case ReinforceToHigh
+  by contradiction /* from formulas */
+qed
+
+lemma low_confidence_grant_requires_stepup:
+  all-traces
+  "∀ a r #i.
+    (GrantWithStepUp( a, r ) @ #i) ⇒
+    (∃ #j. (StepUpApproved( a, r ) @ #j) ∧ (#j < #i))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ a r #i.
+  (GrantWithStepUp( a, r ) @ #i)
+ ∧
+  ∀ #j. (StepUpApproved( a, r ) @ #j) ⇒ ¬(#j < #i)"
+*/
+simplify
+solve( StepUpTicket( a, r ) ▶₀ #i )
+  case StepUpApprove
+  by contradiction /* from formulas */
+qed
+
+lemma decay_then_direct_grant_needs_reinforcement:
+  all-traces
+  "∀ a r #i #j.
+    (((Decay( a, r ) @ #i) ∧ (GrantNoStepUp( a, r ) @ #j)) ∧ (#i < #j)) ⇒
+    (∃ #k. ((Reinforce( a, r ) @ #k) ∧ (#i < #k)) ∧ (#k < #j))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ a r #i #j.
+  (Decay( a, r ) @ #i) ∧ (GrantNoStepUp( a, r ) @ #j)
+ ∧
+  (#i < #j) ∧
+  (∀ #k. (Reinforce( a, r ) @ #k) ⇒ ((¬(#i < #k)) ∨ (¬(#k < #j))))"
+*/
+simplify
+solve( CState( a, r, 'high' ) ▶₀ #i )
+  case InitContext
+  solve( CState( ~n, ~n.1, 'high' ) ▶₀ #j )
+    case ReinforceToHigh
+    by contradiction /* from formulas */
+  qed
+next
+  case ReinforceToHigh
+  solve( CState( a, r, 'high' ) ▶₀ #j )
+    case InitContext
+    by contradiction /* cyclic */
+  next
+    case ReinforceToHigh
+    by contradiction /* cyclic */
+  qed
+qed
+
+lemma stepup_is_actor_request_bound:
+  all-traces
+  "∀ a r #i.
+    (GrantWithStepUp( a, r ) @ #i) ⇒ (∃ #j. StepUpApproved( a, r ) @ #j)"
+/*
+guarded formula characterizing all counter-examples:
+"∃ a r #i.
+  (GrantWithStepUp( a, r ) @ #i) ∧ ∀ #j. (StepUpApproved( a, r ) @ #j) ⇒ ⊥"
+*/
+simplify
+solve( StepUpTicket( a, r ) ▶₀ #i )
+  case StepUpApprove
+  by contradiction /* from formulas */
+qed
+
+
+
+
+
+
+
+/* All wellformedness checks were successful. */
+
+/*
+Generated from:
+Tamarin version 1.10.0
+Maude version 2.7.1
+Git revision: UNKNOWN, branch: UNKNOWN
+Compiled at: 2024-10-30 13:42:18.081591 UTC
+*/
+
+end
+
+==============================================================================
+summary of summaries:
+
+analyzed: <PROJECT_ROOT>/tamarin/aig_security_property.spthy
+
+  processing time: 0.28s
+  
+  direct_grant_requires_high_confidence_history (all-traces): verified (4 steps)
+  low_confidence_grant_requires_stepup (all-traces): verified (3 steps)
+  decay_then_direct_grant_needs_reinforcement (all-traces): verified (7 steps)
+  stepup_is_actor_request_bound (all-traces): verified (3 steps)
+
+==============================================================================

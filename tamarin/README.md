@@ -1,60 +1,131 @@
-ZT-IAM Tamarin Models
-=====================
+# AIg Tamarin Verification
 
-This folder contains formal models for the ZT-IAM authentication flows. The models are
-intended for research reporting and are structured as independent Tamarin theories.
+This directory contains the Tamarin models used to verify the core trace semantics of Actor Integrity (AIg).
 
-Models
-------
-- `zt_totp_core.spthy`: ZT-TOTP core (device-bound proof + OTP + RP binding)
-- `zt_totp_login.spthy`: password + ZT-TOTP login
-- `recovery_code.spthy`: recovery-code login (offline access)
-- `device_approval_optional.spthy`: optional device approval / WebAuthn step
-- `full_authentication.spthy`: full login logic with password, ZT-TOTP, WebAuthn policy, and recovery fallback
-- `trust_engine_policy.spthy`: multi-tenant trust engine policy evaluation (risk + step-up enforcement)
-- `api_trust_engine.spthy`: API trust engine (rate-limit abuse + auto-suspension)
+## Models
 
-Notation
---------
-- `u`: user, `d`: device, `rp`: relying party (RP)
-- `pw`: password, `seed`: TOTP seed, `dk`: device-bound key, `wk`: WebAuthn key
-- `rcode`: recovery code, `n`: server nonce, `t`: time step
-- `Db(...)`: server-side state, `DeviceState(...)`: device state, `ChallengeState(...)`: pending challenge
-- `DbRecovery(...)`: recovery code store, `WebAuthnState(...)`: WebAuthn device state
-- Event labels (e.g., `Accept`, `AcceptPrimary`, `DeviceGenerated`) are security-relevant milestones used in lemmas
+- `aig_actor_integrity.spthy`
+  - models authentication, explicit takeover, and two protected actions under one session
+- `aig_security_property.spthy`
+  - models abstract confidence transitions, direct grant, and recovery-based grant
 
-Running
--------
-Install Tamarin Prover and run:
+These models are intentionally abstract. They do not encode concrete telecom, device, or behavioral signals. Instead, they verify the trace-level authorization consequences of the AIg rule.
 
-```
-tamarin-prover tamarin/zt_totp_core.spthy
-tamarin-prover tamarin/zt_totp_login.spthy
-tamarin-prover tamarin/recovery_code.spthy
-tamarin-prover tamarin/device_approval_optional.spthy
-tamarin-prover tamarin/full_authentication.spthy
-tamarin-prover tamarin/trust_engine_policy.spthy
-tamarin-prover tamarin/api_trust_engine.spthy
+## Prerequisites
+
+- `tamarin-prover` available on `PATH`
+- `maude` installed and reachable by Tamarin
+
+The manuscript runs were refreshed with:
+
+- Tamarin `1.10.0`
+- Maude `2.7.1`
+
+You can confirm your local setup with:
+
+```bash
+tamarin-prover --version
 ```
 
-Or use the helper script:
+## Reproducing the AIg proofs
 
-```
-./scripts/run_tamarin.sh
-```
+From the project root:
 
-Container run (no local install):
-
-```
-PROJECT_ROOT="<PROJECT_ROOT>"
-podman run --rm -v "${PROJECT_ROOT}:/workspace" -w /workspace \
-  -e GHC_CHARENCODING=UTF-8 -e LANG=C.UTF-8 \
-  --entrypoint tamarin-prover docker.io/flaminghoneybadger/tamarin \
-  --prove --quiet tamarin/zt_totp_core.spthy
+```bash
+cd <PROJECT_ROOT>
+./scripts/run_tamarin_aig_actor_integrity.sh
+./scripts/run_tamarin_aig_security.sh
 ```
 
-Notes
------
-- These models intentionally abstract low-level crypto details to focus on security properties.
-- Device binding is modeled as a device-held secret key (`dk`) that the server uses to validate proofs.
-- OTP is modeled as `h(<seed,time>)` using the hashing builtin.
+If the scripts are not executable in your environment, use:
+
+```bash
+cd <PROJECT_ROOT>
+bash ./scripts/run_tamarin_aig_actor_integrity.sh
+bash ./scripts/run_tamarin_aig_security.sh
+```
+
+In this README and in the sanitized proof outputs, `<PROJECT_ROOT>` denotes the local checkout directory of the repository on the reproducing machine.
+
+## Output files
+
+The proof outputs are written to:
+
+- `tamarin/results/aig_actor_integrity.txt`
+- `tamarin/results/aig_security_property.txt`
+
+To inspect the proof summaries directly:
+
+```bash
+tail -n 20 tamarin/results/aig_actor_integrity.txt
+tail -n 20 tamarin/results/aig_security_property.txt
+```
+
+## Verified properties
+
+We report the following verified properties:
+
+| Property | Source theory |
+| --- | --- |
+| Actor binding for first protected action | `aig_actor_integrity.spthy` |
+| Actor continuity across protected actions | `aig_actor_integrity.spthy` |
+| Direct grant requires high confidence | `aig_security_property.spthy` |
+| Low-confidence grant requires recovery approval | `aig_security_property.spthy` |
+| Decay requires reinforcement before later direct grant | `aig_security_property.spthy` |
+| Recovery is bound to the same actor-request pair | `aig_security_property.spthy` |
+
+The corresponding Tamarin lemmas are:
+
+- `action1_requires_auth_or_takeover_to_actor`
+- `actor_continuity_between_actions_unless_takeover`
+- `direct_grant_requires_high_confidence_history`
+- `low_confidence_grant_requires_stepup`
+- `decay_then_direct_grant_needs_reinforcement`
+- `stepup_is_actor_request_bound`
+
+## Symbol guide
+
+### Actor-integrity theory
+
+- `a`: the actor currently controlling the session
+- `b`: a second actor introduced by takeover
+- `s`: the session identifier
+- `AuthBound(a, s)`: actor `a` authenticated and established session `s`
+- `Takeover(s, a, b)`: control of session `s` transfers from actor `a` to actor `b`
+- `ActionAccepted(a, s, 'act1'/'act2')`: the first or second protected action is accepted for actor `a`
+- `PreAct1`, `PreAct2`: intermediate state facts before the first and second protected actions
+
+### Authorization-semantics theory
+
+- `a`: actor identifier
+- `r`: protected request or action context
+- `CState(a, r, 'high'/'low')`: abstract AIg confidence state for actor `a` and request `r`
+- `Decay(a, r)`: confidence falls because reinforcing evidence is absent
+- `Reinforce(a, r)`: confidence is restored by new supporting evidence
+- `GrantNoStepUp(a, r)`: direct authorization without recovery
+- `StepUpApproved(a, r)`: recovery approval event for the same actor-request pair
+- `GrantWithStepUp(a, r)`: authorization granted through the recovery path
+
+The symbols are intentionally abstract. They represent trace events and authorization states, not concrete telecom fields, device identifiers, or numeric confidence values.
+
+## Expected proof summary
+
+For `aig_actor_integrity.spthy`, the summary should end with:
+
+```text
+action1_requires_auth_or_takeover_to_actor (all-traces): verified
+actor_continuity_between_actions_unless_takeover (all-traces): verified
+```
+
+For `aig_security_property.spthy`, the summary should end with:
+
+```text
+direct_grant_requires_high_confidence_history (all-traces): verified
+low_confidence_grant_requires_stepup (all-traces): verified
+decay_then_direct_grant_needs_reinforcement (all-traces): verified
+stepup_is_actor_request_bound (all-traces): verified
+```
+
+## Scope note
+
+These proofs validate the abstract authorization semantics of AIg. They do not prove that real-world observation sources always detect actor transfer correctly, and they do not model numeric confidence calibration. Those aspects are evaluated separately in the empirical sections of the manuscript.

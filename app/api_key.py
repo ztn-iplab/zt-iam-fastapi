@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import os
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
@@ -11,11 +12,24 @@ ERROR_LIMIT = 10
 SCORE_DECAY_HOURS = 6
 BLOCK_THRESHOLD = 1.0
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(1, value)
+
+
 PLAN_RATE_LIMITS = {
-    "basic": 100,
-    "premium": 1000,
-    "enterprise": 5000,
+    "basic": _env_int("ZT_API_RATE_LIMIT_BASIC", 100),
+    "premium": _env_int("ZT_API_RATE_LIMIT_PREMIUM", 1000),
+    "enterprise": _env_int("ZT_API_RATE_LIMIT_ENTERPRISE", 5000),
 }
+
+AUTO_SUSPEND_ON_ABUSE = os.getenv("ZT_API_AUTO_SUSPEND", "0").lower() in {"1", "true", "yes"}
 
 
 def require_api_key(request: Request, db: Session = Depends(get_db)) -> Tenant:
@@ -69,7 +83,7 @@ def require_api_key(request: Request, db: Session = Depends(get_db)) -> Tenant:
     if tenant.api_request_count > rate_limit:
         tenant.api_error_count += 1
         tenant.api_score += 0.1
-        if tenant.api_error_count >= ERROR_LIMIT:
+        if AUTO_SUSPEND_ON_ABUSE and tenant.api_error_count >= ERROR_LIMIT:
             tenant.is_active = False
             db.add(
                 RealTimeLog(
@@ -84,10 +98,7 @@ def require_api_key(request: Request, db: Session = Depends(get_db)) -> Tenant:
             )
             db.add(tenant)
             db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="API key suspended due to repeated abuse",
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="API key suspended due to repeated abuse")
         db.add(tenant)
         db.commit()
         raise HTTPException(
@@ -95,7 +106,7 @@ def require_api_key(request: Request, db: Session = Depends(get_db)) -> Tenant:
             detail="API rate limit exceeded",
         )
 
-    if tenant.api_score >= BLOCK_THRESHOLD:
+    if AUTO_SUSPEND_ON_ABUSE and tenant.api_score >= BLOCK_THRESHOLD:
         tenant.is_active = False
         db.add(
             RealTimeLog(

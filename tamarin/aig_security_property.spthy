@@ -1,0 +1,62 @@
+theory AIg_Security_Property begin
+
+/* Standalone AIg model:
+   - Confidence can decay (no evidence) or be reinforced (new observations).
+   - Protected actions may be granted directly only under high confidence.
+   - Under low confidence, step-up approval is mandatory before grant. */
+
+rule InitContext:
+  [ Fr(a), Fr(r) ]
+  --[ ContextInit(a, r), ConfidenceHigh(a, r) ]->
+  [ CState(a, r, 'high') ]
+
+rule DecayToLow:
+  [ CState(a, r, 'high') ]
+  --[ NoEvidence(a, r), Decay(a, r), ConfidenceLow(a, r) ]->
+  [ CState(a, r, 'low') ]
+
+rule ReinforceToHigh:
+  [ CState(a, r, 'low') ]
+  --[ Observation(a, r), Reinforce(a, r), ConfidenceHigh(a, r) ]->
+  [ CState(a, r, 'high') ]
+
+rule GrantWithoutStepUp:
+  [ CState(a, r, 'high') ]
+  --[ ProtectedAction(a, r), AccessGranted(a, r), GrantNoStepUp(a, r) ]->
+  [ Granted(a, r) ]
+
+rule StepUpApprove:
+  [ CState(a, r, 'low'), In(<a, r>) ]
+  --[ StepUpApproved(a, r) ]->
+  [ StepUpTicket(a, r) ]
+
+rule GrantAfterStepUp:
+  [ StepUpTicket(a, r) ]
+  --[ ProtectedAction(a, r), AccessGranted(a, r), GrantWithStepUp(a, r) ]->
+  [ Granted(a, r) ]
+
+lemma direct_grant_requires_high_confidence_history:
+  all-traces
+  "∀ a r #i.
+    GrantNoStepUp(a, r) @ #i
+    ==> (∃ #j. ConfidenceHigh(a, r) @ #j ∧ (#j < #i ∨ #j = #i))"
+
+lemma low_confidence_grant_requires_stepup:
+  all-traces
+  "∀ a r #i.
+    GrantWithStepUp(a, r) @ #i
+    ==> (∃ #j. StepUpApproved(a, r) @ #j ∧ #j < #i)"
+
+lemma decay_then_direct_grant_needs_reinforcement:
+  all-traces
+  "∀ a r #i #j.
+    (Decay(a, r) @ #i ∧ GrantNoStepUp(a, r) @ #j ∧ #i < #j)
+    ==> (∃ #k. Reinforce(a, r) @ #k ∧ #i < #k ∧ #k < #j)"
+
+lemma stepup_is_actor_request_bound:
+  all-traces
+  "∀ a r #i.
+    GrantWithStepUp(a, r) @ #i
+    ==> (∃ #j. StepUpApproved(a, r) @ #j)"
+
+end

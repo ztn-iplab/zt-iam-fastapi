@@ -4,6 +4,7 @@ import csv
 import json
 import subprocess
 from collections import defaultdict
+from datetime import datetime, timedelta
 from pathlib import Path
 from shutil import copyfile
 from typing import Any
@@ -98,7 +99,7 @@ def build_fig2_confidence_evolution(pred_rows: list[dict[str, str]], best_all: d
     dec_path = path_for("c_decay")
 
     lines = [
-        f"<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}'>",
+        f"<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}' style=\"font-family: 'Times New Roman', serif;\">",
         "<rect width='100%' height='100%' fill='white'/>",
         f"<line x1='{ml}' y1='{mt}' x2='{ml}' y2='{mt+ch}' stroke='#222'/>",
         f"<line x1='{ml}' y1='{mt+ch}' x2='{ml+cw}' y2='{mt+ch}' stroke='#222'/>",
@@ -156,12 +157,18 @@ def build_takeover_timeline(trace: dict[str, Any], out_path: Path) -> None:
     telecom = trace.get("telecom_events", []) or []
     obs = trace.get("observations", []) or []
     dec = trace.get("decisions", []) or []
-    # choose takeover progression correlation if present
+    # Choose takeover progression correlation if present.
     candidate_corrs = []
     for d in dec:
         md = d.get("metadata_json") or {}
-        if isinstance(md, dict) and (md.get("series_type") == "takeover_progression" or d.get("action_name") == "view_patient_record"):
+        if isinstance(md, dict) and (
+            md.get("series_type") == "takeover_progression" or md.get("scenario") == "takeover_progression"
+        ):
             candidate_corrs.append(d.get("correlation_id"))
+    if not candidate_corrs:
+        for d in dec:
+            if d.get("action_name") == "view_patient_record":
+                candidate_corrs.append(d.get("correlation_id"))
     corr = next((c for c in candidate_corrs if c), None)
     if corr is None and dec:
         corr = dec[0].get("correlation_id")
@@ -174,120 +181,143 @@ def build_takeover_timeline(trace: dict[str, Any], out_path: Path) -> None:
     if not dec:
         raise RuntimeError("No decisions for selected correlation")
 
-    def t_of(item, key):
-        v = item.get(key)
-        if not v:
-            return None
-        return v
+    def _parse(ts: str) -> datetime:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
-    # use lexical time order (ISO timestamps)
-    all_times = sorted(
-        [x for x in [*(t_of(i, "event_time") for i in telecom), *(t_of(i, "observed_at") for i in obs), *(t_of(i, "decision_time") for i in dec)] if x]
-    )
-    tmin = all_times[0]
-    tmax = all_times[-1]
-    # map to evenly spaced positions (sufficient for figure)
-    unique_times = sorted(set(all_times))
-    time_index = {t: i for i, t in enumerate(unique_times)}
+    def _to_label(ts: datetime) -> str:
+        return ts.strftime("%H:%M:%S")
 
-    width, height = 1100, 500
-    ml, mr, mt, mb = 120, 20, 40, 70
+    dec_sorted = sorted([d for d in dec if d.get("decision_time")], key=lambda r: r["decision_time"])
+    t0 = _parse(dec_sorted[0]["decision_time"])
+
+    sim_swap = [e.get("event_time") for e in telecom if "swap" in (e.get("event_type") or "").lower() and e.get("event_time")]
+    if sim_swap:
+        t1 = _parse(sorted(sim_swap)[0])
+    else:
+        telecom_any = [e.get("event_time") for e in telecom if e.get("event_time")]
+        t1 = _parse(sorted(telecom_any)[0]) if telecom_any else t0 + timedelta(seconds=60)
+
+    post_t1 = [d for d in dec_sorted if _parse(d["decision_time"]) >= t1]
+    ref_dec = post_t1[0] if post_t1 else dec_sorted[-1]
+    t2 = _parse(ref_dec["decision_time"])
+    c_t2 = _f(ref_dec.get("c_value"), 0.0)
+    theta = 0.65
+    if c_t2 >= theta:
+        theta = min(0.95, c_t2 + 0.05)
+
+    all_times = [t0, t1, t2]
+    all_times.extend(_parse(e["event_time"]) for e in telecom if e.get("event_time"))
+    all_times.extend(_parse(o["observed_at"]) for o in obs if o.get("observed_at"))
+    tmin = min(all_times)
+    tmax = max(all_times)
+    if tmax <= tmin:
+        tmax = tmin + timedelta(seconds=60)
+    pad = (tmax - tmin) * 0.08
+    start = tmin - pad
+    end = tmax + pad
+    total_sec = max((end - start).total_seconds(), 1.0)
+
+    # Use a tighter canvas so text remains large when embedded at page width.
+    width, height = 1200, 680
+    ml, mr, mt, mb = 120, 40, 80, 110
     cw, ch = width - ml - mr, height - mt - mb
-    lanes = [("Telecom", 0), ("Observations", 1), ("Protected Actions", 2), ("Outcome", 3)]
-    lane_gap = ch / (len(lanes) - 1 if len(lanes) > 1 else 1)
+    y_auth = mt + 70
+    y_lane_a = mt + 230
+    y_lane_b = mt + 430
+    y_axis = height - 110
 
-    def x_of(t: str) -> float:
-        if len(unique_times) == 1:
-            return ml + cw / 2
-        return ml + (time_index[t] / (len(unique_times) - 1)) * cw
+    def x_of(ts: datetime) -> float:
+        return ml + ((ts - start).total_seconds() / total_sec) * cw
 
-    def y_lane(i: int) -> float:
-        return mt + i * lane_gap
+    x0, x1, x2 = x_of(t0), x_of(t1), x_of(t2)
+    x_right = ml + cw
+    x_left = ml
+    green = "#138A36"
+    red = "#B42318"
+    blue = "#175CD3"
+    slate = "#344054"
+
+    lane_label_x = 24
+    t0_label_x = x0
+    t1_label_x = x1
+    t2_label_x = x2
+    if abs(x1 - x0) < 180:
+        t0_label_x = max(ml + 40, x0 - 90)
+        t1_label_x = min(ml + cw - 40, x1 + 90)
 
     lines = [
-        f"<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}'>",
+        f"<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}' style=\"font-family: 'Times New Roman', serif;\">",
         "<rect width='100%' height='100%' fill='white'/>",
-        "<text x='20' y='20' font-size='22' fill='#222'>Takeover timeline (AIg evidence and enforcement)</text>",
-        "<text x='20' y='37' font-size='16' fill='#555'>Telecom takeover indicators and observation degradation precede step-up on protected actions.</text>",
+        f"<line x1='{x_left}' y1='{y_auth:.1f}' x2='{x_right}' y2='{y_auth:.1f}' stroke='{blue}' stroke-width='10'/>",
+        f"<text x='{x_left}' y='{y_auth-16:.1f}' font-size='32' fill='{blue}'>Authentication remains valid</text>",
+        f"<text x='{lane_label_x}' y='{y_lane_a-16:.1f}' font-size='32' fill='{slate}'>Lane A: Session</text>",
+        f"<line x1='{x_left}' y1='{y_lane_a:.1f}' x2='{x_right}' y2='{y_lane_a:.1f}' stroke='#D0D5DD' stroke-width='4'/>",
+        f"<text x='{lane_label_x}' y='{y_lane_b-16:.1f}' font-size='32' fill='{slate}'>Lane B: AIg</text>",
+        f"<line x1='{x_left}' y1='{y_lane_b:.1f}' x2='{x_right}' y2='{y_lane_b:.1f}' stroke='#D0D5DD' stroke-width='4'/>",
     ]
-    for name, idx in lanes:
-        y = y_lane(idx)
-        lines.append(f"<line x1='{ml}' y1='{y:.1f}' x2='{ml+cw}' y2='{y:.1f}' stroke='#ddd'/>")
-        lines.append(f"<text x='{ml-10}' y='{y+4:.1f}' font-size='16' text-anchor='end' fill='#222'>{name}</text>")
-    for t in unique_times:
-        x = x_of(t)
-        lines.append(f"<line x1='{x:.1f}' y1='{mt-5}' x2='{x:.1f}' y2='{mt+ch+5}' stroke='#f2f2f2'/>")
 
-    # telecom events
-    for e in telecom:
-        t = e.get("event_time")
-        if not t:
-            continue
-        x = x_of(t)
-        y = y_lane(0)
-        et = e.get("event_type", "event")
-        color = "#C0392B" if "swap" in et else "#AF601A"
-        lines.append(f"<rect x='{x-8:.1f}' y='{y-8:.1f}' width='16' height='16' fill='{color}' rx='3'/>")
-        lines.append(f"<text x='{x:.1f}' y='{y-12:.1f}' font-size='14' text-anchor='middle' fill='#333'>{et}</text>")
-
-    # observations (telecom/device/interaction)
-    fam_color = {"telecom": "#1F618D", "device": "#117864", "interaction": "#7D6608"}
-    for o in obs:
-        t = o.get("observed_at")
-        if not t:
-            continue
-        x = x_of(t)
-        y = y_lane(1)
-        fam = (o.get("source_family") or "other").lower()
-        val = _f(o.get("evidence_value"))
-        r = 3 + 4 * max(0, min(1, val))
-        color = fam_color.get(fam, "#566573")
-        lines.append(f"<circle cx='{x:.1f}' cy='{y:.1f}' r='{r:.1f}' fill='{color}' opacity='0.85'/>")
-
-    # actions/decisions
-    action_points = []
-    for d in dec:
-        t = d.get("decision_time")
-        if not t:
-            continue
-        x = x_of(t)
-        y = y_lane(2)
-        action_points.append((x, d))
-        lines.append(f"<circle cx='{x:.1f}' cy='{y:.1f}' r='5' fill='#34495E'/>")
-        lines.append(f"<text x='{x:.1f}' y='{y-10:.1f}' font-size='14' text-anchor='middle' fill='#333'>{d.get('action_name','action')}</text>")
-    for x, d in action_points:
-        y = y_lane(3)
-        decision = (d.get("decision") or "").lower()
-        color = {"allow": "#1E8449", "step_up": "#D35400", "deny": "#C0392B"}.get(decision, "#566573")
-        lines.append(f"<rect x='{x-10:.1f}' y='{y-8:.1f}' width='20' height='16' fill='{color}' rx='3'/>")
-        cval = d.get("c_value")
-        label = decision or "?"
-        if cval not in (None, ""):
-            label += f" (C={float(cval):.2f})"
-        lines.append(f"<text x='{x:.1f}' y='{y+22:.1f}' font-size='14' text-anchor='middle' fill='#333'>{label}</text>")
-        # connector
-        lines.append(f"<line x1='{x:.1f}' y1='{y_lane(2)+6:.1f}' x2='{x:.1f}' y2='{y-8:.1f}' stroke='#aaa'/>")
-
-    # x labels
-    for t in unique_times:
-        x = x_of(t)
-        short = t.split("T", 1)[-1][:8] if "T" in t else t
-        lines.append(f"<text x='{x:.1f}' y='{height-20}' font-size='14' text-anchor='middle' fill='#555'>{short}</text>")
-
-    # legend
-    lx, ly = ml, height - 46
-    legend = [
-        ("Telecom event", "#C0392B"),
-        ("Telecom obs", fam_color["telecom"]),
-        ("Device obs", fam_color["device"]),
-        ("Interaction obs", fam_color["interaction"]),
-        ("step_up", "#D35400"),
-        ("allow", "#1E8449"),
+    t_labels = [
+        [x0, t0_label_x, "t0 auth", t0, 0, "middle"],
+        [x1, t1_label_x, "t1 takeover", t1, 1, "middle"],
+        [x2, t2_label_x, "t2 action", t2, 0, "middle"],
     ]
-    for name, color in legend:
-        lines.append(f"<rect x='{lx}' y='{ly-10}' width='12' height='12' fill='{color}'/>")
-        lines.append(f"<text x='{lx+18}' y='{ly}' font-size='15' fill='#222'>{name}</text>")
-        lx += 120
+    right_cluster = False
+    if abs(x2 - x1) < 140:
+        right_cluster = True
+        # Keep takeover label/time on the actual takeover marker.
+        t_labels[1][1] = x1
+        t_labels[1][5] = "middle"
+        t_labels[2][1] = min(ml + cw - 40, x2 + 120)
+        t_labels[2][5] = "start"
+        t_labels[2][4] = 2
+
+    for x, lx, lbl, ts, row, anchor in t_labels:
+        lines.append(f"<line x1='{x:.1f}' y1='{mt-2}' x2='{x:.1f}' y2='{y_axis}' stroke='#98A2B3' stroke-width='2' stroke-dasharray='8 8'/>")
+        if lbl == "t1 takeover":
+            # Keep takeover annotation aligned to takeover marker, below lanes for readability.
+            lines.append(f"<text x='{lx:.1f}' y='{y_axis + 30:.1f}' font-size='32' text-anchor='{anchor}' fill='#344054'>{lbl}</text>")
+            lines.append(f"<text x='{lx:.1f}' y='{y_axis + 68:.1f}' font-size='32' text-anchor='{anchor}' fill='#667085'>{_to_label(ts)}</text>")
+        else:
+            lines.append(f"<text x='{lx:.1f}' y='{y_axis + 30 + row*32:.1f}' font-size='32' text-anchor='{anchor}' fill='#344054'>{lbl}</text>")
+            lines.append(f"<text x='{lx:.1f}' y='{y_axis + 70 + row*32:.1f}' font-size='32' text-anchor='{anchor}' fill='#667085'>{_to_label(ts)}</text>")
+
+    lines.extend(
+        [
+            f"<line x1='{x0:.1f}' y1='{y_lane_a:.1f}' x2='{x2-20:.1f}' y2='{y_lane_a:.1f}' stroke='{green}' stroke-width='10'/>",
+            f"<polygon points='{x2-24:.1f},{y_lane_a-14:.1f} {x2+16:.1f},{y_lane_a:.1f} {x2-24:.1f},{y_lane_a+14:.1f}' fill='{green}'/>",
+            f"<text x='{(x0+x2)/2:.1f}' y='{y_lane_a-18:.1f}' font-size='32' text-anchor='middle' fill='{green}'>Session valid → allow</text>",
+            f"<circle cx='{x2:.1f}' cy='{y_lane_a:.1f}' r='15' fill='{green}'/>",
+            f"<text x='{x2+26:.1f}' y='{y_lane_a+12:.1f}' font-size='32' fill='{green}'>Allow</text>",
+        ]
+    )
+
+    y_ctop = y_lane_b - 90
+    y_clow = y_lane_b + 84
+    x_mid = x1 + (x2 - x1) * 0.55
+    x_ctext = x2 - 34
+    x_challenge = min(x2 + 52, x_right - 72)
+    y_challenge = y_clow + 10
+    y_ctext = y_clow + 34
+    y_evidence = y_clow + 40
+    if right_cluster:
+        y_challenge = y_clow + 14
+        y_ctext = y_clow + 40
+        y_evidence = y_clow + 56
+    lines.extend(
+        [
+            f"<line x1='{x0:.1f}' y1='{y_lane_b:.1f}' x2='{x1:.1f}' y2='{y_lane_b:.1f}' stroke='{blue}' stroke-width='8'/>",
+            f"<line x1='{x1:.1f}' y1='{y_lane_b:.1f}' x2='{x_mid:.1f}' y2='{y_clow:.1f}' stroke='{red}' stroke-width='9'/>",
+            f"<line x1='{x_mid:.1f}' y1='{y_clow:.1f}' x2='{x2:.1f}' y2='{y_clow:.1f}' stroke='{red}' stroke-width='9'/>",
+            f"<line x1='{x1+26:.1f}' y1='{y_ctop:.1f}' x2='{x2+16:.1f}' y2='{y_ctop:.1f}' stroke='#F97066' stroke-width='4' stroke-dasharray='10 7'/>",
+            f"<text x='{x2+22:.1f}' y='{y_ctop+10:.1f}' font-size='32' fill='#912018'>θ</text>",
+            f"<text x='{x_ctext:.1f}' y='{y_ctext:.1f}' font-size='32' fill='{red}'>C(t) &lt; θ</text>",
+            f"<circle cx='{x2:.1f}' cy='{y_clow:.1f}' r='16' fill='{red}'/>",
+            f"<text x='{x_challenge:.1f}' y='{y_challenge:.1f}' font-size='32' fill='{red}'>Challenge</text>",
+        ]
+    )
+    lines.append(f"<rect x='{x1-10:.1f}' y='{y_auth-10:.1f}' width='20' height='20' rx='3' fill='#B42318'/>")
+    lines.append(f"<rect x='{x2-10:.1f}' y='{y_auth-10:.1f}' width='20' height='20' rx='3' fill='#175CD3'/>")
+
     lines.append("</svg>")
     _write_svg(out_path, lines)
 

@@ -1,0 +1,55 @@
+theory AIg_Actor_Integrity begin
+
+/* Finite actor-integrity model for post-authentication actions:
+   - Session bound at authentication.
+   - Two protected actions (act1, act2) in sequence.
+   - Actor switch can only happen through explicit takeover events. */
+
+rule AuthBind:
+  [ Fr(s), Fr(a) ]
+  --[ AuthBound(a, s) ]->
+  [ PreAct1(s, a, 'clean') ]
+
+rule TakeoverBeforeAct1:
+  [ PreAct1(s, a, 'clean'), Fr(b) ]
+  --[ Takeover(s, a, b) ]->
+  [ PreAct1(s, b, 'taken1') ]
+
+rule Action1Clean:
+  [ PreAct1(s, a, 'clean') ]
+  --[ ActionAccepted(a, s, 'act1') ]->
+  [ PreAct2(s, a, 'clean') ]
+
+rule Action1AfterTakeover:
+  [ PreAct1(s, a, 'taken1') ]
+  --[ ActionAccepted(a, s, 'act1') ]->
+  [ PreAct2(s, a, 'clean') ]
+
+rule TakeoverBeforeAct2:
+  [ PreAct2(s, a, 'clean'), Fr(b) ]
+  --[ Takeover(s, a, b) ]->
+  [ PreAct2(s, b, 'taken2') ]
+
+rule Action2Clean:
+  [ PreAct2(s, a, 'clean') ]
+  --[ ActionAccepted(a, s, 'act2') ]->
+  [ Done(s, a) ]
+
+rule Action2AfterTakeover:
+  [ PreAct2(s, a, 'taken2') ]
+  --[ ActionAccepted(a, s, 'act2') ]->
+  [ Done(s, a) ]
+
+lemma action1_requires_auth_or_takeover_to_actor:
+  all-traces
+  "∀ a s #i.
+    ActionAccepted(a, s, 'act1') @ #i
+    ==> ((∃ #j. AuthBound(a, s) @ #j) ∨ (∃ x #k. (Takeover(s, x, a) @ #k ∧ #k < #i)))"
+
+lemma actor_continuity_between_actions_unless_takeover:
+  all-traces
+  "∀ a1 a2 s #i #j.
+    (ActionAccepted(a1, s, 'act1') @ #i ∧ ActionAccepted(a2, s, 'act2') @ #j)
+    ==> (a1 = a2 ∨ (∃ x y #k. (Takeover(s, x, y) @ #k ∧ #i < #k ∧ #k < #j)))"
+
+end

@@ -280,6 +280,7 @@ def ingest_telecom_event(
     db.add(event)
     db.flush()
 
+    event_ids = [e.id for e in created]
     db.add(
         RealTimeLog(
             user_id=event.user_id,
@@ -326,6 +327,7 @@ def ingest_telecom_events_batch(
         db.add(event)
         db.flush()
         created.append(event)
+    event_ids = [e.id for e in created]
 
     db.add(
         RealTimeLog(
@@ -343,7 +345,7 @@ def ingest_telecom_events_batch(
     return {
         "status": "ok",
         "count": len(created),
-        "event_ids": [e.id for e in created],
+        "event_ids": event_ids,
     }
 
 
@@ -405,6 +407,7 @@ def ingest_aig_observation(
     row = _build_aig_observation(payload, tenant)
     db.add(row)
     db.flush()
+    observation_ids = [r.id for r in rows]
     db.add(
         RealTimeLog(
             user_id=row.user_id,
@@ -438,6 +441,7 @@ def ingest_aig_observations_batch(
         db.add(row)
         db.flush()
         rows.append(row)
+    observation_ids = [r.id for r in rows]
     db.add(
         RealTimeLog(
             user_id=None,
@@ -450,7 +454,7 @@ def ingest_aig_observations_batch(
         )
     )
     db.commit()
-    return {"status": "ok", "count": len(rows), "observation_ids": [r.id for r in rows]}
+    return {"status": "ok", "count": len(rows), "observation_ids": observation_ids}
 
 
 @router.get("/observations")
@@ -549,6 +553,7 @@ def ingest_aig_decisions_batch(
         db.add(row)
         db.flush()
         rows.append(row)
+    decision_ids = [r.id for r in rows]
     db.add(
         RealTimeLog(
             user_id=None,
@@ -561,7 +566,7 @@ def ingest_aig_decisions_batch(
         )
     )
     db.commit()
-    return {"status": "ok", "count": len(rows), "decision_ids": [r.id for r in rows]}
+    return {"status": "ok", "count": len(rows), "decision_ids": decision_ids}
 
 
 @router.get("/decisions")

@@ -1,6 +1,9 @@
 import base64
 import io
+import os
 from datetime import datetime, timedelta
+from functools import lru_cache
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
@@ -22,8 +25,81 @@ from utils.security import hash_token
 router = APIRouter(tags=["WebAuthn"])
 templates = Jinja2Templates(directory="templates")
 
-rp = PublicKeyCredentialRpEntity(id="localhost.localdomain.com", name="ZTN Local")
-webauthn_server = Fido2Server(rp)
+
+@lru_cache(maxsize=1)
+def _allowed_rp_roots() -> list[str]:
+    raw = os.getenv("WEBAUTHN_ALLOWED_RP_IDS", "").strip()
+    if not raw:
+        raw = ",".join(
+            [
+                os.getenv("WEBAUTHN_RP_ID", "zt-iam.com"),
+                "ztiam.com",
+                "zt-aim.com",
+                "hms.com",
+            ]
+        )
+    return [item.strip().lower().rstrip(".") for item in raw.split(",") if item.strip()]
+
+
+def _rp_allowed(rp_id: str) -> bool:
+    roots = _allowed_rp_roots()
+    if "*" in roots:
+        return True
+    for root in roots:
+        if rp_id == root or rp_id.endswith(f".{root}"):
+            return True
+    return False
+
+
+def _normalize_rp_id(value: str | None) -> str:
+    rp_id = (value or "").strip().lower().rstrip(".")
+    if rp_id in {"ztiam.com", "zt-aim.com"}:
+        return "zt-iam.com"
+    return rp_id
+
+
+def _extract_host_from_url(value: str | None) -> str:
+    if not value:
+        return ""
+    try:
+        parsed = urlparse(value if "://" in value else f"https://{value}")
+        return (parsed.hostname or "").strip().lower().rstrip(".")
+    except Exception:
+        return ""
+
+
+def _resolve_rp_id(request: Request, payload: dict | None = None) -> str:
+    payload = payload or {}
+    candidates = [
+        payload.get("rp_id"),
+        request.headers.get("x-webauthn-rp-id"),
+        request.headers.get("x-forwarded-host"),
+        request.headers.get("host"),
+        request.url.hostname,
+        _extract_host_from_url(os.getenv("PUBLIC_BASE_URL")),
+        os.getenv("WEBAUTHN_RP_ID"),
+    ]
+
+    for raw in candidates:
+        value = _normalize_rp_id((raw or "").split(",")[0].split(":")[0])
+        if not value:
+            continue
+        if _rp_allowed(value):
+            return value
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Unsupported WebAuthn RP ID for this tenant domain.",
+    )
+
+
+@lru_cache(maxsize=32)
+def _server_for_rp_id(rp_id: str) -> Fido2Server:
+    rp = PublicKeyCredentialRpEntity(
+        id=rp_id,
+        name=os.getenv("WEBAUTHN_RP_NAME", "ZT-IAM Demo"),
+    )
+    return Fido2Server(rp)
 
 
 def jsonify_webauthn(data):
@@ -40,7 +116,7 @@ def jsonify_webauthn(data):
 
 
 @router.post("/webauthn/register-begin", dependencies=[Depends(verify_session_fingerprint)])
-def begin_registration(request: Request, db: Session = Depends(get_db)):
+def begin_registration(payload: dict, request: Request, db: Session = Depends(get_db)):
     user_id = get_jwt_identity(request)
     user = db.query(User).get(user_id)
     if not user:
@@ -55,6 +131,9 @@ def begin_registration(request: Request, db: Session = Depends(get_db)):
         for c in user.webauthn_credentials
     ]
 
+    rp_id = _resolve_rp_id(request, payload)
+    webauthn_server = _server_for_rp_id(rp_id)
+
     registration_data, state = webauthn_server.register_begin(
         {
             "id": str(user.id).encode(),
@@ -65,13 +144,15 @@ def begin_registration(request: Request, db: Session = Depends(get_db)):
     )
 
     request.session["webauthn_register_state"] = state
+    request.session["webauthn_register_rp_id"] = rp_id
     public_key = jsonify_webauthn(registration_data["publicKey"])
-    return {"public_key": public_key}
+    return {"public_key": public_key, "state": jsonify_webauthn(state), "rp_id": rp_id}
 
 
 @router.post("/webauthn/register-complete", dependencies=[Depends(verify_session_fingerprint)])
 def complete_registration(payload: dict, request: Request, db: Session = Depends(get_db)):
-    state = request.session.get("webauthn_register_state")
+    state = request.session.get("webauthn_register_state") or payload.get("state")
+    rp_id = request.session.get("webauthn_register_rp_id") or _resolve_rp_id(request, payload)
     if not state:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No registration in progress.")
 
@@ -92,6 +173,7 @@ def complete_registration(payload: dict, request: Request, db: Session = Depends
         },
     }
 
+    webauthn_server = _server_for_rp_id(rp_id)
     auth_data = webauthn_server.register_complete(state, response)
     cred_data = auth_data.credential_data
     public_key_bytes = cbor.encode(cred_data.public_key)
@@ -106,6 +188,7 @@ def complete_registration(payload: dict, request: Request, db: Session = Depends
     )
     db.add(credential)
     request.session.pop("webauthn_register_state", None)
+    request.session.pop("webauthn_register_rp_id", None)
     request.session["pending_webauthn_verification"] = True
     request.session["webauthn_user_id"] = str(user.id)
     db.commit()
@@ -136,8 +219,11 @@ def begin_assertion(request: Request, db: Session = Depends(get_db)):
         for c in user.webauthn_credentials
     ]
 
+    rp_id = _resolve_rp_id(request)
+    webauthn_server = _server_for_rp_id(rp_id)
     assertion_data, state = webauthn_server.authenticate_begin(credentials)
     request.session["webauthn_assertion_state"] = state
+    request.session["webauthn_assertion_rp_id"] = rp_id
     request.session["assertion_user_id"] = user.id
     request.session["mfa_webauthn_verified"] = False
 
@@ -156,12 +242,13 @@ def begin_assertion(request: Request, db: Session = Depends(get_db)):
         "userVerification": options.user_verification,
         "timeout": options.timeout,
     }
-    return {"public_key": public_key_dict}
+    return {"public_key": public_key_dict, "state": jsonify_webauthn(state), "rp_id": rp_id}
 
 
 @router.post("/webauthn/assertion-complete", dependencies=[Depends(verify_session_fingerprint)])
 def complete_assertion(payload: dict, request: Request, db: Session = Depends(get_db)):
-    state = request.session.get("webauthn_assertion_state")
+    state = request.session.get("webauthn_assertion_state") or payload.get("state")
+    rp_id = request.session.get("webauthn_assertion_rp_id") or _resolve_rp_id(request, payload)
     user_id = request.session.get("assertion_user_id")
     if not state or not user_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No assertion in progress.")
@@ -252,12 +339,14 @@ def complete_assertion(payload: dict, request: Request, db: Session = Depends(ge
         credential.credential_id,
         CoseKey.parse(cbor.decode(credential.public_key)),
     )
+    webauthn_server = _server_for_rp_id(rp_id)
     webauthn_server.authenticate_complete(state, [public_key_source], assertion)
 
     credential.sign_count += 1
     db.commit()
     request.session["mfa_webauthn_verified"] = True
     request.session.pop("webauthn_assertion_state", None)
+    request.session.pop("webauthn_assertion_rp_id", None)
     request.session.pop("assertion_user_id", None)
 
     access = db.query(UserAccessControl).filter_by(user_id=user.id).first()
@@ -334,8 +423,11 @@ def begin_reset_assertion(payload: dict, request: Request, db: Session = Depends
         }
         for c in user.webauthn_credentials
     ]
+    rp_id = _resolve_rp_id(request, payload)
+    webauthn_server = _server_for_rp_id(rp_id)
     assertion_data, state = webauthn_server.authenticate_begin(credentials)
     request.session["reset_webauthn_assertion_state"] = state
+    request.session["reset_webauthn_assertion_rp_id"] = rp_id
     request.session["reset_user_id"] = user.id
     request.session["reset_context"] = context
     return {"public_key": jsonify_webauthn(assertion_data["publicKey"])}
@@ -344,7 +436,8 @@ def begin_reset_assertion(payload: dict, request: Request, db: Session = Depends
 @router.post("/webauthn/reset-assertion-complete")
 def complete_reset_assertion(payload: dict, request: Request, db: Session = Depends(get_db)):
     user_id = request.session.get("reset_user_id")
-    state = request.session.get("reset_webauthn_assertion_state")
+    state = request.session.get("reset_webauthn_assertion_state") or payload.get("state")
+    rp_id = request.session.get("reset_webauthn_assertion_rp_id") or _resolve_rp_id(request, payload)
     context = request.session.get("reset_context")
     if not state or not user_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No reset verification in progress.")
@@ -374,6 +467,7 @@ def complete_reset_assertion(payload: dict, request: Request, db: Session = Depe
         credential.credential_id,
         CoseKey.parse(cbor.decode(credential.public_key)),
     )
+    webauthn_server = _server_for_rp_id(rp_id)
     webauthn_server.authenticate_complete(state, [public_key_source], assertion)
 
     credential.sign_count += 1
@@ -381,4 +475,5 @@ def complete_reset_assertion(payload: dict, request: Request, db: Session = Depe
 
     request.session["reset_webauthn_verified"] = True
     request.session.pop("reset_webauthn_assertion_state", None)
+    request.session.pop("reset_webauthn_assertion_rp_id", None)
     return {"message": "Verified via WebAuthn for reset", "context": context}

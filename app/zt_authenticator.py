@@ -156,7 +156,14 @@ def resolve_rp_id(request, fallback_name: str) -> str:
         try:
             parsed = urlparse(base_url)
             if parsed.hostname:
-                if host in {"localhost", "127.0.0.1", "localhost.localdomain.com"}:
+                if host in {
+                    "localhost",
+                    "127.0.0.1",
+                    "zt-aim.com",
+                    "zt-iam.com",
+                    "ztiam.com",
+                    "hms.com",
+                }:
                     return parsed.hostname
                 if not host:
                     return parsed.hostname

@@ -76,7 +76,8 @@ def _generate_unique_mobile_number(db: Session, network_provider: str) -> str:
 
 def _generate_unique_iccid(db: Session) -> str:
     while True:
-        new_iccid = "8901" + str(random.randint(100000000000, 999999999999))
+        # ICCID is typically 19-20 digits; generate a 20-digit numeric value.
+        new_iccid = "89" + str(random.randint(10**17, (10**18) - 1))
         existing_iccid = db.query(SIMCard).filter_by(iccid=new_iccid).first()
         if not existing_iccid:
             return new_iccid

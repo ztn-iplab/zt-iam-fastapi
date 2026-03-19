@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from werkzeug.security import generate_password_hash
 
@@ -39,6 +40,20 @@ router = APIRouter(tags=["Admin"])
 templates = Jinja2Templates(directory="templates")
 
 ZTN_MASTER_TENANT_ID = 1
+
+
+def _sync_tenant_id_sequence(db: Session) -> None:
+    db.execute(
+        text(
+            """
+            SELECT setval(
+                pg_get_serial_sequence('tenants', 'id'),
+                COALESCE((SELECT MAX(id) FROM tenants), 1),
+                true
+            )
+            """
+        )
+    )
 
 
 def _finalize_reversal(reversal_id: int, sender_wallet_id: int, amount: float) -> None:
@@ -89,7 +104,8 @@ def _generate_unique_mobile_number(db: Session) -> str:
 
 def _generate_unique_iccid(db: Session) -> str:
     while True:
-        new_iccid = "8901" + str(random.randint(100000000000, 999999999999))
+        # ICCID is typically 19-20 digits; generate a 20-digit numeric value.
+        new_iccid = "89" + str(random.randint(10**17, (10**18) - 1))
         existing_iccid = db.query(SIMCard).filter_by(iccid=new_iccid).first()
         if not existing_iccid:
             return new_iccid
@@ -1032,9 +1048,36 @@ def register_tenant(payload: dict, request: Request, db: Session = Depends(get_d
 
     tenant_api_key = custom_api_key or generate_custom_api_key(name)
 
-    new_tenant = Tenant(name=name, api_key=tenant_api_key, contact_email=contact_email)
-    db.add(new_tenant)
-    db.flush()
+    def create_tenant_with_sequence_recovery() -> Tenant:
+        tenant = Tenant(name=name, api_key=tenant_api_key, contact_email=contact_email)
+        db.add(tenant)
+        try:
+            db.flush()
+            return tenant
+        except IntegrityError as exc:
+            db.rollback()
+            msg = str(getattr(exc, "orig", exc))
+            # Auto-heal known Postgres sequence drift on tenants.id and retry once.
+            if "tenants_pkey" in msg or "duplicate key value violates unique constraint" in msg:
+                _sync_tenant_id_sequence(db)
+                tenant = Tenant(name=name, api_key=tenant_api_key, contact_email=contact_email)
+                db.add(tenant)
+                db.flush()
+                return tenant
+            raise
+
+    try:
+        new_tenant = create_tenant_with_sequence_recovery()
+    except IntegrityError:
+        db.rollback()
+        if db.query(Tenant).filter_by(name=name).first():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="A tenant with this name already exists."
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tenant could not be created due to a data conflict. Please retry.",
+        )
 
     if admin_info:
         required_fields = ["mobile_number", "first_name", "email", "password"]
@@ -1051,12 +1094,12 @@ def register_tenant(payload: dict, request: Request, db: Session = Depends(get_d
         )
         if not sim_card:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Mobile number not valid or not active"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Mobile number not valid or not active"
             )
 
         linked_user = db.query(User).get(sim_card.user_id)
         if not linked_user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SIM not linked to any user")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="SIM not linked to any user")
 
         if db.query(TenantUser).filter_by(tenant_id=new_tenant.id, user_id=linked_user.id).first():
             raise HTTPException(
@@ -1114,7 +1157,14 @@ def register_tenant(payload: dict, request: Request, db: Session = Depends(get_d
             tenant_id=new_tenant.id,
         )
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tenant registration conflict. Verify tenant/admin identifiers are unique.",
+        )
 
     email_sent = False
     try:

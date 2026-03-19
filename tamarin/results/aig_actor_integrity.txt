@@ -1,0 +1,180 @@
+AIg Actor Integrity Proof
+------------------------
+Model: tamarin/aig_actor_integrity.spthy
+Date (UTC): 2026-03-14T04:35:28Z
+
+theory AIg_Actor_Integrity begin
+
+// Function signature and definition of the equational theory E
+
+functions: fst/1, pair/2, snd/1
+equations: fst(<x.1, x.2>) = x.1, snd(<x.1, x.2>) = x.2
+
+
+
+
+
+/* looping facts with injective instances: PreAct1/3 */
+
+rule (modulo E) AuthBind:
+   [ Fr( s ), Fr( a ) ]
+  --[ AuthBound( a, s ) ]->
+   [ PreAct1( s, a, 'clean' ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) TakeoverBeforeAct1:
+   [ PreAct1( s, a, 'clean' ), Fr( b ) ]
+  --[ Takeover( s, a, b ) ]->
+   [ PreAct1( s, b, 'taken1' ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Action1Clean:
+   [ PreAct1( s, a, 'clean' ) ]
+  --[ ActionAccepted( a, s, 'act1' ) ]->
+   [ PreAct2( s, a, 'clean' ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Action1AfterTakeover:
+   [ PreAct1( s, a, 'taken1' ) ]
+  --[ ActionAccepted( a, s, 'act1' ) ]->
+   [ PreAct2( s, a, 'clean' ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) TakeoverBeforeAct2:
+   [ PreAct2( s, a, 'clean' ), Fr( b ) ]
+  --[ Takeover( s, a, b ) ]->
+   [ PreAct2( s, b, 'taken2' ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Action2Clean:
+   [ PreAct2( s, a, 'clean' ) ]
+  --[ ActionAccepted( a, s, 'act2' ) ]->
+   [ Done( s, a ) ]
+
+  /* has exactly the trivial AC variant */
+
+rule (modulo E) Action2AfterTakeover:
+   [ PreAct2( s, a, 'taken2' ) ]
+  --[ ActionAccepted( a, s, 'act2' ) ]->
+   [ Done( s, a ) ]
+
+  /* has exactly the trivial AC variant */
+
+lemma action1_requires_auth_or_takeover_to_actor:
+  all-traces
+  "∀ a s #i.
+    (ActionAccepted( a, s, 'act1' ) @ #i) ⇒
+    ((∃ #j. AuthBound( a, s ) @ #j) ∨
+     (∃ x #k. (Takeover( s, x, a ) @ #k) ∧ (#k < #i)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ a s #i.
+  (ActionAccepted( a, s, 'act1' ) @ #i)
+ ∧
+  (∀ #j. (AuthBound( a, s ) @ #j) ⇒ ⊥) ∧
+  (∀ x #k. (Takeover( s, x, a ) @ #k) ⇒ ¬(#k < #i))"
+*/
+simplify
+solve( ActionAccepted( a, s, 'act1' ) @ #i )
+  case Action1AfterTakeover
+  solve( PreAct1( s, a, 'taken1' ) ▶₀ #i )
+    case TakeoverBeforeAct1
+    by contradiction /* from formulas */
+  qed
+next
+  case Action1Clean
+  solve( PreAct1( s, a, 'clean' ) ▶₀ #i )
+    case AuthBind
+    by contradiction /* from formulas */
+  qed
+qed
+
+lemma actor_continuity_between_actions_unless_takeover:
+  all-traces
+  "∀ a1 a2 s #i #j.
+    ((ActionAccepted( a1, s, 'act1' ) @ #i) ∧
+     (ActionAccepted( a2, s, 'act2' ) @ #j)) ⇒
+    ((a1 = a2) ∨
+     (∃ x y #k. ((Takeover( s, x, y ) @ #k) ∧ (#i < #k)) ∧ (#k < #j)))"
+/*
+guarded formula characterizing all counter-examples:
+"∃ a1 a2 s #i #j.
+  (ActionAccepted( a1, s, 'act1' ) @ #i) ∧
+  (ActionAccepted( a2, s, 'act2' ) @ #j)
+ ∧
+  (¬(a1 = a2)) ∧
+  (∀ x y #k. (Takeover( s, x, y ) @ #k) ⇒ ((¬(#i < #k)) ∨ (¬(#k < #j))))"
+*/
+simplify
+solve( ActionAccepted( a1, s, 'act1' ) @ #i )
+  case Action1AfterTakeover
+  solve( PreAct1( s, a1, 'taken1' ) ▶₀ #i )
+    case TakeoverBeforeAct1
+    solve( ActionAccepted( a2, ~n, 'act2' ) @ #j )
+      case Action2AfterTakeover
+      solve( PreAct2( ~n, a2, 'taken2' ) ▶₀ #j )
+        case TakeoverBeforeAct2
+        by contradiction /* from formulas */
+      qed
+    next
+      case Action2Clean
+      solve( PreAct2( ~n, a2, 'clean' ) ▶₀ #j )
+        case Action1AfterTakeover
+        by contradiction /* from formulas */
+      qed
+    qed
+  qed
+next
+  case Action1Clean
+  solve( PreAct1( s, a1, 'clean' ) ▶₀ #i )
+    case AuthBind
+    solve( ActionAccepted( a2, ~n, 'act2' ) @ #j )
+      case Action2AfterTakeover
+      solve( PreAct2( ~n, a2, 'taken2' ) ▶₀ #j )
+        case TakeoverBeforeAct2
+        by contradiction /* from formulas */
+      qed
+    next
+      case Action2Clean
+      solve( PreAct2( ~n, a2, 'clean' ) ▶₀ #j )
+        case Action1Clean
+        by contradiction /* from formulas */
+      qed
+    qed
+  qed
+qed
+
+
+
+
+
+
+
+/* All wellformedness checks were successful. */
+
+/*
+Generated from:
+Tamarin version 1.10.0
+Maude version 2.7.1
+Git revision: UNKNOWN, branch: UNKNOWN
+Compiled at: 2024-10-30 13:42:18.081591 UTC
+*/
+
+end
+
+==============================================================================
+summary of summaries:
+
+analyzed: <PROJECT_ROOT>/tamarin/aig_actor_integrity.spthy
+
+  processing time: 0.32s
+  
+  action1_requires_auth_or_takeover_to_actor (all-traces): verified (6 steps)
+  actor_continuity_between_actions_unless_takeover (all-traces): verified (14 steps)
+
+==============================================================================

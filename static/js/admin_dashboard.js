@@ -736,7 +736,13 @@ function bindRegisterTenantForm() {
         }),
       })
         .then(async (res) => {
-          const data = await res.json();
+          const raw = await res.text();
+          let data = {};
+          try {
+            data = raw ? JSON.parse(raw) : {};
+          } catch (_e) {
+            data = { detail: raw || "Request failed" };
+          }
           if (!res.ok) throw new Error(data.detail || data.error || "Request failed");
 
           const toastText = data.email_sent

@@ -77,7 +77,10 @@ from utils.policy_validator import validate_trust_policy
 
 router = APIRouter(prefix="/api/v1/auth", tags=["IAM"])
 
-rp = PublicKeyCredentialRpEntity(id="localhost.localdomain.com", name="ZTN Local")
+rp = PublicKeyCredentialRpEntity(
+    id=os.getenv("WEBAUTHN_RP_ID", "zt-iam.com"),
+    name=os.getenv("WEBAUTHN_RP_NAME", "ZT-IAM Demo"),
+)
 webauthn_server = Fido2Server(rp)
 
 

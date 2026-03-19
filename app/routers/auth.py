@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
+from sqlalchemy.exc import OperationalError, ProgrammingError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from werkzeug.security import check_password_hash
 
@@ -88,6 +89,16 @@ def _webauthn_allowed(request: Request) -> bool:
     if os.getenv("ZT_DISABLE_WEBAUTHN", "").lower() in {"1", "true", "yes"}:
         return False
     return request.url.scheme == "https"
+
+
+def _rp_aliases(rp_id: str) -> list[str]:
+    normalized = (rp_id or "").strip().lower()
+    if not normalized:
+        return []
+    zt_iam_aliases = {"zt-iam.com", "ztiam.com", "zt-aim.com"}
+    if normalized in zt_iam_aliases:
+        return sorted(zt_iam_aliases)
+    return [normalized]
 
 
 def _replace_recovery_codes(db: Session, user_id: int, tenant_id: int, count: int | None = None) -> list[str]:
@@ -200,14 +211,42 @@ def verify_webauthn_reset_page(token: str, request: Request):
 
 @router.post("/login")
 def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
+    def service_unavailable_error() -> HTTPException:
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Authentication service is not initialized. "
+                "Database schema or tenant bootstrap is missing."
+            ),
+        )
+
+    def best_effort_commit() -> None:
+        try:
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+
+    def level_for_score(score: float) -> str:
+        if score >= 0.8:
+            return "critical"
+        if score >= 0.6:
+            return "high"
+        if score >= 0.3:
+            return "medium"
+        return "low"
+
     def count_recent_failures(user_id, method="password", window_minutes=5):
         threshold = datetime.utcnow() - timedelta(minutes=window_minutes)
-        return (
-            db.query(UserAuthLog)
-            .filter_by(user_id=user_id, auth_method=method, auth_status="failed")
-            .filter(UserAuthLog.auth_timestamp >= threshold)
-            .count()
-        )
+        try:
+            return (
+                db.query(UserAuthLog)
+                .filter_by(user_id=user_id, auth_method=method, auth_status="failed")
+                .filter(UserAuthLog.auth_timestamp >= threshold)
+                .count()
+            )
+        except (ProgrammingError, OperationalError):
+            db.rollback()
+            raise service_unavailable_error()
 
     if "identifier" not in payload or "password" not in payload:
         raise HTTPException(
@@ -222,23 +261,30 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
     device_info = request.headers.get("User-Agent", "")
     location = get_ip_location(ip_address)
 
-    user = db.query(User).filter_by(email=login_input).first()
-    if not user:
-        sim = db.query(SIMCard).filter_by(mobile_number=login_input, status="active").first()
-        if sim:
-            user = sim.user
+    try:
+        user = db.query(User).filter_by(email=login_input).first()
+        if not user:
+            sim = db.query(SIMCard).filter_by(mobile_number=login_input, status="active").first()
+            if sim:
+                user = sim.user
+    except (ProgrammingError, OperationalError):
+        db.rollback()
+        raise service_unavailable_error()
 
     if not user:
-        log_realtime_event(
-            db,
-            user=None,
-            action=f"Failed login: Unknown identifier {login_input}",
-            ip_address=ip_address,
-            device_info=device_info,
-            location=location,
-            risk_alert=True,
-        )
-        db.commit()
+        try:
+            log_realtime_event(
+                db,
+                user=None,
+                action=f"Failed login: Unknown identifier {login_input}",
+                ip_address=ip_address,
+                device_info=device_info,
+                location=location,
+                risk_alert=True,
+            )
+            best_effort_commit()
+        except SQLAlchemyError:
+            db.rollback()
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found or SIM inactive",
@@ -303,20 +349,21 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
                 device_info=device_info,
             )
 
-        db.commit()
+        best_effort_commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     fp = get_request_fingerprint(request)
     access_token = create_access_token(identity=str(user.id), additional_claims={"fp": fp})
 
     rp_id = resolve_rp_id(request, "zt-iam")
+    rp_candidates = _rp_aliases(rp_id)
     device_key = (
         db.query(DeviceKey)
         .join(Device, Device.id == DeviceKey.device_id)
         .filter(
             Device.user_id == user.id,
             Device.tenant_id == user.tenant_id,
-            DeviceKey.rp_id == rp_id,
+            DeviceKey.rp_id.in_(rp_candidates),
         )
         .order_by(DeviceKey.created_at.desc())
         .first()
@@ -333,6 +380,7 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
     risk_level = risk_details["level"]
 
     preferred_mfa = (user.preferred_mfa or "both").lower()
+    has_webauthn_credentials = bool(user.webauthn_credentials)
     require_totp = False
     require_webauthn = False
     skip_all_mfa = preferred_mfa == "none"
@@ -363,7 +411,7 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
                 .filter(
                     Device.user_id == user.id,
                     Device.tenant_id == user.tenant_id,
-                    DeviceKey.rp_id == rp_id,
+                    DeviceKey.rp_id.in_(rp_candidates),
                 )
                 .order_by(DeviceKey.created_at.desc())
                 .first()
@@ -371,7 +419,7 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
             device_enrolled = device_key is not None
         if not device_enrolled:
             risk_score = min(risk_score + 0.15, 1.0)
-            risk_level = "critical" if risk_score >= 0.8 else risk_level
+            risk_level = level_for_score(risk_score)
 
     require_totp_setup = False
     require_totp_reset = False
@@ -382,29 +430,31 @@ def login_route(payload: dict, request: Request, db: Session = Depends(get_db)):
             or (user.otp_secret and not device_enrolled)
         )
 
-    log_auth_event(
-        db,
-        user=user,
-        method="password",
-        status="success",
-        ip_address=ip_address,
-        device_info=device_info,
-        location=location,
-        failed_attempts=0,
-    )
-    log_realtime_event(
-        db,
-        user=user,
-        action="Successful login",
-        ip_address=ip_address,
-        device_info=device_info,
-        location=location,
-        risk_alert=(risk_level in {"high", "critical"}),
-    )
-    user.trust_score = risk_score
-    db.commit()
-
-    has_webauthn_credentials = bool(user.webauthn_credentials)
+    try:
+        log_auth_event(
+            db,
+            user=user,
+            method="password",
+            status="success",
+            ip_address=ip_address,
+            device_info=device_info,
+            location=location,
+            failed_attempts=0,
+        )
+        log_realtime_event(
+            db,
+            user=user,
+            action="Successful login",
+            ip_address=ip_address,
+            device_info=device_info,
+            location=location,
+            risk_alert=(risk_level in {"high", "critical"}),
+        )
+        user.trust_score = risk_score
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise service_unavailable_error()
 
     response = JSONResponse(
         {
@@ -546,13 +596,14 @@ def setup_totp(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     rp_id = resolve_rp_id(request, "zt-iam")
+    rp_candidates = _rp_aliases(rp_id)
     device_key = (
         db.query(DeviceKey)
         .join(Device, Device.id == DeviceKey.device_id)
         .filter(
             Device.user_id == user.id,
             Device.tenant_id == user.tenant_id,
-            DeviceKey.rp_id == rp_id,
+            DeviceKey.rp_id.in_(rp_candidates),
         )
         .order_by(DeviceKey.created_at.desc())
         .first()
@@ -741,13 +792,14 @@ def verify_totp_login(payload: dict, request: Request, db: Session = Depends(get
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired TOTP code")
 
     rp_id = resolve_rp_id(request, "zt-iam")
+    rp_candidates = _rp_aliases(rp_id)
     device_key = (
         db.query(DeviceKey)
         .join(Device, Device.id == DeviceKey.device_id)
         .filter(
             Device.user_id == user.id,
             Device.tenant_id == user.tenant_id,
-            DeviceKey.rp_id == rp_id,
+            DeviceKey.rp_id.in_(rp_candidates),
         )
         .order_by(DeviceKey.created_at.desc())
         .first()
@@ -762,7 +814,7 @@ def verify_totp_login(payload: dict, request: Request, db: Session = Depends(get
         user_id=user.id,
         tenant_id=user.tenant_id,
         device_id=device_key.device_id,
-        rp_id=rp_id,
+        rp_id=device_key.rp_id,
         nonce=generate_nonce(),
         otp_hash=hash_otp(totp_code),
         status="pending",
@@ -1082,12 +1134,6 @@ def login_approve(payload: dict, request: Request, db: Session = Depends(get_db)
         db.commit()
         return {"status": "denied", "reason": "expired"}
 
-    if challenge.device_id != int(device_id) or challenge.rp_id != rp_id:
-        challenge.status = "denied"
-        challenge.denied_reason = "mismatch"
-        db.commit()
-        return {"status": "denied", "reason": "mismatch"}
-
     user = db.query(User).get(challenge.user_id)
     if not user or not user.otp_secret:
         challenge.status = "denied"
@@ -1102,15 +1148,41 @@ def login_approve(payload: dict, request: Request, db: Session = Depends(get_db)
         return {"status": "denied", "reason": "invalid_otp"}
 
     if challenge.otp_hash:
-        if challenge.otp_hash != hash_otp(otp):
-            challenge.status = "denied"
-            challenge.denied_reason = "otp_mismatch"
-            db.commit()
-            return {"status": "denied", "reason": "otp_mismatch"}
+        candidate_hash = hash_otp(otp)
+        if challenge.otp_hash != candidate_hash:
+            totp = pyotp.TOTP(user.otp_secret)
+            challenge_time = challenge.created_at or datetime.utcnow()
+            step = int(challenge_time.timestamp() // 30)
+            accepted_hashes = {
+                hash_otp(totp.at((step + offset) * 30))
+                for offset in (-2, -1, 0, 1, 2)
+            }
+            if challenge.otp_hash not in accepted_hashes or candidate_hash not in accepted_hashes:
+                challenge.status = "denied"
+                challenge.denied_reason = "otp_mismatch"
+                db.commit()
+                return {"status": "denied", "reason": "otp_mismatch"}
 
+    try:
+        requested_device_id = int(device_id)
+    except (TypeError, ValueError):
+        challenge.status = "denied"
+        challenge.denied_reason = "mismatch"
+        db.commit()
+        return {"status": "denied", "reason": "mismatch"}
+
+    rp_candidates = set(_rp_aliases(rp_id)) | set(_rp_aliases(challenge.rp_id))
     device_key = (
         db.query(DeviceKey)
-        .filter_by(device_id=challenge.device_id, rp_id=rp_id, tenant_id=challenge.tenant_id)
+        .join(Device, Device.id == DeviceKey.device_id)
+        .filter(
+            DeviceKey.device_id == requested_device_id,
+            DeviceKey.tenant_id == challenge.tenant_id,
+            DeviceKey.rp_id.in_(list(rp_candidates)),
+            Device.user_id == challenge.user_id,
+            Device.tenant_id == challenge.tenant_id,
+        )
+        .order_by(DeviceKey.created_at.desc())
         .first()
     )
     if not device_key:
@@ -1119,13 +1191,15 @@ def login_approve(payload: dict, request: Request, db: Session = Depends(get_db)
         db.commit()
         return {"status": "denied", "reason": "device_not_enrolled"}
 
-    message = build_device_proof_message(nonce, str(device_id), rp_id, otp)
+    message = build_device_proof_message(nonce, str(requested_device_id), device_key.rp_id, otp)
     if not verify_p256_signature(device_key.public_key, message, signature):
         challenge.status = "denied"
         challenge.denied_reason = "invalid_device_proof"
         db.commit()
         return {"status": "denied", "reason": "invalid_device_proof"}
 
+    challenge.device_id = requested_device_id
+    challenge.rp_id = device_key.rp_id
     challenge.status = "ok"
     challenge.approved_at = datetime.utcnow()
     db.add(
@@ -1245,7 +1319,7 @@ def register_totp(payload: dict, request: Request, db: Session = Depends(get_db)
         .filter(
             Device.user_id == user.id,
             Device.tenant_id == user.tenant_id,
-            DeviceKey.rp_id == rp_id,
+            DeviceKey.rp_id.in_(_rp_aliases(rp_id)),
         )
         .first()
     )
@@ -1299,13 +1373,14 @@ def risk_score(request: Request, db: Session = Depends(get_db)):
     device_info = request.headers.get("User-Agent", "")
     location = get_ip_location(ip_address)
     rp_id = resolve_rp_id(request, "zt-iam")
+    rp_candidates = _rp_aliases(rp_id)
     device_key = (
         db.query(DeviceKey)
         .join(Device, Device.id == DeviceKey.device_id)
         .filter(
             Device.user_id == user.id,
             Device.tenant_id == user.tenant_id,
-            DeviceKey.rp_id == rp_id,
+            DeviceKey.rp_id.in_(rp_candidates),
         )
         .first()
     )

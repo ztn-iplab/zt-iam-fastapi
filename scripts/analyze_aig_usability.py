@@ -35,6 +35,7 @@ def discover_trace_files(trace_dir: Path, pattern: str) -> list[Path]:
 @dataclass
 class Decision:
     decision_id: int
+    user_id: int | None
     decision_time: datetime
     decision: str
     correlation_id: str | None
@@ -67,6 +68,7 @@ def flatten_decisions(traces: list[dict[str, Any]]) -> list[Decision]:
             out.append(
                 Decision(
                     decision_id=int(row["id"]),
+                    user_id=(int(row["user_id"]) if row.get("user_id") not in (None, "") else None),
                     decision_time=t,
                     decision=str(row.get("decision") or "").strip().lower(),
                     correlation_id=row.get("correlation_id"),
@@ -79,6 +81,8 @@ def flatten_decisions(traces: list[dict[str, Any]]) -> list[Decision]:
 
 
 def participant_key(dec: Decision) -> str | None:
+    if dec.user_id is not None:
+        return f"user:{dec.user_id}"
     md = dec.metadata
     for key in ("participant_id", "actor_label"):
         v = md.get(key)
@@ -255,4 +259,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

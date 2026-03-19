@@ -19,7 +19,7 @@ class User(Base):
     last_name = sa.Column(sa.String(50), nullable=True)
     identity_verified = sa.Column(sa.Boolean, default=False)
     country = sa.Column(sa.String(50))
-    trust_score = sa.Column(sa.Float, default=0.5)
+    trust_score = sa.Column(sa.Float, default=0.0)
     last_login = sa.Column(sa.DateTime, nullable=True, default=sa.func.current_timestamp())
     created_at = sa.Column(sa.DateTime, default=sa.func.current_timestamp())
     password_hash = sa.Column(sa.String(255), nullable=False)

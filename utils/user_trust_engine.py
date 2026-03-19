@@ -1,7 +1,11 @@
 # user_trust_engine.py
 
+import json
+import os
 from datetime import datetime, timedelta
-from math import pow
+from functools import lru_cache
+from math import log, pow
+from pathlib import Path
 
 from app.models import TenantTrustPolicyFile, UserAuthLog
 
@@ -19,7 +23,7 @@ class BaseTrustEngine:
         self.last_evaluation = datetime.utcnow()
 
     def _compute_baseline_score(self):
-        base_risk = 0.15
+        base_risk = 0.0
         prior = self.user.trust_score if self.user.trust_score is not None else base_risk
         last_login = self.user.last_login or self.user.created_at
         if last_login:
@@ -67,6 +71,14 @@ class BaseTrustEngine:
         self.rule_missing_device_binding()
         return self.finalize()
 
+    def _recent_success_logs(self, limit=5):
+        return (
+            UserAuthLog.query.filter_by(user_id=self.user.id, auth_status="success")
+            .order_by(UserAuthLog.auth_timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+
     def rule_large_transaction(self):
         amount = self.context.get("amount")
         if amount is None:
@@ -86,7 +98,7 @@ class BaseTrustEngine:
         if hour in [1, 2, 3, 4]:
             self._add_factor(
                 "odd_hours",
-                0.2,
+                0.12,
                 "Unusual login time",
                 "If this is you, proceed; otherwise reset your password immediately.",
                 {"hour": hour},
@@ -95,24 +107,22 @@ class BaseTrustEngine:
     def rule_new_device_or_ip(self):
         device_info = self.context.get("device_info")
         ip_address = self.context.get("ip_address")
-        recent_logs = (
-            UserAuthLog.query.filter_by(user_id=self.user.id)
-            .order_by(UserAuthLog.auth_timestamp.desc())
-            .limit(5)
-            .all()
-        )
+        recent_logs = self._recent_success_logs(limit=5)
+        # Do not penalize first-time logins for "new device/network" without baseline history.
+        if not recent_logs:
+            return
 
         if device_info and not any(log.device_info == device_info for log in recent_logs):
             self._add_factor(
                 "new_device",
-                0.2,
+                0.12,
                 "New device detected",
                 "Approve the login only if this is your device.",
             )
         if ip_address and not any(log.ip_address == ip_address for log in recent_logs):
             self._add_factor(
                 "new_ip",
-                0.2,
+                0.12,
                 "New network detected",
                 "If this IP is unfamiliar, change your password.",
                 {"ip_address": ip_address},
@@ -158,7 +168,7 @@ class BaseTrustEngine:
         if self.user.created_at >= datetime.utcnow() - timedelta(days=7):
             self._add_factor(
                 "new_account",
-                0.15,
+                0.05,
                 "New account",
                 "Complete profile verification to improve trust.",
             )
@@ -193,7 +203,7 @@ class BaseTrustEngine:
         if device_enrolled is False:
             self._add_factor(
                 "device_not_bound",
-                0.25,
+                0.12,
                 "No trusted device bound",
                 "Enroll a trusted device for stronger protection.",
             )
@@ -232,14 +242,11 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
         if rules.get("new_device_or_ip", {}).get("enabled"):
             device_info = ctx.get("device_info")
             ip_address = ctx.get("ip_address")
-            recent_logs = (
-                UserAuthLog.query.filter_by(user_id=self.user.id)
-                .order_by(UserAuthLog.auth_timestamp.desc())
-                .limit(5)
-                .all()
-            )
+            recent_logs = self._recent_success_logs(limit=5)
+            if not recent_logs:
+                recent_logs = []
 
-            if device_info and not any(log.device_info == device_info for log in recent_logs):
+            if recent_logs and device_info and not any(log.device_info == device_info for log in recent_logs):
                 weight = rules["new_device_or_ip"].get("weight", 0.2)
                 self._add_factor(
                     "new_device",
@@ -247,7 +254,7 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
                     "New device detected",
                     "Approve the login only if this is your device.",
                 )
-            if ip_address and not any(log.ip_address == ip_address for log in recent_logs):
+            if recent_logs and ip_address and not any(log.ip_address == ip_address for log in recent_logs):
                 weight = rules["new_device_or_ip"].get("weight", 0.2)
                 self._add_factor(
                     "new_ip",
@@ -295,6 +302,177 @@ class JSONPolicyTrustEngine(BaseTrustEngine):
         return self.finalize()
 
 
+DEFAULT_PROBABILISTIC_MODEL = {
+    "version": "2026-03-02",
+    "base_rate": 0.08,
+    "prior_weight": 0.35,
+    "feature_likelihood_ratios": {
+        "large_transaction": 4.0,
+        "odd_hours": 1.6,
+        "new_device": 2.2,
+        "new_ip": 1.9,
+        "location_change": 2.4,
+        "recent_failures": 3.8,
+        "new_account": 1.3,
+        "login_velocity": 1.8,
+        "identity_unverified": 1.7,
+        "device_not_bound": 2.0,
+        "known_device": 0.72,
+        "known_network": 0.8,
+        "identity_verified": 0.78,
+        "device_enrolled": 0.68,
+    },
+}
+
+
+def _clamp_probability(value: float) -> float:
+    return min(max(float(value), 1e-6), 1.0 - 1e-6)
+
+
+def _odds_from_probability(probability: float) -> float:
+    p = _clamp_probability(probability)
+    return p / (1.0 - p)
+
+
+@lru_cache(maxsize=1)
+def _load_probabilistic_model() -> dict:
+    configured_path = os.getenv("ZT_PROB_TRUST_MODEL_PATH", "").strip()
+    if configured_path:
+        candidate = Path(configured_path)
+    else:
+        candidate = Path(__file__).resolve().parents[1] / "config" / "trust_probabilistic_model.json"
+
+    if candidate.exists():
+        try:
+            loaded = json.loads(candidate.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                return loaded
+        except Exception:
+            pass
+    return DEFAULT_PROBABILISTIC_MODEL
+
+
+class ProbabilisticTrustEngine(BaseTrustEngine):
+    _FEATURE_INFO = {
+        "large_transaction": ("Unusual transaction size", "Verify recipient and amount before proceeding."),
+        "odd_hours": ("Unusual login time", "If unexpected, reset credentials and review recent activity."),
+        "new_device": ("New device detected", "Approve only if this device belongs to you."),
+        "new_ip": ("New network detected", "Confirm this network is trusted."),
+        "location_change": ("Location change detected", "Secure the account if this location is unfamiliar."),
+        "recent_failures": ("Recent failed attempts", "Multiple failures indicate active credential abuse."),
+        "new_account": ("New account", "New accounts receive stricter checks until behavior stabilizes."),
+        "login_velocity": ("High login velocity", "Unusual rapid logins may indicate account sharing or abuse."),
+        "identity_unverified": ("Identity unverified", "Complete identity verification to reduce risk."),
+        "device_not_bound": ("No trusted device bound", "Enroll a device key to reduce risk and step-up frequency."),
+        "known_device": ("Known device", "Historical device consistency lowered risk."),
+        "known_network": ("Known network", "Historical network consistency lowered risk."),
+        "identity_verified": ("Identity verified", "Verified identity lowered risk."),
+        "device_enrolled": ("Trusted device enrolled", "Bound device key lowered risk."),
+    }
+
+    def _active_features(self) -> tuple[dict, dict]:
+        recent_logs = self._recent_success_logs(limit=5)
+        has_history = bool(recent_logs)
+        device_info = self.context.get("device_info")
+        ip_address = self.context.get("ip_address")
+        location = (self.context.get("location") or "").strip()
+        amount = self.context.get("amount")
+        now = datetime.utcnow()
+
+        last_success = recent_logs[0] if has_history else None
+
+        failures_window = now - timedelta(minutes=15)
+        recent_failures = (
+            UserAuthLog.query.filter_by(user_id=self.user.id, auth_status="failed")
+            .filter(UserAuthLog.auth_timestamp >= failures_window)
+            .count()
+        )
+        success_window = now - timedelta(hours=1)
+        recent_successes = (
+            UserAuthLog.query.filter_by(user_id=self.user.id, auth_status="success")
+            .filter(UserAuthLog.auth_timestamp >= success_window)
+            .count()
+        )
+
+        features = {
+            "large_transaction": bool(amount is not None and amount > 30000),
+            "odd_hours": bool(now.hour in {1, 2, 3, 4}),
+            "new_device": bool(
+                has_history and device_info and not any(log.device_info == device_info for log in recent_logs)
+            ),
+            "new_ip": bool(has_history and ip_address and not any(log.ip_address == ip_address for log in recent_logs)),
+            "location_change": bool(
+                has_history
+                and last_success
+                and last_success.location
+                and location
+                and location != "Unknown"
+                and location != last_success.location
+            ),
+            "recent_failures": bool(recent_failures >= 3),
+            "new_account": bool(
+                self.user.created_at and self.user.created_at >= datetime.utcnow() - timedelta(days=7)
+            ),
+            "login_velocity": bool(recent_successes >= 5),
+            "identity_unverified": bool(not self.user.identity_verified),
+            "device_not_bound": bool(self.context.get("device_enrolled") is False),
+            "known_device": bool(
+                has_history and device_info and any(log.device_info == device_info for log in recent_logs)
+            ),
+            "known_network": bool(
+                has_history and ip_address and any(log.ip_address == ip_address for log in recent_logs)
+            ),
+            "identity_verified": bool(self.user.identity_verified),
+            "device_enrolled": bool(self.context.get("device_enrolled") is True),
+        }
+
+        evidence = {
+            "recent_failures": {"failed_attempts_15m": recent_failures},
+            "login_velocity": {"success_logins_1h": recent_successes},
+            "location_change": {"location": location},
+            "new_ip": {"ip_address": ip_address},
+            "large_transaction": {"amount": amount},
+        }
+        return features, evidence
+
+    def run(self):
+        model = _load_probabilistic_model()
+        lrs = model.get("feature_likelihood_ratios", {})
+        base_rate = float(model.get("base_rate", 0.08))
+        base_odds = _odds_from_probability(base_rate)
+        odds = base_odds
+
+        prior_weight = min(max(float(model.get("prior_weight", 0.35)), 0.0), 1.0)
+        prior_prob = _clamp_probability(self.baseline_score)
+        prior_odds = _odds_from_probability(prior_prob)
+        if base_odds > 0:
+            odds *= pow(prior_odds / base_odds, prior_weight)
+
+        features, evidence = self._active_features()
+        for feature, active in features.items():
+            if not active:
+                continue
+            lr = float(lrs.get(feature, 1.0))
+            if lr <= 0:
+                continue
+            odds *= lr
+            title, guidance = self._FEATURE_INFO.get(feature, (feature.replace("_", " ").title(), ""))
+            self.factors.append(
+                {
+                    "key": feature,
+                    "weight": round(log(lr), 3),
+                    "title": title,
+                    "guidance": guidance,
+                    "evidence": evidence.get(feature, {}),
+                }
+            )
+
+        probability = odds / (1.0 + odds)
+        self.score = min(max(probability, 0.0), 1.0)
+        self.minimum_score = 0.0
+        return round(self.score, 2)
+
+
 def _risk_level(score: float) -> str:
     if score >= 0.8:
         return "critical"
@@ -306,6 +484,8 @@ def _risk_level(score: float) -> str:
 
 
 def evaluate_trust_details(user, context, tenant=None):
+    mode = os.getenv("ZT_TRUST_ENGINE_MODE", "probabilistic").strip().lower()
+
     if tenant and hasattr(tenant, "custom_trust_logic") and callable(tenant.custom_trust_logic):
         try:
             score = tenant.custom_trust_logic(user, context)
@@ -314,7 +494,7 @@ def evaluate_trust_details(user, context, tenant=None):
         except Exception:
             pass
 
-    if tenant:
+    if tenant and mode == "policy":
         policy_file = TenantTrustPolicyFile.query.filter_by(tenant_id=tenant.id).first()
         if policy_file:
             try:
@@ -330,7 +510,13 @@ def evaluate_trust_details(user, context, tenant=None):
             except Exception:
                 pass
 
-    engine = BaseTrustEngine(user, context)
+    if mode == "rules":
+        engine = BaseTrustEngine(user, context)
+    else:
+        try:
+            engine = ProbabilisticTrustEngine(user, context)
+        except Exception:
+            engine = BaseTrustEngine(user, context)
     score = engine.run()
     return {
         "score": score,

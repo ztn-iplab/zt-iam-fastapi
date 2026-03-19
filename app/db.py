@@ -8,11 +8,19 @@ DATABASE_URL = os.getenv(
 )
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-SessionFactory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-SessionLocal = scoped_session(SessionFactory)
+SessionFactory = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False,
+    bind=engine,
+)
+# Keep a scoped session only for legacy `Model.query` convenience accessors.
+ScopedQuerySession = scoped_session(SessionFactory)
+# Use plain sessionmaker for FastAPI request dependencies and background worker helpers.
+SessionLocal = SessionFactory
 
 Base = declarative_base()
-Base.query = SessionLocal.query_property()
+Base.query = ScopedQuerySession.query_property()
 
 
 def get_db():
@@ -20,4 +28,4 @@ def get_db():
     try:
         yield db
     finally:
-        SessionLocal.remove()
+        db.close()

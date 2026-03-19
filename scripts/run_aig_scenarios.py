@@ -44,8 +44,8 @@ class ApiClient:
         if ctx:
             handlers.append(request.HTTPSHandler(context=ctx))
         self.opener = request.build_opener(*handlers)
-        self.max_retries = 3
-        self.retry_base_sleep = 0.75
+        self.max_retries = 8
+        self.retry_base_sleep = 1.5
 
     def request_json(self, method: str, path: str, payload: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
         for attempt in range(self.max_retries + 1):
@@ -70,7 +70,15 @@ class ApiClient:
                 except json.JSONDecodeError:
                     body = {"raw": raw}
                 if exc.code == 429 and attempt < self.max_retries:
-                    time.sleep(self.retry_base_sleep * (2 ** attempt))
+                    retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                    if retry_after:
+                        try:
+                            sleep_seconds = max(float(retry_after), self.retry_base_sleep)
+                        except ValueError:
+                            sleep_seconds = self.retry_base_sleep * (2 ** attempt)
+                    else:
+                        sleep_seconds = self.retry_base_sleep * (2 ** attempt)
+                    time.sleep(sleep_seconds + RNG.uniform(0.0, 0.4))
                     continue
                 return exc.code, body
 
@@ -193,7 +201,7 @@ def make_tel_event(
     source_independent: bool = True,
     source_confidence: float = 0.9,
     source_weight_hint: float | None = 0.6,
-    mobile_number: str = "+15550001111",
+    mobile_number: str = "0781234567",
     old_iccid: str | None = None,
     new_iccid: str | None = None,
     metadata: dict[str, Any] | None = None,
@@ -619,8 +627,8 @@ def scenario_takeover_swap_low(client: ApiClient, run_id: str, user_id: int) -> 
                 run_id=run_id,
                 actor_label="attacker_after_sim_swap",
                 event_type="sim_swap_completed",
-                old_iccid="ICCID-OLD-001",
-                new_iccid="ICCID-NEW-777",
+                old_iccid="8925000000000000001",
+                new_iccid="8925000000000000777",
                 metadata={"simulator": "attack_scenario"},
             )
         ],
@@ -786,8 +794,8 @@ def scenario_takeover_progression(client: ApiClient, run_id: str, user_id: int) 
                         run_id=run_id,
                         actor_label="transition",
                         event_type="sim_swap_completed",
-                        old_iccid="ICCID-OLD-PROG",
-                        new_iccid="ICCID-NEW-PROG",
+                        old_iccid="8925000000000000100",
+                        new_iccid="8925000000000000200",
                         metadata={"phase": idx},
                     )
                 ],

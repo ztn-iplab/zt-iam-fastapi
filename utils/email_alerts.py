@@ -3,7 +3,7 @@ from datetime import datetime
 
 from app.email import send_email
 
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://localhost.localdomain.com")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://zt-iam.com")
 ADMIN_ALERT_EMAIL = os.getenv("ADMIN_ALERT_EMAIL", "")
 MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER")
 

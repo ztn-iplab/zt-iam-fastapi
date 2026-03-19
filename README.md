@@ -91,7 +91,7 @@ uvicorn fastapi_app:app --host 0.0.0.0 --port 8000
 ```
 
 ## AIg Public Artifact
-- Public dataset: `experiments/aig_publication_500users_20260317/`
+- Public dataset: `experiments/aig_publication_dataset/`
 - Tamarin AIg proofs: `tamarin/`
 - ML benchmark script: `scripts/compare_aig_models.py`
 - Interactive walkthrough: `notebooks/aig_ml_walkthrough.ipynb`

@@ -16,7 +16,7 @@ These models are intentionally abstract. They do not encode concrete telecom, de
 - `tamarin-prover` available on `PATH`
 - `maude` installed and reachable by Tamarin
 
-The manuscript runs were refreshed with:
+The runs were refreshed with:
 
 - Tamarin `1.10.0`
 - Maude `2.7.1`

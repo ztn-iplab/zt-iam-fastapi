@@ -13,6 +13,6 @@ The dataset can be loaded directly with standard Python tooling such as `pandas`
 
 ```bash
 python scripts/compare_aig_models.py \
-  --dataset-csv experiments/aig_publication_500users_20260317/aig_publication_dataset.csv \
+  --dataset-csv experiments/aig_publication_dataset/aig_publication_dataset.csv \
   --output-dir /tmp/aig_model_bench
 ```

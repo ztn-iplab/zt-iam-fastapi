@@ -90,29 +90,11 @@ pip install -r requirements.txt
 uvicorn fastapi_app:app --host 0.0.0.0 --port 8000
 ```
 
-## ZT-IAM Research Scripts
-Use these when running experiments against the `/api/auth` flow.
-
-```bash
-python scripts/collect_iam_metrics.py \
-  --base-url <PUBLIC_BASE_URL> \
-  --identifier <admin-email> \
-  --password '<admin-password>' \
-  --insecure
-```
-
-```bash
-python scripts/collect_iam_frr_sweep.py \
-  --base-url <PUBLIC_BASE_URL> \
-  --identifier <admin-email> \
-  --password '<admin-password>' \
-  --insecure
-```
-
-Analysis:
-```bash
-python scripts/analyze_iam_metrics.py
-```
+## AIg Public Artifact
+- Public dataset: `experiments/aig_publication_500users_20260317/`
+- Tamarin AIg proofs: `tamarin/`
+- ML benchmark script: `scripts/compare_aig_models.py`
+- Interactive walkthrough: `notebooks/aig_ml_walkthrough.ipynb`
 
 ## Security Notes
 - **Do not commit secrets** or TLS private keys.
